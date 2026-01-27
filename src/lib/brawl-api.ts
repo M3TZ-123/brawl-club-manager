@@ -146,31 +146,43 @@ export interface RntPlayerResponse {
   };
 }
 
-// Ranked tier mapping based on RNT API
-// Rank 1-3: Bronze I, II, III
-// Rank 4-6: Silver I, II, III
-// Rank 7-9: Gold I, II, III
-// Rank 10-12: Diamond I, II, III
-// Rank 13-15: Mythic I, II, III
-// Rank 16-18: Legendary I, II, III
-// Rank 19-21: Masters I, II, III
-// Rank 22+: Pro
-const LEAGUE_NAMES = ['Bronze', 'Silver', 'Gold', 'Diamond', 'Mythic', 'Legendary', 'Masters', 'Pro'] as const;
-const LEAGUE_SUBS = ['I', 'II', 'III'] as const;
+// Official Brawl Stars Ranked ELO thresholds
+// Each entry: [minPoints, rankName]
+const RANK_THRESHOLDS: [number, string][] = [
+  [11250, "Pro"],
+  [10250, "Masters III"],
+  [9250, "Masters II"],
+  [8250, "Masters I"],
+  [7500, "Legendary III"],
+  [6750, "Legendary II"],
+  [6000, "Legendary I"],
+  [5500, "Mythic III"],
+  [5000, "Mythic II"],
+  [4500, "Mythic I"],
+  [4000, "Diamond III"],
+  [3500, "Diamond II"],
+  [3000, "Diamond I"],
+  [2500, "Gold III"],
+  [2000, "Gold II"],
+  [1500, "Gold I"],
+  [1250, "Silver III"],
+  [1000, "Silver II"],
+  [750, "Silver I"],
+  [500, "Bronze III"],
+  [250, "Bronze II"],
+  [0, "Bronze I"],
+];
 
-export function formatLeagueRank(rankTier: number): string {
-  if (rankTier <= 0) return "Unranked";
-  if (rankTier >= 22) return "Pro";
-  if (rankTier >= 19) {
-    // Masters I, II, III (ranks 19, 20, 21)
-    const subIndex = rankTier - 19;
-    return `Masters ${LEAGUE_SUBS[subIndex]}`;
+export function formatLeagueRankFromPoints(points: number): string {
+  if (points < 0) return "Unranked";
+  
+  for (const [minPoints, rankName] of RANK_THRESHOLDS) {
+    if (points >= minPoints) {
+      return rankName;
+    }
   }
   
-  const leagueIndex = Math.floor((rankTier - 1) / 3);
-  const subIndex = (rankTier - 1) % 3;
-  
-  return `${LEAGUE_NAMES[leagueIndex]} ${LEAGUE_SUBS[subIndex]}`;
+  return "Unranked";
 }
 
 // Fetch real ranked data from RNT API
@@ -199,18 +211,14 @@ export async function getPlayerRankedData(playerTag: string): Promise<{
     const stats = response.data.result.stats;
     
     // Find ranked stats by ID:
-    // 23: CurrentRanked (tier)
     // 24: CurrentRankedPoints
-    // 22: HighestRanked (tier)
     // 25: HighestRankedPoints
-    const currentRankTier = stats.find((s: { id: number }) => s.id === 23)?.value || 0;
     const currentPoints = stats.find((s: { id: number }) => s.id === 24)?.value || 0;
-    const highestRankTier = stats.find((s: { id: number }) => s.id === 22)?.value || 0;
     const highestPoints = stats.find((s: { id: number }) => s.id === 25)?.value || 0;
     
     return {
-      currentRank: formatLeagueRank(currentRankTier),
-      highestRank: formatLeagueRank(highestRankTier),
+      currentRank: formatLeagueRankFromPoints(currentPoints),
+      highestRank: formatLeagueRankFromPoints(highestPoints),
       currentPoints,
       highestPoints,
     };
