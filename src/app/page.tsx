@@ -1,65 +1,135 @@
-import Image from "next/image";
+"use client";
 
-export default function Home() {
+import { useEffect, useState } from "react";
+import { useAppStore } from "@/lib/store";
+import { Sidebar } from "@/components/sidebar";
+import { Header } from "@/components/header";
+import { SetupWizard } from "@/components/setup-wizard";
+import { StatsCards } from "@/components/stats-cards";
+import { MembersTable } from "@/components/members-table";
+import { ActivityTimeline } from "@/components/activity-timeline";
+import { ActivityPieChart, MemberBarChart } from "@/components/charts";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Member, ClubEvent } from "@/types/database";
+
+export default function DashboardPage() {
+  const { clubTag, apiKey } = useAppStore();
+  const [isSetupComplete, setIsSetupComplete] = useState(false);
+  const [members, setMembers] = useState<Member[]>([]);
+  const [events, setEvents] = useState<ClubEvent[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [mounted, setMounted] = useState(false);
+
+  useEffect(() => {
+    setMounted(true);
+  }, []);
+
+  useEffect(() => {
+    if (!mounted) return;
+    
+    if (clubTag && apiKey) {
+      setIsSetupComplete(true);
+      loadData();
+    } else {
+      setIsLoading(false);
+    }
+  }, [clubTag, apiKey, mounted]);
+
+  const loadData = async () => {
+    try {
+      const [membersRes, eventsRes] = await Promise.all([
+        fetch("/api/members"),
+        fetch("/api/events"),
+      ]);
+
+      if (membersRes.ok) {
+        const data = await membersRes.json();
+        setMembers(data.members || []);
+      }
+
+      if (eventsRes.ok) {
+        const data = await eventsRes.json();
+        setEvents(data.events || []);
+      }
+    } catch (error) {
+      console.error("Error loading data:", error);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  if (!mounted) {
+    return (
+      <div className="flex h-screen items-center justify-center bg-background">
+        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary"></div>
+      </div>
+    );
+  }
+
+  if (!isSetupComplete && !isLoading) {
+    return <SetupWizard onComplete={() => setIsSetupComplete(true)} />;
+  }
+
+  const totalTrophies = members.reduce((sum, m) => sum + m.trophies, 0);
+  const activeMembers = members.filter((m) => m.is_active).length;
+  const avgTrophies = members.length > 0 ? Math.round(totalTrophies / members.length) : 0;
+
+  const activityData = [
+    { name: "Active", value: activeMembers || 1, color: "#22c55e" },
+    { name: "Inactive", value: Math.max(members.length - activeMembers, 0) || 1, color: "#ef4444" },
+  ];
+
+  const topMembers = members.slice(0, 10).map((m) => ({
+    name: m.player_name,
+    trophies: m.trophies,
+  }));
+
   return (
-    <div className="flex min-h-screen items-center justify-center bg-zinc-50 font-sans dark:bg-black">
-      <main className="flex min-h-screen w-full max-w-3xl flex-col items-center justify-between py-32 px-16 bg-white dark:bg-black sm:items-start">
-        <Image
-          className="dark:invert"
-          src="/next.svg"
-          alt="Next.js logo"
-          width={100}
-          height={20}
-          priority
-        />
-        <div className="flex flex-col items-center gap-6 text-center sm:items-start sm:text-left">
-          <h1 className="max-w-xs text-3xl font-semibold leading-10 tracking-tight text-black dark:text-zinc-50">
-            To get started, edit the page.tsx file.
-          </h1>
-          <p className="max-w-md text-lg leading-8 text-zinc-600 dark:text-zinc-400">
-            Looking for a starting point or more instructions? Head over to{" "}
-            <a
-              href="https://vercel.com/templates?framework=next.js&utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Templates
-            </a>{" "}
-            or the{" "}
-            <a
-              href="https://nextjs.org/learn?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Learning
-            </a>{" "}
-            center.
-          </p>
-        </div>
-        <div className="flex flex-col gap-4 text-base font-medium sm:flex-row">
-          <a
-            className="flex h-12 w-full items-center justify-center gap-2 rounded-full bg-foreground px-5 text-background transition-colors hover:bg-[#383838] dark:hover:bg-[#ccc] md:w-[158px]"
-            href="https://vercel.com/new?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            <Image
-              className="dark:invert"
-              src="/vercel.svg"
-              alt="Vercel logomark"
-              width={16}
-              height={16}
-            />
-            Deploy Now
-          </a>
-          <a
-            className="flex h-12 w-full items-center justify-center rounded-full border border-solid border-black/[.08] px-5 transition-colors hover:border-transparent hover:bg-black/[.04] dark:border-white/[.145] dark:hover:bg-[#1a1a1a] md:w-[158px]"
-            href="https://nextjs.org/docs?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            Documentation
-          </a>
-        </div>
-      </main>
+    <div className="flex h-screen bg-background">
+      <Sidebar />
+      <div className="flex-1 flex flex-col overflow-hidden">
+        <Header />
+        <main className="flex-1 overflow-y-auto p-6">
+          {isLoading ? (
+            <div className="flex items-center justify-center h-full">
+              <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary"></div>
+            </div>
+          ) : (
+            <div className="space-y-6">
+              {/* Stats Overview */}
+              <StatsCards
+                totalMembers={members.length}
+                totalTrophies={totalTrophies}
+                activeMembers={activeMembers}
+                avgTrophies={avgTrophies}
+              />
+
+              {/* Charts Row */}
+              <div className="grid gap-6 md:grid-cols-2">
+                <ActivityPieChart data={activityData} />
+                <MemberBarChart data={topMembers} />
+              </div>
+
+              {/* Members and Activity */}
+              <div className="grid gap-6 lg:grid-cols-3">
+                <div className="lg:col-span-2">
+                  <Card>
+                    <CardHeader>
+                      <CardTitle>Club Members</CardTitle>
+                    </CardHeader>
+                    <CardContent>
+                      <MembersTable members={members.slice(0, 10)} />
+                    </CardContent>
+                  </Card>
+                </div>
+                <div>
+                  <ActivityTimeline events={events.slice(0, 5)} />
+                </div>
+              </div>
+            </div>
+          )}
+        </main>
+      </div>
     </div>
   );
 }
