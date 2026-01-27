@@ -61,6 +61,7 @@ export function MembersTable({ members }: MembersTableProps) {
           <TableHead className="text-right">Highest</TableHead>
           <TableHead>Current Rank</TableHead>
           <TableHead>Best Rank</TableHead>
+          <TableHead className="text-center">Win Rate</TableHead>
           <TableHead className="text-center">Activity</TableHead>
           <TableHead className="text-right">24h</TableHead>
           <TableHead className="text-right">7 Days</TableHead>
@@ -113,6 +114,19 @@ export function MembersTable({ members }: MembersTableProps) {
             <TableCell>
               <span className={getRankColor(member.rank_highest || "Unranked")}>
                 {member.rank_highest || "Unranked"}
+              </span>
+            </TableCell>
+            <TableCell className="text-center">
+              <span className={
+                member.win_rate != null && member.win_rate >= 60 
+                  ? "text-green-500 font-medium" 
+                  : member.win_rate != null && member.win_rate >= 50 
+                    ? "text-yellow-500" 
+                    : member.win_rate != null 
+                      ? "text-red-500" 
+                      : "text-muted-foreground"
+              }>
+                {member.win_rate != null ? `${member.win_rate}%` : "-"}
               </span>
             </TableCell>
             <TableCell className="text-center text-lg">

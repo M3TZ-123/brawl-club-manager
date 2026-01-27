@@ -19,6 +19,7 @@ export interface Database {
           exp_level: number;
           rank_current: string | null;
           rank_highest: string | null;
+          win_rate: number | null;
           brawlers_count: number;
           solo_victories: number;
           duo_victories: number;
@@ -35,6 +36,7 @@ export interface Database {
           exp_level?: number;
           rank_current?: string | null;
           rank_highest?: string | null;
+          win_rate?: number | null;
           brawlers_count?: number;
           solo_victories?: number;
           duo_victories?: number;
@@ -51,6 +53,7 @@ export interface Database {
           exp_level?: number;
           rank_current?: string | null;
           rank_highest?: string | null;
+          win_rate?: number | null;
           brawlers_count?: number;
           solo_victories?: number;
           duo_victories?: number;

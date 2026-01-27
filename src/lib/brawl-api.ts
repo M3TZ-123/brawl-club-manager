@@ -233,6 +233,44 @@ export async function getPlayerRankedData(playerTag: string): Promise<{
   }
 }
 
+// Calculate win rate from battle log
+export async function getPlayerWinRate(playerTag: string): Promise<{
+  winRate: number | null;
+  totalBattles: number;
+  wins: number;
+}> {
+  try {
+    const battleLog = await getPlayerBattleLog(playerTag);
+    
+    if (!battleLog?.items || battleLog.items.length === 0) {
+      return { winRate: null, totalBattles: 0, wins: 0 };
+    }
+    
+    let wins = 0;
+    let validBattles = 0;
+    
+    for (const battle of battleLog.items) {
+      // Skip battles without a result (like friendly games)
+      if (!battle.battle?.result) continue;
+      
+      validBattles++;
+      if (battle.battle.result === "victory") {
+        wins++;
+      }
+    }
+    
+    if (validBattles === 0) {
+      return { winRate: null, totalBattles: 0, wins: 0 };
+    }
+    
+    const winRate = Math.round((wins / validBattles) * 100);
+    return { winRate, totalBattles: validBattles, wins };
+  } catch (error) {
+    console.error(`Error fetching battle log for ${playerTag}:`, error);
+    return { winRate: null, totalBattles: 0, wins: 0 };
+  }
+}
+
 // Legacy function for backwards compatibility
 export function estimateRankedInfo(player: BrawlStarsPlayer): {
   currentRank: string;

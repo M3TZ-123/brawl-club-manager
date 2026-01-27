@@ -11,6 +11,7 @@ CREATE TABLE IF NOT EXISTS members (
   exp_level INT DEFAULT 1,
   rank_current VARCHAR(30),
   rank_highest VARCHAR(30),
+  win_rate INT,
   brawlers_count INT DEFAULT 0,
   solo_victories INT DEFAULT 0,
   duo_victories INT DEFAULT 0,
@@ -18,6 +19,14 @@ CREATE TABLE IF NOT EXISTS members (
   is_active BOOLEAN DEFAULT true,
   last_updated TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
+
+-- Migration: Add win_rate column if it doesn't exist
+DO $$
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'members' AND column_name = 'win_rate') THEN
+    ALTER TABLE members ADD COLUMN win_rate INT;
+  END IF;
+END $$;
 
 -- Activity log table
 CREATE TABLE IF NOT EXISTS activity_log (
