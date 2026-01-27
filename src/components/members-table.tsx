@@ -58,13 +58,12 @@ export function MembersTable({ members }: MembersTableProps) {
           <TableHead>Player</TableHead>
           <TableHead>Role</TableHead>
           <TableHead className="text-right">Trophies</TableHead>
-          <TableHead className="text-right">Highest</TableHead>
+          <TableHead className="text-center">Win Rate</TableHead>
           <TableHead>Current Rank</TableHead>
           <TableHead>Best Rank</TableHead>
-          <TableHead className="text-center">Win Rate</TableHead>
-          <TableHead className="text-center">Activity</TableHead>
           <TableHead className="text-right">24h</TableHead>
           <TableHead className="text-right">7 Days</TableHead>
+          <TableHead className="text-center">Activity</TableHead>
         </TableRow>
       </TableHeader>
       <TableBody>
@@ -103,19 +102,6 @@ export function MembersTable({ members }: MembersTableProps) {
             <TableCell className="text-right font-medium">
               {formatNumber(member.trophies)}
             </TableCell>
-            <TableCell className="text-right text-muted-foreground">
-              {formatNumber(member.highest_trophies)}
-            </TableCell>
-            <TableCell>
-              <span className={getRankColor(member.rank_current || "Unranked")}>
-                {member.rank_current || "Unranked"}
-              </span>
-            </TableCell>
-            <TableCell>
-              <span className={getRankColor(member.rank_highest || "Unranked")}>
-                {member.rank_highest || "Unranked"}
-              </span>
-            </TableCell>
             <TableCell className="text-center">
               <span className={
                 member.win_rate != null && member.win_rate >= 60 
@@ -129,8 +115,15 @@ export function MembersTable({ members }: MembersTableProps) {
                 {member.win_rate != null ? `${member.win_rate}%` : "-"}
               </span>
             </TableCell>
-            <TableCell className="text-center text-lg">
-              {getActivityEmoji(member.is_active ? "active" : "inactive")}
+            <TableCell>
+              <span className={getRankColor(member.rank_current || "Unranked")}>
+                {member.rank_current || "Unranked"}
+              </span>
+            </TableCell>
+            <TableCell>
+              <span className={getRankColor(member.rank_highest || "Unranked")}>
+                {member.rank_highest || "Unranked"}
+              </span>
             </TableCell>
             <TableCell className="text-right">
               <span className={
@@ -157,6 +150,9 @@ export function MembersTable({ members }: MembersTableProps) {
                   ? (member.trophies_7d > 0 ? "+" : "") + formatNumber(member.trophies_7d) 
                   : "-"}
               </span>
+            </TableCell>
+            <TableCell className="text-center text-lg">
+              {getActivityEmoji(member.is_active ? "active" : "inactive")}
             </TableCell>
           </TableRow>
         ))}
