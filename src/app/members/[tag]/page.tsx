@@ -14,6 +14,7 @@ import {
   formatNumber,
   formatDate,
   formatDateTime,
+  formatRelativeTime,
   getActivityEmoji,
   getRankColor,
 } from "@/lib/utils";
@@ -343,7 +344,7 @@ export default function MemberDetailPage({ params }: PageProps) {
                       <div>
                         <p className="text-sm font-medium">Last Active</p>
                         <p className="text-sm text-muted-foreground">
-                          {lastBattleTime ? formatDateTime(lastBattleTime) : "No recent battles"}
+                          {lastBattleTime ? formatRelativeTime(lastBattleTime) : "No recent battles"}
                         </p>
                       </div>
                     </div>
