@@ -47,29 +47,76 @@ export async function POST(request: NextRequest) {
     const events = [];
     const historyUpdates = [];
 
-    for (const member of club.members) {
-      try {
-        // Get detailed player stats
-        const player = await getPlayer(member.tag);
-        
-        // Get real ranked data from RNT API
-        const rankedData = await getPlayerRankedData(member.tag);
-        
-        // Get win rate from battle log
-        const winRateData = await getPlayerWinRate(member.tag);
+    // Process members in parallel batches of 3 to avoid rate limits
+    // Brawl Stars API: ~10 req/sec, RNT API: unknown
+    // 3 members × 3 calls = 9 simultaneous requests (safe margin)
+    const BATCH_SIZE = 3;
+    const BATCH_DELAY_MS = 500; // Delay between batches
+    const memberBatches = [];
+    for (let i = 0; i < club.members.length; i += BATCH_SIZE) {
+      memberBatches.push(club.members.slice(i, i + BATCH_SIZE));
+    }
 
-        const existingMember = existingMemberMap.get(member.tag);
-        const trophyChange = existingMember
-          ? player.trophies - existingMember.trophies
-          : 0;
+    for (let batchIndex = 0; batchIndex < memberBatches.length; batchIndex++) {
+      const batch = memberBatches[batchIndex];
+      
+      // Add delay between batches (not before first batch)
+      if (batchIndex > 0) {
+        await new Promise((resolve) => setTimeout(resolve, BATCH_DELAY_MS));
+      }
+      
+      const batchResults = await Promise.all(
+        batch.map(async (member) => {
+          try {
+            // Run all 3 API calls in parallel for each member
+            const [player, rankedData, winRateData] = await Promise.all([
+              getPlayer(member.tag),
+              getPlayerRankedData(member.tag),
+              getPlayerWinRate(member.tag),
+            ]);
 
-        // Determine activity type
-        let activityType = "inactive";
-        if (Math.abs(trophyChange) >= 20) {
-          activityType = "active";
-        } else if (Math.abs(trophyChange) > 0) {
-          activityType = "minimal";
-        }
+            const existingMember = existingMemberMap.get(member.tag);
+            const trophyChange = existingMember
+              ? player.trophies - existingMember.trophies
+              : 0;
+
+            // Determine activity type
+            let activityType = "inactive";
+            if (Math.abs(trophyChange) >= 20) {
+              activityType = "active";
+            } else if (Math.abs(trophyChange) > 0) {
+              activityType = "minimal";
+            }
+
+            return {
+              member,
+              player,
+              rankedData,
+              winRateData,
+              trophyChange,
+              activityType,
+              success: true as const,
+            };
+          } catch (error) {
+            console.error(`Error processing member ${member.tag}:`, error);
+            return { member, success: false as const };
+          }
+        })
+      );
+
+      // Process successful results
+      for (const result of batchResults) {
+        if (!result.success) continue;
+
+        const { member, player, rankedData, winRateData, trophyChange, activityType } = result as {
+          member: typeof batch[0];
+          player: Awaited<ReturnType<typeof getPlayer>>;
+          rankedData: Awaited<ReturnType<typeof getPlayerRankedData>>;
+          winRateData: Awaited<ReturnType<typeof getPlayerWinRate>>;
+          trophyChange: number;
+          activityType: string;
+          success: true;
+        };
 
         // Prepare member update
         memberUpdates.push({
@@ -148,11 +195,6 @@ export async function POST(request: NextRequest) {
             });
           }
         }
-
-        // Small delay to avoid rate limiting
-        await new Promise((resolve) => setTimeout(resolve, 100));
-      } catch (playerError) {
-        console.error(`Error fetching player ${member.tag}:`, playerError);
       }
     }
 
