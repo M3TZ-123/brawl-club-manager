@@ -132,55 +132,100 @@ export async function getAllBrawlers(): Promise<{ items: { id: number; name: str
   return response.data;
 }
 
-// Helper to get ranked info from player (this is approximated from trophies/brawlers)
+// RNT API for ranked data
+const RNT_API_URL = "https://api.rnt.dev";
+
+export interface RntPlayerResponse {
+  ok: boolean;
+  result: {
+    stats: {
+      id: number;
+      name: string;
+      value: number;
+    }[];
+  };
+}
+
+// Ranked tier mapping based on RNT API
+// Rank 1-3: Bronze I, II, III
+// Rank 4-6: Silver I, II, III
+// Rank 7-9: Gold I, II, III
+// Rank 10-12: Diamond I, II, III
+// Rank 13-15: Mythic I, II, III
+// Rank 16-18: Legendary I, II, III
+// Rank 19: Masters
+const LEAGUE_NAMES = ['Bronze', 'Silver', 'Gold', 'Diamond', 'Mythic', 'Legendary', 'Masters'] as const;
+const LEAGUE_SUBS = ['I', 'II', 'III'] as const;
+
+export function formatLeagueRank(rankTier: number): string {
+  if (rankTier <= 0) return "Unranked";
+  if (rankTier >= 19) return "Masters";
+  
+  const leagueIndex = Math.floor((rankTier - 1) / 3);
+  const subIndex = (rankTier - 1) % 3;
+  
+  return `${LEAGUE_NAMES[leagueIndex]} ${LEAGUE_SUBS[subIndex]}`;
+}
+
+// Fetch real ranked data from RNT API
+export async function getPlayerRankedData(playerTag: string): Promise<{
+  currentRank: string;
+  highestRank: string;
+  currentPoints: number;
+  highestPoints: number;
+}> {
+  try {
+    // Remove # from tag if present
+    const cleanTag = playerTag.replace('#', '');
+    const response = await axios.get(`${RNT_API_URL}/profile?tag=${cleanTag}`, {
+      timeout: 5000,
+    });
+    
+    if (!response.data?.ok || !response.data?.result?.stats) {
+      return {
+        currentRank: "Unranked",
+        highestRank: "Unranked",
+        currentPoints: 0,
+        highestPoints: 0,
+      };
+    }
+    
+    const stats = response.data.result.stats;
+    
+    // Find ranked stats by ID:
+    // 23: CurrentRanked (tier)
+    // 24: CurrentRankedPoints
+    // 22: HighestRanked (tier)
+    // 25: HighestRankedPoints
+    const currentRankTier = stats.find((s: { id: number }) => s.id === 23)?.value || 0;
+    const currentPoints = stats.find((s: { id: number }) => s.id === 24)?.value || 0;
+    const highestRankTier = stats.find((s: { id: number }) => s.id === 22)?.value || 0;
+    const highestPoints = stats.find((s: { id: number }) => s.id === 25)?.value || 0;
+    
+    return {
+      currentRank: formatLeagueRank(currentRankTier),
+      highestRank: formatLeagueRank(highestRankTier),
+      currentPoints,
+      highestPoints,
+    };
+  } catch (error) {
+    console.error(`Error fetching ranked data for ${playerTag}:`, error);
+    return {
+      currentRank: "Unranked",
+      highestRank: "Unranked",
+      currentPoints: 0,
+      highestPoints: 0,
+    };
+  }
+}
+
+// Legacy function for backwards compatibility
 export function estimateRankedInfo(player: BrawlStarsPlayer): {
   currentRank: string;
   highestRank: string;
 } {
-  // This is a simplified estimation - actual ranked data would need club league API
-  const totalTrophies = player.trophies;
-  const avgBrawlerTrophies = totalTrophies / Math.max(player.brawlers.length, 1);
-  
-  let currentRank = "Bronze";
-  let highestRank = "Bronze";
-  
-  if (avgBrawlerTrophies >= 900) {
-    currentRank = "Masters";
-    highestRank = "Masters";
-  } else if (avgBrawlerTrophies >= 750) {
-    currentRank = "Legendary";
-    highestRank = "Legendary";
-  } else if (avgBrawlerTrophies >= 600) {
-    currentRank = "Mythic";
-    highestRank = "Mythic";
-  } else if (avgBrawlerTrophies >= 500) {
-    currentRank = "Diamond";
-    highestRank = "Diamond";
-  } else if (avgBrawlerTrophies >= 400) {
-    currentRank = "Gold";
-    highestRank = "Gold";
-  } else if (avgBrawlerTrophies >= 300) {
-    currentRank = "Silver";
-    highestRank = "Silver";
-  }
-  
-  // Check highest trophies for highest rank
-  const avgHighestTrophies = player.highestTrophies / Math.max(player.brawlers.length, 1);
-  if (avgHighestTrophies >= 900) {
-    highestRank = "Masters";
-  } else if (avgHighestTrophies >= 750) {
-    highestRank = "Legendary";
-  } else if (avgHighestTrophies >= 600) {
-    highestRank = "Mythic";
-  } else if (avgHighestTrophies >= 500) {
-    highestRank = "Diamond";
-  } else if (avgHighestTrophies >= 400) {
-    highestRank = "Gold";
-  } else if (avgHighestTrophies >= 300) {
-    highestRank = "Silver";
-  }
-  
-  return { currentRank, highestRank };
+  // This is now just a fallback - use getPlayerRankedData for real data
+  return { currentRank: "Unranked", highestRank: "Unranked" };
 }
 
 export { brawlApi };

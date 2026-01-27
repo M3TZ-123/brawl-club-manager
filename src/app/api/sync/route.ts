@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getClub, getPlayer, setApiKey, estimateRankedInfo } from "@/lib/brawl-api";
+import { getClub, getPlayer, setApiKey, getPlayerRankedData } from "@/lib/brawl-api";
 import { supabase } from "@/lib/supabase";
 
 export async function POST(request: NextRequest) {
@@ -51,7 +51,9 @@ export async function POST(request: NextRequest) {
       try {
         // Get detailed player stats
         const player = await getPlayer(member.tag);
-        const rankInfo = estimateRankedInfo(player);
+        
+        // Get real ranked data from RNT API
+        const rankedData = await getPlayerRankedData(member.tag);
 
         const existingMember = existingMemberMap.get(member.tag);
         const trophyChange = existingMember
@@ -74,8 +76,8 @@ export async function POST(request: NextRequest) {
           trophies: player.trophies,
           highest_trophies: player.highestTrophies,
           exp_level: player.expLevel,
-          rank_current: rankInfo.currentRank,
-          rank_highest: rankInfo.highestRank,
+          rank_current: rankedData.currentRank,
+          rank_highest: rankedData.highestRank,
           brawlers_count: player.brawlers.length,
           solo_victories: player.soloVictories,
           duo_victories: player.duoVictories,

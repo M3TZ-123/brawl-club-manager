@@ -69,11 +69,13 @@ export function getActivityEmoji(status: "active" | "minimal" | "inactive"): str
 
 export function getRankColor(rank: string): string {
   const lowerRank = rank.toLowerCase();
+  if (lowerRank.includes("unranked")) return "text-muted-foreground";
   if (lowerRank.includes("masters") || lowerRank.includes("pro")) return "text-purple-500";
   if (lowerRank.includes("legendary")) return "text-yellow-500";
   if (lowerRank.includes("mythic")) return "text-red-500";
   if (lowerRank.includes("diamond")) return "text-cyan-500";
   if (lowerRank.includes("gold")) return "text-yellow-400";
   if (lowerRank.includes("silver")) return "text-gray-400";
-  return "text-amber-700";
+  if (lowerRank.includes("bronze")) return "text-amber-700";
+  return "text-muted-foreground";
 }

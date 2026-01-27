@@ -59,7 +59,8 @@ export function MembersTable({ members }: MembersTableProps) {
           <TableHead>Role</TableHead>
           <TableHead className="text-right">Trophies</TableHead>
           <TableHead className="text-right">Highest</TableHead>
-          <TableHead>Rank</TableHead>
+          <TableHead>Current Rank</TableHead>
+          <TableHead>Best Rank</TableHead>
           <TableHead className="text-center">Activity</TableHead>
           <TableHead className="text-right">24h</TableHead>
           <TableHead className="text-right">7 Days</TableHead>
@@ -105,8 +106,13 @@ export function MembersTable({ members }: MembersTableProps) {
               {formatNumber(member.highest_trophies)}
             </TableCell>
             <TableCell>
-              <span className={getRankColor(member.rank_current || "Bronze")}>
+              <span className={getRankColor(member.rank_current || "Unranked")}>
                 {member.rank_current || "Unranked"}
+              </span>
+            </TableCell>
+            <TableCell>
+              <span className={getRankColor(member.rank_highest || "Unranked")}>
+                {member.rank_highest || "Unranked"}
               </span>
             </TableCell>
             <TableCell className="text-center text-lg">
