@@ -10,14 +10,9 @@ export async function GET(
     const { tag } = await params;
     const playerTag = decodeURIComponent(tag);
 
-    // Get API key from settings or environment
-    const { data: apiKeySetting } = await supabase
-      .from("settings")
-      .select("value")
-      .eq("key", "api_key")
-      .single();
-    
-    const apiKey = apiKeySetting?.value || process.env.BRAWL_API_KEY;
+    // Get API key from query params or environment
+    const { searchParams } = new URL(request.url);
+    const apiKey = searchParams.get('apiKey') || process.env.BRAWL_API_KEY;
     console.log(`[Member API] API key found: ${apiKey ? 'Yes' : 'No'}`);
     if (apiKey) {
       setApiKey(apiKey);

@@ -49,11 +49,12 @@ export default function MemberDetailPage({ params }: PageProps) {
 
   useEffect(() => {
     loadMemberData();
-  }, [playerTag]);
+  }, [playerTag, apiKey]);
 
   const loadMemberData = async () => {
     try {
-      const response = await fetch(`/api/members/${encodeURIComponent(playerTag)}`);
+      const url = `/api/members/${encodeURIComponent(playerTag)}${apiKey ? `?apiKey=${encodeURIComponent(apiKey)}` : ''}`;
+      const response = await fetch(url);
       if (response.ok) {
         const data = await response.json();
         setMember(data.member);
