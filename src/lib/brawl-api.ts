@@ -300,14 +300,24 @@ export async function getLastBattleTime(playerTag: string): Promise<string | nul
     
     // The first battle in the list is the most recent
     const lastBattle = battleLog.items[0];
-    console.log(`[getLastBattleTime] Raw battleTime:`, lastBattle?.battleTime);
+    const bt = lastBattle?.battleTime;
+    console.log(`[getLastBattleTime] Raw battleTime:`, bt, `(length: ${bt?.length})`);
     
-    if (lastBattle?.battleTime) {
-      // Battle time format: "20260127T123456.000Z"
-      // Convert to ISO format: "2026-01-27T12:34:56.000Z"
-      const bt = lastBattle.battleTime;
-      const isoDate = `${bt.slice(0, 4)}-${bt.slice(4, 6)}-${bt.slice(6, 8)}T${bt.slice(9, 11)}:${bt.slice(11, 13)}:${bt.slice(13, 15)}.000Z`;
+    if (bt) {
+      // Battle time format from API: "20260127T203456.000Z" (length 20)
+      // We need to convert to ISO: "2026-01-27T20:34:56.000Z"
+      // The T is at position 8
+      const year = bt.slice(0, 4);
+      const month = bt.slice(4, 6);
+      const day = bt.slice(6, 8);
+      const hour = bt.slice(9, 11);
+      const min = bt.slice(11, 13);
+      const sec = bt.slice(13, 15);
+      
+      const isoDate = `${year}-${month}-${day}T${hour}:${min}:${sec}.000Z`;
+      console.log(`[getLastBattleTime] Parsed: year=${year}, month=${month}, day=${day}, hour=${hour}, min=${min}, sec=${sec}`);
       console.log(`[getLastBattleTime] Converted ISO date:`, isoDate);
+      console.log(`[getLastBattleTime] As Date object:`, new Date(isoDate).toISOString());
       return isoDate;
     }
     
