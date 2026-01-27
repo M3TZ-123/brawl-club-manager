@@ -164,7 +164,7 @@ export function formatLeagueRank(rankTier: number): string {
   if (rankTier >= 19) {
     // Masters I, II, III (ranks 19, 20, 21)
     const subIndex = rankTier - 19;
-    return subIndex === 0 ? "Masters" : `Masters ${LEAGUE_SUBS[subIndex]}`;
+    return `Masters ${LEAGUE_SUBS[subIndex]}`;
   }
   
   const leagueIndex = Math.floor((rankTier - 1) / 3);
