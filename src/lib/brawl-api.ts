@@ -289,19 +289,25 @@ export async function getPlayerWinRate(playerTag: string): Promise<{
 // Get last battle time from battle log
 export async function getLastBattleTime(playerTag: string): Promise<string | null> {
   try {
+    console.log(`[getLastBattleTime] Fetching for ${playerTag}`);
     const battleLog = await getPlayerBattleLog(playerTag);
+    console.log(`[getLastBattleTime] Battle log items:`, battleLog?.items?.length || 0);
     
     if (!battleLog?.items || battleLog.items.length === 0) {
+      console.log(`[getLastBattleTime] No battles found`);
       return null;
     }
     
     // The first battle in the list is the most recent
     const lastBattle = battleLog.items[0];
+    console.log(`[getLastBattleTime] Raw battleTime:`, lastBattle?.battleTime);
+    
     if (lastBattle?.battleTime) {
       // Battle time format: "20260127T123456.000Z"
       // Convert to ISO format: "2026-01-27T12:34:56.000Z"
       const bt = lastBattle.battleTime;
       const isoDate = `${bt.slice(0, 4)}-${bt.slice(4, 6)}-${bt.slice(6, 8)}T${bt.slice(9, 11)}:${bt.slice(11, 13)}:${bt.slice(13, 15)}.000Z`;
+      console.log(`[getLastBattleTime] Converted ISO date:`, isoDate);
       return isoDate;
     }
     

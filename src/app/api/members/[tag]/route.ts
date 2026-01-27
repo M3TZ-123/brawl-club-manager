@@ -18,6 +18,7 @@ export async function GET(
       .single();
     
     const apiKey = apiKeySetting?.value || process.env.BRAWL_API_KEY;
+    console.log(`[Member API] API key found: ${apiKey ? 'Yes' : 'No'}`);
     if (apiKey) {
       setApiKey(apiKey);
     }
