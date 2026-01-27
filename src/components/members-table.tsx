@@ -113,13 +113,13 @@ export function MembersTable({ members }: MembersTableProps) {
               {getActivityEmoji(member.is_active ? "active" : "inactive")}
             </TableCell>
             <TableCell className="text-right">
-              <span className={member.trophies_24h && member.trophies_24h > 0 ? "text-green-500" : member.trophies_24h && member.trophies_24h < 0 ? "text-red-500" : ""}>
-                {member.trophies_24h !== undefined ? (member.trophies_24h > 0 ? "+" : "") + formatNumber(member.trophies_24h) : "-"}
+              <span className={member.trophies_24h !== null && member.trophies_24h > 0 ? "text-green-500" : member.trophies_24h !== null && member.trophies_24h < 0 ? "text-red-500" : "text-muted-foreground"}>
+                {member.trophies_24h !== null && member.trophies_24h !== undefined ? (member.trophies_24h > 0 ? "+" : "") + formatNumber(member.trophies_24h) : "-"}
               </span>
             </TableCell>
             <TableCell className="text-right">
-              <span className={member.trophies_7d && member.trophies_7d > 0 ? "text-green-500" : member.trophies_7d && member.trophies_7d < 0 ? "text-red-500" : ""}>
-                {member.trophies_7d !== undefined ? (member.trophies_7d > 0 ? "+" : "") + formatNumber(member.trophies_7d) : "-"}
+              <span className={member.trophies_7d !== null && member.trophies_7d > 0 ? "text-green-500" : member.trophies_7d !== null && member.trophies_7d < 0 ? "text-red-500" : "text-muted-foreground"}>
+                {member.trophies_7d !== null && member.trophies_7d !== undefined ? (member.trophies_7d > 0 ? "+" : "") + formatNumber(member.trophies_7d) : "-"}
               </span>
             </TableCell>
           </TableRow>

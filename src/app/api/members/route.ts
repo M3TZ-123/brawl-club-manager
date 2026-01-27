@@ -40,15 +40,15 @@ export async function GET() {
       // Find the first log from 7 days ago
       const firstLog = playerLogs[0];
 
-      // Calculate 24h gain (from midnight today)
+      // Calculate 24h gain (from midnight today) - null if no data
       const trophies24h = firstTodayLog
         ? member.trophies - firstTodayLog.trophies
-        : 0;
+        : null;
 
-      // Calculate 7-day gain
+      // Calculate 7-day gain - null if no data
       const trophies7d = firstLog
         ? member.trophies - firstLog.trophies
-        : 0;
+        : null;
 
       return {
         ...member,
