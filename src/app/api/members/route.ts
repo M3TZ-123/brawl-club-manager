@@ -15,13 +15,10 @@ export async function GET() {
     const todayMidnight = new Date(now);
     todayMidnight.setUTCHours(0, 0, 0, 0);
     
-    const yesterdayMidnight = new Date(todayMidnight);
-    yesterdayMidnight.setDate(yesterdayMidnight.getDate() - 1);
-    
     const sevenDaysAgo = new Date(todayMidnight);
     sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
 
-    // Get activity logs for trophy calculations (get older data too)
+    // Get all activity logs for trophy calculations
     const { data: activityLogs } = await supabase
       .from("activity_log")
       .select("player_tag, trophies, recorded_at")
@@ -33,27 +30,37 @@ export async function GET() {
         (log) => log.player_tag === member.player_tag
       ) || [];
 
-      // For 24h: Find the LAST log from BEFORE today (yesterday's last sync)
-      // This gives us the baseline at end of yesterday / start of today
-      const logsBeforeToday = playerLogs.filter(
-        (log) => new Date(log.recorded_at) < todayMidnight
+      if (playerLogs.length === 0) {
+        return {
+          ...member,
+          trophies_24h: null,
+          trophies_7d: null,
+        };
+      }
+
+      // For 24h: Use first log from today as baseline
+      const todayLogs = playerLogs.filter(
+        (log) => new Date(log.recorded_at) >= todayMidnight
       );
-      const lastLogBeforeToday = logsBeforeToday[logsBeforeToday.length - 1];
+      const firstTodayLog = todayLogs[0];
       
-      // For 7 days: Find the first log from 7+ days ago
+      // For 7 days: Use oldest log (or log from 7 days ago if available)
       const logsFrom7DaysAgo = playerLogs.filter(
         (log) => new Date(log.recorded_at) <= sevenDaysAgo
       );
-      const baselineLog7d = logsFrom7DaysAgo[logsFrom7DaysAgo.length - 1];
+      // Use the log from 7 days ago if available, otherwise use the oldest log
+      const baseline7d = logsFrom7DaysAgo.length > 0 
+        ? logsFrom7DaysAgo[logsFrom7DaysAgo.length - 1]
+        : playerLogs[0];
 
-      // Calculate 24h gain (from last night / start of today) - null if no yesterday data
-      const trophies24h = lastLogBeforeToday
-        ? member.trophies - lastLogBeforeToday.trophies
+      // Calculate 24h gain (from first sync today)
+      const trophies24h = firstTodayLog
+        ? member.trophies - firstTodayLog.trophies
         : null;
 
-      // Calculate 7-day gain - null if no data from 7 days ago
-      const trophies7d = baselineLog7d
-        ? member.trophies - baselineLog7d.trophies
+      // Calculate 7-day gain (from 7 days ago or oldest available)
+      const trophies7d = baseline7d
+        ? member.trophies - baseline7d.trophies
         : null;
 
       return {
