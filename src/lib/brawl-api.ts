@@ -92,6 +92,7 @@ export interface BrawlStarsBattle {
     mode: string;
     type: string;
     result?: string;
+    rank?: number;
     duration?: number;
     trophyChange?: number;
     starPlayer?: {
@@ -234,6 +235,7 @@ export async function getPlayerRankedData(playerTag: string): Promise<{
 }
 
 // Calculate win rate from battle log
+// Counts ALL battles including Map Maker, special events, and friendly games
 export async function getPlayerWinRate(playerTag: string): Promise<{
   winRate: number | null;
   totalBattles: number;
@@ -250,12 +252,25 @@ export async function getPlayerWinRate(playerTag: string): Promise<{
     let validBattles = 0;
     
     for (const battle of battleLog.items) {
-      // Skip battles without a result (like friendly games)
-      if (!battle.battle?.result) continue;
+      const battleData = battle.battle;
+      if (!battleData) continue;
       
-      validBattles++;
-      if (battle.battle.result === "victory") {
-        wins++;
+      // Count any battle with a result (3v3, Ranked, Map Maker, Friendly, etc.)
+      if (battleData.result) {
+        validBattles++;
+        if (battleData.result === "victory") {
+          wins++;
+        }
+        continue;
+      }
+      
+      // Count Showdown modes (have rank instead of result)
+      if (battleData.rank != null) {
+        validBattles++;
+        // Top 4 in Solo (out of 10) or Top 2 in Duo (out of 5) = win
+        if (battleData.rank <= 4) {
+          wins++;
+        }
       }
     }
     
