@@ -153,13 +153,19 @@ export interface RntPlayerResponse {
 // Rank 10-12: Diamond I, II, III
 // Rank 13-15: Mythic I, II, III
 // Rank 16-18: Legendary I, II, III
-// Rank 19: Masters
-const LEAGUE_NAMES = ['Bronze', 'Silver', 'Gold', 'Diamond', 'Mythic', 'Legendary', 'Masters'] as const;
+// Rank 19-21: Masters I, II, III
+// Rank 22+: Pro
+const LEAGUE_NAMES = ['Bronze', 'Silver', 'Gold', 'Diamond', 'Mythic', 'Legendary', 'Masters', 'Pro'] as const;
 const LEAGUE_SUBS = ['I', 'II', 'III'] as const;
 
 export function formatLeagueRank(rankTier: number): string {
   if (rankTier <= 0) return "Unranked";
-  if (rankTier >= 19) return "Masters";
+  if (rankTier >= 22) return "Pro";
+  if (rankTier >= 19) {
+    // Masters I, II, III (ranks 19, 20, 21)
+    const subIndex = rankTier - 19;
+    return subIndex === 0 ? "Masters" : `Masters ${LEAGUE_SUBS[subIndex]}`;
+  }
   
   const leagueIndex = Math.floor((rankTier - 1) / 3);
   const subIndex = (rankTier - 1) % 3;
