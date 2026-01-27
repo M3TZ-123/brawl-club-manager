@@ -1,8 +1,8 @@
 import axios from "axios";
 import { encodeTag } from "./utils";
 
-// Use RoyaleAPI proxy to bypass IP restrictions on Vercel
-const BRAWL_API_BASE = "https://bsproxy.royaleapi.dev/v1";
+// Use Brawlify proxy to bypass IP restrictions on Vercel
+const BRAWL_API_BASE = "https://proxy.brawlify.com/v1";
 
 // Create axios instance with default config
 const brawlApi = axios.create({
