@@ -19,7 +19,8 @@ import {
   Database, 
   AlertTriangle,
   CheckCircle,
-  ExternalLink
+  ExternalLink,
+  RotateCcw
 } from "lucide-react";
 
 export default function SettingsPage() {
@@ -88,6 +89,28 @@ export default function SettingsPage() {
     if (confirm("Are you sure you want to clear all local data? This cannot be undone.")) {
       localStorage.clear();
       window.location.reload();
+    }
+  };
+
+  const [resetStatus, setResetStatus] = useState<"idle" | "resetting" | "done">("idle");
+
+  const handleResetTracking = async () => {
+    if (confirm("Are you sure you want to reset join/leave tracking? All existing events will be cleared and tracking will start fresh from today.")) {
+      setResetStatus("resetting");
+      try {
+        const response = await fetch("/api/events", { method: "DELETE" });
+        if (response.ok) {
+          setResetStatus("done");
+          setTimeout(() => setResetStatus("idle"), 3000);
+        } else {
+          alert("Failed to reset tracking. Please try again.");
+          setResetStatus("idle");
+        }
+      } catch (error) {
+        console.error("Error resetting tracking:", error);
+        alert("Failed to reset tracking. Please try again.");
+        setResetStatus("idle");
+      }
     }
   };
 
@@ -390,6 +413,40 @@ export default function SettingsPage() {
                         <li>• Member data synced to Supabase database</li>
                         <li>• Activity logs retained for 30 days</li>
                       </ul>
+                    </div>
+
+                    {/* Reset Join/Leave Tracking */}
+                    <div className="border-t pt-4">
+                      <div className="flex items-start gap-3 p-4 rounded-lg bg-blue-500/10 border border-blue-500/20">
+                        <RotateCcw className="h-5 w-5 text-blue-500 mt-0.5" />
+                        <div>
+                          <h4 className="font-medium text-blue-500">Reset Join/Leave Tracking</h4>
+                          <p className="text-sm text-muted-foreground mb-3">
+                            Clear all existing join/leave events and start tracking fresh from today.
+                            Current members will be set as the baseline - only new joins and leaves will be recorded.
+                          </p>
+                          <Button 
+                            variant="outline" 
+                            onClick={handleResetTracking}
+                            disabled={resetStatus === "resetting"}
+                            className="border-blue-500/50 hover:bg-blue-500/10"
+                          >
+                            {resetStatus === "resetting" ? (
+                              "Resetting..."
+                            ) : resetStatus === "done" ? (
+                              <>
+                                <CheckCircle className="h-4 w-4 mr-2" />
+                                Tracking Reset!
+                              </>
+                            ) : (
+                              <>
+                                <RotateCcw className="h-4 w-4 mr-2" />
+                                Reset Tracking from Today
+                              </>
+                            )}
+                          </Button>
+                        </div>
+                      </div>
                     </div>
 
                     <div className="border-t pt-4">

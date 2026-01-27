@@ -8,6 +8,7 @@ export async function POST(request: NextRequest) {
     const body = await request.json().catch(() => ({}));
     const clubTag = body.clubTag || process.env.CLUB_TAG;
     const apiKey = body.apiKey || process.env.BRAWL_API_KEY;
+    const isInitialSetup = body.initialSetup === true; // Flag for first-time setup
 
     if (!clubTag || !apiKey) {
       return NextResponse.json(
@@ -103,6 +104,7 @@ export async function POST(request: NextRequest) {
               times_joined: history.times_joined + 1,
               is_current_member: true,
             });
+            // Only create join event if not initial setup
             events.push({
               event_type: "join",
               player_tag: member.tag,
@@ -117,7 +119,9 @@ export async function POST(request: NextRequest) {
             });
           }
         } else {
-          // New member
+          // New member - check if this is initial setup or a real new join
+          const isFirstSync = memberHistory?.length === 0 || isInitialSetup;
+          
           historyUpdates.push({
             player_tag: member.tag,
             player_name: member.name,
@@ -127,11 +131,16 @@ export async function POST(request: NextRequest) {
             times_left: 0,
             is_current_member: true,
           });
-          events.push({
-            event_type: "join",
-            player_tag: member.tag,
-            player_name: member.name,
-          });
+          
+          // Only create join event if this is NOT the initial setup
+          // This way existing members don't get a "join" event on first sync
+          if (!isFirstSync) {
+            events.push({
+              event_type: "join",
+              player_tag: member.tag,
+              player_name: member.name,
+            });
+          }
         }
 
         // Small delay to avoid rate limiting
