@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { supabase } from "@/lib/supabase";
-import { getPlayer, setApiKey, estimateRankedInfo } from "@/lib/brawl-api";
+import { getPlayer, setApiKey, estimateRankedInfo, getLastBattleTime } from "@/lib/brawl-api";
 
 export async function GET(
   request: NextRequest,
@@ -9,6 +9,18 @@ export async function GET(
   try {
     const { tag } = await params;
     const playerTag = decodeURIComponent(tag);
+
+    // Get API key from settings or environment
+    const { data: apiKeySetting } = await supabase
+      .from("settings")
+      .select("value")
+      .eq("key", "api_key")
+      .single();
+    
+    const apiKey = apiKeySetting?.value || process.env.BRAWL_API_KEY;
+    if (apiKey) {
+      setApiKey(apiKey);
+    }
 
     // Get member from database
     const { data: member, error } = await supabase
@@ -39,10 +51,14 @@ export async function GET(
       .eq("player_tag", playerTag)
       .single();
 
+    // Get last battle time from API
+    const lastBattleTime = await getLastBattleTime(playerTag);
+
     return NextResponse.json({
       member,
       activityHistory: activityHistory || [],
       memberHistory,
+      lastBattleTime,
     });
   } catch (error) {
     console.error("Error fetching member:", error);

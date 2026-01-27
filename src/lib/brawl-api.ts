@@ -286,6 +286,32 @@ export async function getPlayerWinRate(playerTag: string): Promise<{
   }
 }
 
+// Get last battle time from battle log
+export async function getLastBattleTime(playerTag: string): Promise<string | null> {
+  try {
+    const battleLog = await getPlayerBattleLog(playerTag);
+    
+    if (!battleLog?.items || battleLog.items.length === 0) {
+      return null;
+    }
+    
+    // The first battle in the list is the most recent
+    const lastBattle = battleLog.items[0];
+    if (lastBattle?.battleTime) {
+      // Battle time format: "20260127T123456.000Z"
+      // Convert to ISO format: "2026-01-27T12:34:56.000Z"
+      const bt = lastBattle.battleTime;
+      const isoDate = `${bt.slice(0, 4)}-${bt.slice(4, 6)}-${bt.slice(6, 8)}T${bt.slice(9, 11)}:${bt.slice(11, 13)}:${bt.slice(13, 15)}.000Z`;
+      return isoDate;
+    }
+    
+    return null;
+  } catch (error) {
+    console.error(`Error fetching last battle time for ${playerTag}:`, error);
+    return null;
+  }
+}
+
 // Legacy function for backwards compatibility
 export function estimateRankedInfo(player: BrawlStarsPlayer): {
   currentRank: string;

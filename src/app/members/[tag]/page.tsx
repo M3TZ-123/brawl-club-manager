@@ -41,6 +41,7 @@ export default function MemberDetailPage({ params }: PageProps) {
   const [member, setMember] = useState<Member | null>(null);
   const [activityHistory, setActivityHistory] = useState<ActivityLog[]>([]);
   const [memberHistory, setMemberHistory] = useState<MemberHistory | null>(null);
+  const [lastBattleTime, setLastBattleTime] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [isRefreshing, setIsRefreshing] = useState(false);
 
@@ -58,6 +59,7 @@ export default function MemberDetailPage({ params }: PageProps) {
         setMember(data.member);
         setActivityHistory(data.activityHistory || []);
         setMemberHistory(data.memberHistory);
+        setLastBattleTime(data.lastBattleTime || null);
       }
     } catch (error) {
       console.error("Error loading member:", error);
@@ -340,7 +342,7 @@ export default function MemberDetailPage({ params }: PageProps) {
                       <div>
                         <p className="text-sm font-medium">Last Active</p>
                         <p className="text-sm text-muted-foreground">
-                          {formatDateTime(memberHistory.last_seen)}
+                          {lastBattleTime ? formatDateTime(lastBattleTime) : "No recent battles"}
                         </p>
                       </div>
                     </div>
