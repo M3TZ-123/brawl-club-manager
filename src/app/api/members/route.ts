@@ -10,7 +10,54 @@ export async function GET() {
 
     if (error) throw error;
 
-    return NextResponse.json({ members: members || [] });
+    // Calculate trophy gains for each member
+    const now = new Date();
+    const todayMidnight = new Date(now);
+    todayMidnight.setHours(0, 0, 0, 0);
+    
+    const sevenDaysAgo = new Date(todayMidnight);
+    sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
+
+    // Get activity logs for trophy calculations
+    const { data: activityLogs } = await supabase
+      .from("activity_log")
+      .select("player_tag, trophies, recorded_at")
+      .gte("recorded_at", sevenDaysAgo.toISOString())
+      .order("recorded_at", { ascending: true });
+
+    // Calculate gains for each member
+    const membersWithGains = (members || []).map((member) => {
+      const playerLogs = activityLogs?.filter(
+        (log) => log.player_tag === member.player_tag
+      ) || [];
+
+      // Find the first log from today (after midnight)
+      const todayLogs = playerLogs.filter(
+        (log) => new Date(log.recorded_at) >= todayMidnight
+      );
+      const firstTodayLog = todayLogs[0];
+      
+      // Find the first log from 7 days ago
+      const firstLog = playerLogs[0];
+
+      // Calculate 24h gain (from midnight today)
+      const trophies24h = firstTodayLog
+        ? member.trophies - firstTodayLog.trophies
+        : 0;
+
+      // Calculate 7-day gain
+      const trophies7d = firstLog
+        ? member.trophies - firstLog.trophies
+        : 0;
+
+      return {
+        ...member,
+        trophies_24h: trophies24h,
+        trophies_7d: trophies7d,
+      };
+    });
+
+    return NextResponse.json({ members: membersWithGains });
   } catch (error) {
     console.error("Error fetching members:", error);
     return NextResponse.json(

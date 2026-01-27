@@ -15,8 +15,13 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { Copy, Check } from "lucide-react";
 
+interface MemberWithGains extends Member {
+  trophies_24h?: number;
+  trophies_7d?: number;
+}
+
 interface MembersTableProps {
-  members: Member[];
+  members: MemberWithGains[];
 }
 
 export function MembersTable({ members }: MembersTableProps) {
@@ -56,7 +61,8 @@ export function MembersTable({ members }: MembersTableProps) {
           <TableHead className="text-right">Highest</TableHead>
           <TableHead>Rank</TableHead>
           <TableHead className="text-center">Activity</TableHead>
-          <TableHead className="text-right">3v3 Wins</TableHead>
+          <TableHead className="text-right">24h</TableHead>
+          <TableHead className="text-right">7 Days</TableHead>
         </TableRow>
       </TableHeader>
       <TableBody>
@@ -107,7 +113,14 @@ export function MembersTable({ members }: MembersTableProps) {
               {getActivityEmoji(member.is_active ? "active" : "inactive")}
             </TableCell>
             <TableCell className="text-right">
-              {formatNumber(member.trio_victories)}
+              <span className={member.trophies_24h && member.trophies_24h > 0 ? "text-green-500" : member.trophies_24h && member.trophies_24h < 0 ? "text-red-500" : ""}>
+                {member.trophies_24h !== undefined ? (member.trophies_24h > 0 ? "+" : "") + formatNumber(member.trophies_24h) : "-"}
+              </span>
+            </TableCell>
+            <TableCell className="text-right">
+              <span className={member.trophies_7d && member.trophies_7d > 0 ? "text-green-500" : member.trophies_7d && member.trophies_7d < 0 ? "text-red-500" : ""}>
+                {member.trophies_7d !== undefined ? (member.trophies_7d > 0 ? "+" : "") + formatNumber(member.trophies_7d) : "-"}
+              </span>
             </TableCell>
           </TableRow>
         ))}
