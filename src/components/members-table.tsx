@@ -58,6 +58,7 @@ export function MembersTable({ members }: MembersTableProps) {
           <TableHead>Player</TableHead>
           <TableHead>Role</TableHead>
           <TableHead className="text-right">Trophies</TableHead>
+          <TableHead className="text-right">Highest</TableHead>
           <TableHead className="text-center">Win Rate</TableHead>
           <TableHead>Current Rank</TableHead>
           <TableHead>Best Rank</TableHead>
@@ -101,6 +102,9 @@ export function MembersTable({ members }: MembersTableProps) {
             </TableCell>
             <TableCell className="text-right font-medium">
               {formatNumber(member.trophies)}
+            </TableCell>
+            <TableCell className="text-right text-muted-foreground">
+              {formatNumber(member.highest_trophies)}
             </TableCell>
             <TableCell className="text-center">
               <span className={
