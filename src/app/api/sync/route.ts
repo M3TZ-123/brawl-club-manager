@@ -34,11 +34,12 @@ export async function POST(request: NextRequest) {
   try {
     // Get settings from request body
     const body = await request.json().catch(() => ({}));
-    return syncClubData(body.clubTag, body.apiKey, body.initialSetup === true);
+    return await syncClubData(body.clubTag, body.apiKey, body.initialSetup === true);
   } catch (error) {
-    console.error("Sync error:", error);
+    console.error("POST sync error:", error);
+    const errorMessage = error instanceof Error ? error.message : "Unknown error";
     return NextResponse.json(
-      { error: "Failed to sync data" },
+      { error: "Failed to sync data", message: errorMessage },
       { status: 500 }
     );
   }
