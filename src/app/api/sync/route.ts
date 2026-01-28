@@ -2,17 +2,21 @@ import { NextRequest, NextResponse } from "next/server";
 import { getClub, getPlayer, setApiKey, getPlayerRankedData, getPlayerWinRate } from "@/lib/brawl-api";
 import { supabase } from "@/lib/supabase";
 
-// GET handler for Vercel Cron Jobs
+// GET handler for Vercel Cron Jobs and GitHub Actions
 export async function GET(request: NextRequest) {
-  // Verify this is a cron request (optional security)
+  // Optional: Verify cron secret if configured
   const authHeader = request.headers.get("authorization");
-  if (authHeader !== `Bearer ${process.env.CRON_SECRET}` && process.env.CRON_SECRET) {
-    // Allow without secret in development or if not set
-    if (process.env.NODE_ENV === "production" && process.env.CRON_SECRET) {
+  const cronSecret = process.env.CRON_SECRET;
+  
+  // Only check auth if CRON_SECRET is actually set on the server
+  if (cronSecret && cronSecret.length > 0) {
+    if (authHeader !== `Bearer ${cronSecret}`) {
+      console.log("Unauthorized cron request - invalid secret");
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
   }
 
+  console.log("Cron sync triggered via GET");
   // Call the main sync logic
   return syncClubData();
 }

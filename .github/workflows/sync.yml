@@ -12,6 +12,14 @@ jobs:
     steps:
       - name: Trigger Sync
         run: |
-          curl -X GET "${{ secrets.VERCEL_APP_URL }}/api/sync" \
-            -H "Authorization: Bearer ${{ secrets.CRON_SECRET }}" \
-            --fail-with-body || echo "Sync request completed"
+          echo "Triggering sync at ${{ secrets.VERCEL_APP_URL }}/api/sync"
+          RESPONSE=$(curl -s -w "\n%{http_code}" -X GET "${{ secrets.VERCEL_APP_URL }}/api/sync")
+          HTTP_CODE=$(echo "$RESPONSE" | tail -n1)
+          BODY=$(echo "$RESPONSE" | head -n -1)
+          echo "Response: $BODY"
+          echo "HTTP Code: $HTTP_CODE"
+          if [ "$HTTP_CODE" -ge 200 ] && [ "$HTTP_CODE" -lt 300 ]; then
+            echo "✅ Sync successful!"
+          else
+            echo "⚠️ Sync returned non-2xx status, but workflow continues"
+          fi
