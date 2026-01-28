@@ -37,15 +37,25 @@ export async function POST(request: NextRequest) {
 
 async function syncClubData(providedClubTag?: string, providedApiKey?: string, isInitialSetup = false) {
   try {
+    console.log("Starting sync...");
     let clubTag = providedClubTag || process.env.CLUB_TAG;
     let apiKey = providedApiKey || process.env.BRAWL_API_KEY;
 
     // If not provided, try to get from database
     if (!clubTag || !apiKey) {
-      const { data: settings } = await supabase
+      console.log("Fetching credentials from database...");
+      const { data: settings, error: settingsError } = await supabase
         .from("settings")
         .select("key, value")
         .in("key", ["club_tag", "api_key"]);
+      
+      if (settingsError) {
+        console.error("Error fetching settings:", settingsError);
+        return NextResponse.json(
+          { error: "Failed to fetch settings from database", details: settingsError.message },
+          { status: 500 }
+        );
+      }
       
       if (settings) {
         for (const setting of settings) {
@@ -53,6 +63,7 @@ async function syncClubData(providedClubTag?: string, providedApiKey?: string, i
           if (setting.key === "api_key" && !apiKey) apiKey = setting.value;
         }
       }
+      console.log("Got clubTag:", clubTag ? "yes" : "no", "apiKey:", apiKey ? "yes" : "no");
     }
 
     if (!clubTag || !apiKey) {
