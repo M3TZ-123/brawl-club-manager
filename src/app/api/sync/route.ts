@@ -4,21 +4,30 @@ import { supabase } from "@/lib/supabase";
 
 // GET handler for Vercel Cron Jobs and GitHub Actions
 export async function GET(request: NextRequest) {
-  // Optional: Verify cron secret if configured
-  const authHeader = request.headers.get("authorization");
-  const cronSecret = process.env.CRON_SECRET;
-  
-  // Only check auth if CRON_SECRET is actually set on the server
-  if (cronSecret && cronSecret.length > 0) {
-    if (authHeader !== `Bearer ${cronSecret}`) {
-      console.log("Unauthorized cron request - invalid secret");
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  try {
+    // Optional: Verify cron secret if configured
+    const authHeader = request.headers.get("authorization");
+    const cronSecret = process.env.CRON_SECRET;
+    
+    // Only check auth if CRON_SECRET is actually set on the server
+    if (cronSecret && cronSecret.length > 0) {
+      if (authHeader !== `Bearer ${cronSecret}`) {
+        console.log("Unauthorized cron request - invalid secret");
+        return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+      }
     }
-  }
 
-  console.log("Cron sync triggered via GET");
-  // Call the main sync logic
-  return syncClubData();
+    console.log("Cron sync triggered via GET");
+    // Call the main sync logic
+    return await syncClubData();
+  } catch (error) {
+    console.error("GET sync error:", error);
+    const errorMessage = error instanceof Error ? error.message : "Unknown error";
+    return NextResponse.json(
+      { error: "Failed to sync data", message: errorMessage },
+      { status: 500 }
+    );
+  }
 }
 
 export async function POST(request: NextRequest) {
