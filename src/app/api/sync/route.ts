@@ -87,6 +87,10 @@ async function syncClubData(providedClubTag?: string, providedApiKey?: string, i
       );
     }
 
+    // Debug: Log what we're using (mask API key for security)
+    console.log("Using clubTag:", clubTag);
+    console.log("API key length:", apiKey.length, "starts with:", apiKey.substring(0, 10) + "...");
+    
     setApiKey(apiKey);
 
     // Get inactivity threshold from settings (default 48 hours)
