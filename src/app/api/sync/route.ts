@@ -346,8 +346,10 @@ async function syncClubData(providedClubTag?: string, providedApiKey?: string, i
     });
   } catch (error) {
     console.error("Sync error:", error);
+    const errorMessage = error instanceof Error ? error.message : "Unknown error";
+    const errorStack = error instanceof Error ? error.stack : undefined;
     return NextResponse.json(
-      { error: "Failed to sync data" },
+      { error: "Failed to sync data", message: errorMessage, stack: errorStack },
       { status: 500 }
     );
   }
