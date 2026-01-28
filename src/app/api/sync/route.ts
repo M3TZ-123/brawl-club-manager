@@ -68,19 +68,29 @@ async function syncClubData(providedClubTag?: string, providedApiKey?: string, i
       }
       
       if (settings) {
+        console.log("Settings found:", settings.length, "items");
         for (const setting of settings) {
           if (setting.key === "club_tag" && !clubTag) clubTag = setting.value;
           if (setting.key === "api_key" && !apiKey) apiKey = setting.value;
         }
+      } else {
+        console.log("No settings found in database");
       }
-      console.log("Got clubTag:", clubTag ? "yes" : "no", "apiKey:", apiKey ? "yes" : "no");
+      console.log("From DB - clubTag:", clubTag ? "yes" : "no", "apiKey:", apiKey ? "yes" : "no");
     }
 
     // Fallback to env vars only if database doesn't have them
-    if (!clubTag) clubTag = process.env.CLUB_TAG;
-    if (!apiKey) apiKey = process.env.BRAWL_API_KEY;
+    if (!clubTag) {
+      clubTag = process.env.CLUB_TAG;
+      if (clubTag) console.log("Using CLUB_TAG from environment variable");
+    }
+    if (!apiKey) {
+      apiKey = process.env.BRAWL_API_KEY;
+      if (apiKey) console.log("Using BRAWL_API_KEY from environment variable");
+    }
 
     if (!clubTag || !apiKey) {
+      console.error("Missing credentials - clubTag:", !!clubTag, "apiKey:", !!apiKey);
       return NextResponse.json(
         { error: "Club tag and API key are required. Please configure in Settings." },
         { status: 400 }
@@ -92,6 +102,7 @@ async function syncClubData(providedClubTag?: string, providedApiKey?: string, i
     console.log("API key length:", apiKey.length, "starts with:", apiKey.substring(0, 10) + "...");
     
     setApiKey(apiKey);
+    console.log("API key set, fetching club data...");
 
     // Get inactivity threshold from settings (default 48 hours)
     let inactivityThreshold = 48;

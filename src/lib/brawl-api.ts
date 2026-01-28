@@ -112,20 +112,63 @@ export interface BrawlStarsBattle {
   };
 }
 
+// Helper to handle API errors with detailed logging
+function handleApiError(error: unknown, endpoint: string): never {
+  if (axios.isAxiosError(error)) {
+    const status = error.response?.status;
+    const responseData = error.response?.data;
+    const reason = responseData?.reason || responseData?.message || "Unknown";
+    
+    console.error(`API Error on ${endpoint}:`, {
+      status,
+      reason,
+      responseData,
+      url: error.config?.url,
+      headers: error.config?.headers ? { 
+        ...error.config.headers,
+        Authorization: error.config.headers.Authorization ? "[REDACTED]" : "Not set"
+      } : "No headers"
+    });
+    
+    if (status === 403) {
+      throw new Error(`API 403 Forbidden: ${reason}. This usually means the API key is invalid or not authorized for the RoyaleAPI proxy IP (45.79.218.79). Please generate a new key at https://developer.brawlstars.com with IP: 45.79.218.79`);
+    }
+    if (status === 404) {
+      throw new Error(`API 404 Not Found: The requested resource was not found. Check if the tag is correct.`);
+    }
+    if (status === 429) {
+      throw new Error(`API 429 Rate Limited: Too many requests. Please wait before trying again.`);
+    }
+  }
+  throw error;
+}
+
 // API Functions
 export async function getClub(clubTag: string): Promise<BrawlStarsClub> {
-  const response = await brawlApi.get(`/clubs/${encodeTag(clubTag)}`);
-  return response.data;
+  try {
+    const response = await brawlApi.get(`/clubs/${encodeTag(clubTag)}`);
+    return response.data;
+  } catch (error) {
+    handleApiError(error, `getClub(${clubTag})`);
+  }
 }
 
 export async function getPlayer(playerTag: string): Promise<BrawlStarsPlayer> {
-  const response = await brawlApi.get(`/players/${encodeTag(playerTag)}`);
-  return response.data;
+  try {
+    const response = await brawlApi.get(`/players/${encodeTag(playerTag)}`);
+    return response.data;
+  } catch (error) {
+    handleApiError(error, `getPlayer(${playerTag})`);
+  }
 }
 
 export async function getPlayerBattleLog(playerTag: string): Promise<BrawlStarsBattleLog> {
-  const response = await brawlApi.get(`/players/${encodeTag(playerTag)}/battlelog`);
-  return response.data;
+  try {
+    const response = await brawlApi.get(`/players/${encodeTag(playerTag)}/battlelog`);
+    return response.data;
+  } catch (error) {
+    handleApiError(error, `getPlayerBattleLog(${playerTag})`);
+  }
 }
 
 export async function getAllBrawlers(): Promise<{ items: { id: number; name: string }[] }> {
