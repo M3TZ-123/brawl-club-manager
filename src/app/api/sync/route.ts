@@ -48,10 +48,10 @@ export async function POST(request: NextRequest) {
 async function syncClubData(providedClubTag?: string, providedApiKey?: string, isInitialSetup = false) {
   try {
     console.log("Starting sync...");
-    let clubTag = providedClubTag || process.env.CLUB_TAG;
-    let apiKey = providedApiKey || process.env.BRAWL_API_KEY;
+    let clubTag = providedClubTag;
+    let apiKey = providedApiKey;
 
-    // If not provided, try to get from database
+    // Always try to get from database first (most up-to-date)
     if (!clubTag || !apiKey) {
       console.log("Fetching credentials from database...");
       const { data: settings, error: settingsError } = await supabase
@@ -75,6 +75,10 @@ async function syncClubData(providedClubTag?: string, providedApiKey?: string, i
       }
       console.log("Got clubTag:", clubTag ? "yes" : "no", "apiKey:", apiKey ? "yes" : "no");
     }
+
+    // Fallback to env vars only if database doesn't have them
+    if (!clubTag) clubTag = process.env.CLUB_TAG;
+    if (!apiKey) apiKey = process.env.BRAWL_API_KEY;
 
     if (!clubTag || !apiKey) {
       return NextResponse.json(
