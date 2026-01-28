@@ -1,0 +1,21 @@
+name: Auto Sync Club Data
+
+on:
+  schedule:
+    # Runs every hour at minute 0
+    - cron: '0 * * * *'
+  workflow_dispatch: # Allows manual trigger from GitHub UI
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Sync Club Data
+        run: |
+          curl -X POST "${{ secrets.VERCEL_APP_URL }}/api/sync" \
+            -H "Content-Type: application/json" \
+            -d '{"clubTag": "${{ secrets.CLUB_TAG }}", "apiKey": "${{ secrets.BRAWL_API_KEY }}"}'
+        env:
+          VERCEL_APP_URL: ${{ secrets.VERCEL_APP_URL }}
+          CLUB_TAG: ${{ secrets.CLUB_TAG }}
+          BRAWL_API_KEY: ${{ secrets.BRAWL_API_KEY }}
