@@ -39,6 +39,8 @@ export default function SettingsPage() {
     setRefreshInterval,
     setNotificationsEnabled,
     setDiscordWebhook,
+    saveSettingsToDB,
+    loadSettingsFromDB,
   } = useAppStore();
 
   const [localClubTag, setLocalClubTag] = useState(clubTag);
@@ -49,6 +51,10 @@ export default function SettingsPage() {
   const [saveStatus, setSaveStatus] = useState<"idle" | "saving" | "saved">("idle");
 
   useEffect(() => {
+    loadSettingsFromDB();
+  }, []);
+
+  useEffect(() => {
     setLocalClubTag(clubTag);
     setLocalApiKey(apiKey);
     setLocalDiscordWebhook(discordWebhook);
@@ -56,33 +62,30 @@ export default function SettingsPage() {
     setLocalRefreshInterval(refreshInterval);
   }, [clubTag, apiKey, discordWebhook, inactivityThreshold, refreshInterval]);
 
-  const handleSaveGeneral = () => {
+  const handleSaveGeneral = async () => {
     setSaveStatus("saving");
     setClubTag(localClubTag);
     setApiKey(localApiKey);
-    setTimeout(() => {
-      setSaveStatus("saved");
-      setTimeout(() => setSaveStatus("idle"), 2000);
-    }, 500);
+    await saveSettingsToDB();
+    setSaveStatus("saved");
+    setTimeout(() => setSaveStatus("idle"), 2000);
   };
 
-  const handleSaveNotifications = () => {
+  const handleSaveNotifications = async () => {
     setSaveStatus("saving");
     setDiscordWebhook(localDiscordWebhook);
-    setTimeout(() => {
-      setSaveStatus("saved");
-      setTimeout(() => setSaveStatus("idle"), 2000);
-    }, 500);
+    await saveSettingsToDB();
+    setSaveStatus("saved");
+    setTimeout(() => setSaveStatus("idle"), 2000);
   };
 
-  const handleSaveActivity = () => {
+  const handleSaveActivity = async () => {
     setSaveStatus("saving");
     setInactivityThreshold(localInactivityThreshold);
     setRefreshInterval(localRefreshInterval);
-    setTimeout(() => {
-      setSaveStatus("saved");
-      setTimeout(() => setSaveStatus("idle"), 2000);
-    }, 500);
+    await saveSettingsToDB();
+    setSaveStatus("saved");
+    setTimeout(() => setSaveStatus("idle"), 2000);
   };
 
   const handleClearData = () => {

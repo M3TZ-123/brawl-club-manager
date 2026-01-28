@@ -4,15 +4,30 @@ import { supabase } from "@/lib/supabase";
 
 export async function POST(request: NextRequest) {
   try {
-    // Get settings from request or environment
+    // Get settings from request body
     const body = await request.json().catch(() => ({}));
-    const clubTag = body.clubTag || process.env.CLUB_TAG;
-    const apiKey = body.apiKey || process.env.BRAWL_API_KEY;
+    let clubTag = body.clubTag || process.env.CLUB_TAG;
+    let apiKey = body.apiKey || process.env.BRAWL_API_KEY;
     const isInitialSetup = body.initialSetup === true; // Flag for first-time setup
+
+    // If not provided, try to get from database
+    if (!clubTag || !apiKey) {
+      const { data: settings } = await supabase
+        .from("settings")
+        .select("key, value")
+        .in("key", ["club_tag", "api_key"]);
+      
+      if (settings) {
+        for (const setting of settings) {
+          if (setting.key === "club_tag" && !clubTag) clubTag = setting.value;
+          if (setting.key === "api_key" && !apiKey) apiKey = setting.value;
+        }
+      }
+    }
 
     if (!clubTag || !apiKey) {
       return NextResponse.json(
-        { error: "Club tag and API key are required" },
+        { error: "Club tag and API key are required. Please configure in Settings." },
         { status: 400 }
       );
     }

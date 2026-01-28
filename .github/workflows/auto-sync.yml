@@ -14,8 +14,6 @@ jobs:
         run: |
           curl -X POST "${{ secrets.VERCEL_APP_URL }}/api/sync" \
             -H "Content-Type: application/json" \
-            -d '{"clubTag": "${{ secrets.CLUB_TAG }}", "apiKey": "${{ secrets.BRAWL_API_KEY }}"}'
+            -d '{}'
         env:
           VERCEL_APP_URL: ${{ secrets.VERCEL_APP_URL }}
-          CLUB_TAG: ${{ secrets.CLUB_TAG }}
-          BRAWL_API_KEY: ${{ secrets.BRAWL_API_KEY }}

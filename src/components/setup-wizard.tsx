@@ -18,7 +18,7 @@ export function SetupWizard({ onComplete }: SetupWizardProps) {
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState("");
 
-  const { setClubTag: saveClubTag, setApiKey: saveApiKey, setClubName } = useAppStore();
+  const { setClubTag: saveClubTag, setApiKey: saveApiKey, setClubName, saveSettingsToDB } = useAppStore();
 
   const handleVerifyClub = async () => {
     setIsLoading(true);
@@ -40,6 +40,10 @@ export function SetupWizard({ onComplete }: SetupWizardProps) {
       saveClubTag(clubTag);
       saveApiKey(apiKey);
       setClubName(data.clubName);
+      
+      // Save to database
+      await saveSettingsToDB();
+      
       setStep(3);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Verification failed");

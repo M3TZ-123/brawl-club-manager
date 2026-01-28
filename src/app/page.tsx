@@ -13,7 +13,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Member, ClubEvent } from "@/types/database";
 
 export default function DashboardPage() {
-  const { clubTag, apiKey } = useAppStore();
+  const { clubTag, apiKey, isLoadingSettings, loadSettingsFromDB } = useAppStore();
   const [isSetupComplete, setIsSetupComplete] = useState(false);
   const [members, setMembers] = useState<Member[]>([]);
   const [events, setEvents] = useState<ClubEvent[]>([]);
@@ -22,10 +22,12 @@ export default function DashboardPage() {
 
   useEffect(() => {
     setMounted(true);
+    // Load settings from database on mount
+    loadSettingsFromDB();
   }, []);
 
   useEffect(() => {
-    if (!mounted) return;
+    if (!mounted || isLoadingSettings) return;
     
     if (clubTag && apiKey) {
       setIsSetupComplete(true);
@@ -33,7 +35,7 @@ export default function DashboardPage() {
     } else {
       setIsLoading(false);
     }
-  }, [clubTag, apiKey, mounted]);
+  }, [clubTag, apiKey, mounted, isLoadingSettings]);
 
   const loadData = async () => {
     try {
@@ -58,7 +60,7 @@ export default function DashboardPage() {
     }
   };
 
-  if (!mounted) {
+  if (!mounted || isLoadingSettings) {
     return (
       <div className="flex h-screen items-center justify-center bg-background">
         <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary"></div>
