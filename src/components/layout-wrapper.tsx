@@ -1,6 +1,6 @@
 "use client";
 
-import { ReactNode, createContext, useContext, useCallback } from "react";
+import { ReactNode, createContext, useContext, useCallback, useEffect, useRef } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useAppStore } from "@/lib/store";
@@ -47,10 +47,11 @@ export function useSidebarContext() {
 
 function SimpleSidebar() {
   const pathname = usePathname();
-  const { clubName, lastSyncTime, isSyncing, clubTag, apiKey } = useAppStore();
+  const { clubName, lastSyncTime, isSyncing, clubTag, apiKey, refreshInterval } = useAppStore();
   const { isOpen, close } = useSidebarContext();
+  const autoSyncIntervalRef = useRef<NodeJS.Timeout | null>(null);
 
-  const handleSync = async () => {
+  const handleSync = async (isAutoSync = false) => {
     if (!clubTag || !apiKey) return;
     
     try {
@@ -63,18 +64,54 @@ function SimpleSidebar() {
       const data = await response.json();
       if (!response.ok) {
         console.error("Sync error:", data.error);
-        alert(`Sync failed: ${data.error}`);
+        if (!isAutoSync) {
+          alert(`Sync failed: ${data.error}`);
+        }
       } else {
         useAppStore.getState().setLastSyncTime(new Date().toISOString());
-        window.location.reload();
+        if (!isAutoSync) {
+          window.location.reload();
+        }
       }
     } catch (error) {
       console.error("Sync failed:", error);
-      alert("Sync failed. Check the console for details.");
+      if (!isAutoSync) {
+        alert("Sync failed. Check the console for details.");
+      }
     } finally {
       useAppStore.getState().setIsSyncing(false);
     }
   };
+
+  // Auto-sync based on refresh interval
+  useEffect(() => {
+    if (!clubTag || !apiKey || refreshInterval <= 0) return;
+
+    const checkAndSync = () => {
+      const lastSync = useAppStore.getState().lastSyncTime;
+      const intervalMs = refreshInterval * 60 * 1000; // Convert minutes to ms
+      
+      if (lastSync) {
+        const timeSinceLastSync = Date.now() - new Date(lastSync).getTime();
+        if (timeSinceLastSync >= intervalMs) {
+          console.log(`Auto-sync triggered (${refreshInterval} min interval)`);
+          handleSync(true);
+        }
+      }
+    };
+
+    // Check immediately on mount
+    checkAndSync();
+
+    // Set up interval to check every minute
+    autoSyncIntervalRef.current = setInterval(checkAndSync, 60 * 1000);
+
+    return () => {
+      if (autoSyncIntervalRef.current) {
+        clearInterval(autoSyncIntervalRef.current);
+      }
+    };
+  }, [clubTag, apiKey, refreshInterval]);
 
   return (
     <>
@@ -143,7 +180,7 @@ function SimpleSidebar() {
           {/* Sync */}
           <div className="border-t border-border px-3 py-4">
             <Button
-              onClick={handleSync}
+              onClick={() => handleSync(false)}
               disabled={isSyncing}
               variant="outline"
               className="w-full justify-center gap-2 border-border"

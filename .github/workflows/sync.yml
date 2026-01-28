@@ -1,0 +1,17 @@
+name: Auto Sync Club Data
+
+on:
+  schedule:
+    # Run every hour
+    - cron: '0 * * * *'
+  workflow_dispatch: # Allow manual trigger
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Trigger Sync
+        run: |
+          curl -X GET "${{ secrets.APP_URL }}/api/sync" \
+            -H "Authorization: Bearer ${{ secrets.CRON_SECRET }}" \
+            --fail-with-body || echo "Sync request completed"

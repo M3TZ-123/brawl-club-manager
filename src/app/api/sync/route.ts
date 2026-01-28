@@ -2,13 +2,39 @@ import { NextRequest, NextResponse } from "next/server";
 import { getClub, getPlayer, setApiKey, getPlayerRankedData, getPlayerWinRate } from "@/lib/brawl-api";
 import { supabase } from "@/lib/supabase";
 
+// GET handler for Vercel Cron Jobs
+export async function GET(request: NextRequest) {
+  // Verify this is a cron request (optional security)
+  const authHeader = request.headers.get("authorization");
+  if (authHeader !== `Bearer ${process.env.CRON_SECRET}` && process.env.CRON_SECRET) {
+    // Allow without secret in development or if not set
+    if (process.env.NODE_ENV === "production" && process.env.CRON_SECRET) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
+  }
+
+  // Call the main sync logic
+  return syncClubData();
+}
+
 export async function POST(request: NextRequest) {
   try {
     // Get settings from request body
     const body = await request.json().catch(() => ({}));
-    let clubTag = body.clubTag || process.env.CLUB_TAG;
-    let apiKey = body.apiKey || process.env.BRAWL_API_KEY;
-    const isInitialSetup = body.initialSetup === true; // Flag for first-time setup
+    return syncClubData(body.clubTag, body.apiKey, body.initialSetup === true);
+  } catch (error) {
+    console.error("Sync error:", error);
+    return NextResponse.json(
+      { error: "Failed to sync data" },
+      { status: 500 }
+    );
+  }
+}
+
+async function syncClubData(providedClubTag?: string, providedApiKey?: string, isInitialSetup = false) {
+  try {
+    let clubTag = providedClubTag || process.env.CLUB_TAG;
+    let apiKey = providedApiKey || process.env.BRAWL_API_KEY;
 
     // If not provided, try to get from database
     if (!clubTag || !apiKey) {
