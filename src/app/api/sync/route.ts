@@ -34,6 +34,17 @@ export async function POST(request: NextRequest) {
 
     setApiKey(apiKey);
 
+    // Get inactivity threshold from settings (default 48 hours)
+    let inactivityThreshold = 48;
+    const { data: thresholdSetting } = await supabase
+      .from("settings")
+      .select("value")
+      .eq("key", "inactivity_threshold")
+      .single();
+    if (thresholdSetting?.value) {
+      inactivityThreshold = parseInt(thresholdSetting.value);
+    }
+
     // Fetch club data
     const club = await getClub(clubTag);
     const currentMemberTags = new Set(club.members.map((m) => m.tag));
@@ -46,6 +57,17 @@ export async function POST(request: NextRequest) {
     const existingMemberMap = new Map(
       existingMembers?.map((m) => [m.player_tag, m]) || []
     );
+
+    // Get last activity for each member (to check inactivity threshold)
+    const thresholdTime = new Date(Date.now() - inactivityThreshold * 60 * 60 * 1000).toISOString();
+    const { data: recentActivity } = await supabase
+      .from("activity_log")
+      .select("player_tag, trophy_change, recorded_at")
+      .gte("recorded_at", thresholdTime)
+      .neq("trophy_change", 0);
+    
+    // Map of players who had activity in the threshold period
+    const activePlayersSet = new Set(recentActivity?.map((a) => a.player_tag) || []);
 
     // Get member history
     const { data: memberHistory } = await supabase
@@ -95,13 +117,18 @@ export async function POST(request: NextRequest) {
               ? player.trophies - existingMember.trophies
               : 0;
 
-            // Determine activity type
+            // Determine activity type based on current trophy change
             let activityType = "inactive";
             if (Math.abs(trophyChange) >= 20) {
               activityType = "active";
             } else if (Math.abs(trophyChange) > 0) {
               activityType = "minimal";
             }
+            
+            // Check if player had any activity in the threshold period
+            // If they had activity before (in activePlayersSet) OR have activity now, they're active
+            const hadRecentActivity = activePlayersSet.has(member.tag);
+            const isActive = hadRecentActivity || Math.abs(trophyChange) > 0;
 
             return {
               member,
@@ -110,6 +137,7 @@ export async function POST(request: NextRequest) {
               winRateData,
               trophyChange,
               activityType,
+              isActive,
               success: true as const,
             };
           } catch (error) {
@@ -123,13 +151,14 @@ export async function POST(request: NextRequest) {
       for (const result of batchResults) {
         if (!result.success) continue;
 
-        const { member, player, rankedData, winRateData, trophyChange, activityType } = result as {
+        const { member, player, rankedData, winRateData, trophyChange, activityType, isActive } = result as {
           member: typeof batch[0];
           player: Awaited<ReturnType<typeof getPlayer>>;
           rankedData: Awaited<ReturnType<typeof getPlayerRankedData>>;
           winRateData: Awaited<ReturnType<typeof getPlayerWinRate>>;
           trophyChange: number;
           activityType: string;
+          isActive: boolean;
           success: true;
         };
 
@@ -148,7 +177,7 @@ export async function POST(request: NextRequest) {
           solo_victories: player.soloVictories,
           duo_victories: player.duoVictories,
           trio_victories: player["3vs3Victories"],
-          is_active: activityType === "active",
+          is_active: isActive,
           last_updated: new Date().toISOString(),
         });
 
