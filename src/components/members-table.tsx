@@ -51,40 +51,41 @@ export function MembersTable({ members }: MembersTableProps) {
   };
 
   return (
-    <Table>
-      <TableHeader>
-        <TableRow>
-          <TableHead className="w-12">#</TableHead>
-          <TableHead>Player</TableHead>
-          <TableHead>Role</TableHead>
-          <TableHead className="text-right">Trophies</TableHead>
-          <TableHead className="text-right">Highest</TableHead>
-          <TableHead className="text-center">Win Rate</TableHead>
-          <TableHead>Current Rank</TableHead>
-          <TableHead>Best Rank</TableHead>
-          <TableHead className="text-right">24h</TableHead>
-          <TableHead className="text-right">7 Days</TableHead>
-          <TableHead className="text-center">Activity</TableHead>
-        </TableRow>
-      </TableHeader>
-      <TableBody>
+    <div className="overflow-x-auto -mx-4 sm:mx-0">
+      <Table className="min-w-[600px] sm:min-w-full">
+        <TableHeader>
+          <TableRow>
+            <TableHead className="w-10 sm:w-12">#</TableHead>
+            <TableHead>Player</TableHead>
+            <TableHead className="hidden sm:table-cell">Role</TableHead>
+            <TableHead className="text-right">Trophies</TableHead>
+            <TableHead className="hidden lg:table-cell text-right">Highest</TableHead>
+            <TableHead className="hidden xl:table-cell text-center">Win Rate</TableHead>
+            <TableHead className="hidden xl:table-cell">Current Rank</TableHead>
+            <TableHead className="hidden xl:table-cell">Best Rank</TableHead>
+            <TableHead className="hidden md:table-cell text-right">24h</TableHead>
+            <TableHead className="hidden sm:table-cell text-right">7 Days</TableHead>
+            <TableHead className="text-center">Activity</TableHead>
+          </TableRow>
+        </TableHeader>
+        <TableBody>
         {members.map((member, index) => (
           <TableRow key={member.player_tag}>
             <TableCell className="font-medium">{index + 1}</TableCell>
             <TableCell>
-              <div className="flex items-center gap-2">
+              <div className="flex items-center gap-1 sm:gap-2">
                 <Link
                   href={`/members/${encodeURIComponent(member.player_tag)}`}
-                  className="flex flex-col hover:underline"
+                  className="flex flex-col hover:underline min-w-0"
                 >
-                  <span className="font-medium">{member.player_name}</span>
-                  <span className="text-xs text-muted-foreground">
+                  <span className="font-medium truncate max-w-[100px] sm:max-w-none">{member.player_name}</span>
+                  <span className="text-xs text-muted-foreground hidden sm:block">
                     {member.player_tag}
                   </span>
                 </Link>
                 <button
                   onClick={() => copyToClipboard(member.player_tag, member.player_tag)}
-                  className="p-1 rounded hover:bg-muted transition-colors"
+                  className="p-1 rounded hover:bg-muted transition-colors hidden sm:block"
                   title="Copy player tag"
                 >
                   {copiedTag === member.player_tag ? (
@@ -95,7 +96,7 @@ export function MembersTable({ members }: MembersTableProps) {
                 </button>
               </div>
             </TableCell>
-            <TableCell>
+            <TableCell className="hidden sm:table-cell">
               <Badge variant={getRoleBadgeVariant(member.role)}>
                 {member.role}
               </Badge>
@@ -103,10 +104,10 @@ export function MembersTable({ members }: MembersTableProps) {
             <TableCell className="text-right font-medium">
               {formatNumber(member.trophies)}
             </TableCell>
-            <TableCell className="text-right text-muted-foreground">
+            <TableCell className="hidden lg:table-cell text-right text-muted-foreground">
               {formatNumber(member.highest_trophies)}
             </TableCell>
-            <TableCell className="text-center">
+            <TableCell className="hidden xl:table-cell text-center">
               <span className={
                 member.win_rate != null && member.win_rate >= 60 
                   ? "text-green-500 font-medium" 
@@ -119,17 +120,17 @@ export function MembersTable({ members }: MembersTableProps) {
                 {member.win_rate != null ? `${member.win_rate}%` : "-"}
               </span>
             </TableCell>
-            <TableCell>
+            <TableCell className="hidden xl:table-cell">
               <span className={getRankColor(member.rank_current || "Unranked")}>
                 {member.rank_current || "Unranked"}
               </span>
             </TableCell>
-            <TableCell>
+            <TableCell className="hidden xl:table-cell">
               <span className={getRankColor(member.rank_highest || "Unranked")}>
                 {member.rank_highest || "Unranked"}
               </span>
             </TableCell>
-            <TableCell className="text-right">
+            <TableCell className="hidden md:table-cell text-right">
               <span className={
                 member.trophies_24h != null && member.trophies_24h > 0 
                   ? "text-green-500" 
@@ -142,7 +143,7 @@ export function MembersTable({ members }: MembersTableProps) {
                   : "-"}
               </span>
             </TableCell>
-            <TableCell className="text-right">
+            <TableCell className="hidden sm:table-cell text-right">
               <span className={
                 member.trophies_7d != null && member.trophies_7d > 0 
                   ? "text-green-500" 
@@ -162,5 +163,6 @@ export function MembersTable({ members }: MembersTableProps) {
         ))}
       </TableBody>
     </Table>
+    </div>
   );
 }

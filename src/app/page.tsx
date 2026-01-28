@@ -2,8 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { useAppStore } from "@/lib/store";
-import { Sidebar } from "@/components/sidebar";
-import { Header } from "@/components/header";
+import { LayoutWrapper } from "@/components/layout-wrapper";
 import { SetupWizard } from "@/components/setup-wizard";
 import { StatsCards } from "@/components/stats-cards";
 import { MembersTable } from "@/components/members-table";
@@ -13,29 +12,34 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Member, ClubEvent } from "@/types/database";
 
 export default function DashboardPage() {
-  const { clubTag, apiKey, isLoadingSettings, loadSettingsFromDB } = useAppStore();
+  const { clubTag, apiKey, isLoadingSettings, hasLoadedSettings, loadSettingsFromDB } = useAppStore();
   const [isSetupComplete, setIsSetupComplete] = useState(false);
   const [members, setMembers] = useState<Member[]>([]);
   const [events, setEvents] = useState<ClubEvent[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [mounted, setMounted] = useState(false);
+  const [dataLoaded, setDataLoaded] = useState(false);
 
   useEffect(() => {
     setMounted(true);
-    // Load settings from database on mount
-    loadSettingsFromDB();
-  }, []);
+    // Load settings from database on mount (only if not already loaded)
+    if (!hasLoadedSettings) {
+      loadSettingsFromDB();
+    }
+  }, [hasLoadedSettings, loadSettingsFromDB]);
 
   useEffect(() => {
     if (!mounted || isLoadingSettings) return;
     
     if (clubTag && apiKey) {
       setIsSetupComplete(true);
-      loadData();
+      if (!dataLoaded) {
+        loadData();
+      }
     } else {
       setIsLoading(false);
     }
-  }, [clubTag, apiKey, mounted, isLoadingSettings]);
+  }, [clubTag, apiKey, mounted, isLoadingSettings, dataLoaded]);
 
   const loadData = async () => {
     try {
@@ -57,6 +61,7 @@ export default function DashboardPage() {
       console.error("Error loading data:", error);
     } finally {
       setIsLoading(false);
+      setDataLoaded(true);
     }
   };
 
@@ -87,51 +92,45 @@ export default function DashboardPage() {
   }));
 
   return (
-    <div className="flex h-screen bg-background">
-      <Sidebar />
-      <div className="flex-1 flex flex-col overflow-hidden">
-        <Header />
-        <main className="flex-1 overflow-y-auto p-6">
-          {isLoading ? (
-            <div className="flex items-center justify-center h-full">
-              <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary"></div>
-            </div>
-          ) : (
-            <div className="space-y-6">
-              {/* Stats Overview */}
-              <StatsCards
-                totalMembers={members.length}
-                totalTrophies={totalTrophies}
-                activeMembers={activeMembers}
-                avgTrophies={avgTrophies}
-              />
+    <LayoutWrapper>
+      {isLoading ? (
+        <div className="flex items-center justify-center h-full">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary"></div>
+        </div>
+      ) : (
+        <div className="space-y-6">
+          {/* Stats Overview */}
+          <StatsCards
+            totalMembers={members.length}
+            totalTrophies={totalTrophies}
+            activeMembers={activeMembers}
+            avgTrophies={avgTrophies}
+          />
 
-              {/* Charts Row */}
-              <div className="grid gap-6 md:grid-cols-2">
-                <ActivityPieChart data={activityData} />
-                <MemberBarChart data={topMembers} />
-              </div>
+          {/* Charts Row */}
+          <div className="grid gap-6 md:grid-cols-2">
+            <ActivityPieChart data={activityData} />
+            <MemberBarChart data={topMembers} />
+          </div>
 
-              {/* Members and Activity */}
-              <div className="grid gap-6 lg:grid-cols-3">
-                <div className="lg:col-span-2">
-                  <Card>
-                    <CardHeader>
-                      <CardTitle>Club Members</CardTitle>
-                    </CardHeader>
-                    <CardContent>
-                      <MembersTable members={members.slice(0, 10)} />
-                    </CardContent>
-                  </Card>
-                </div>
-                <div>
-                  <ActivityTimeline events={events.slice(0, 5)} />
-                </div>
-              </div>
+          {/* Members and Activity */}
+          <div className="grid gap-6 lg:grid-cols-3">
+            <div className="lg:col-span-2">
+              <Card>
+                <CardHeader>
+                  <CardTitle>Club Members</CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <MembersTable members={members.slice(0, 10)} />
+                </CardContent>
+              </Card>
             </div>
-          )}
-        </main>
-      </div>
-    </div>
+            <div>
+              <ActivityTimeline events={events.slice(0, 5)} />
+            </div>
+          </div>
+        </div>
+      )}
+    </LayoutWrapper>
   );
 }

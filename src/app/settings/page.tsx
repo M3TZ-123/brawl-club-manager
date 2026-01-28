@@ -2,8 +2,7 @@
 
 import { useState, useEffect } from "react";
 import { useAppStore } from "@/lib/store";
-import { Sidebar } from "@/components/sidebar";
-import { Header } from "@/components/header";
+import { LayoutWrapper } from "@/components/layout-wrapper";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
@@ -41,6 +40,7 @@ export default function SettingsPage() {
     setDiscordWebhook,
     saveSettingsToDB,
     loadSettingsFromDB,
+    hasLoadedSettings,
   } = useAppStore();
 
   const [localClubTag, setLocalClubTag] = useState(clubTag);
@@ -51,8 +51,10 @@ export default function SettingsPage() {
   const [saveStatus, setSaveStatus] = useState<"idle" | "saving" | "saved">("idle");
 
   useEffect(() => {
-    loadSettingsFromDB();
-  }, []);
+    if (!hasLoadedSettings) {
+      loadSettingsFromDB();
+    }
+  }, [hasLoadedSettings, loadSettingsFromDB]);
 
   useEffect(() => {
     setLocalClubTag(clubTag);
@@ -118,26 +120,22 @@ export default function SettingsPage() {
   };
 
   return (
-    <div className="flex h-screen bg-background">
-      <Sidebar />
-      <div className="flex-1 flex flex-col overflow-hidden">
-        <Header />
-        <main className="flex-1 overflow-y-auto p-6">
-          <div className="max-w-4xl mx-auto space-y-6">
-            <div>
-              <h1 className="text-2xl font-bold">Settings</h1>
-              <p className="text-muted-foreground">
-                Configure your club manager preferences
-              </p>
-            </div>
+    <LayoutWrapper>
+      <div className="max-w-4xl mx-auto space-y-6">
+        <div>
+          <h1 className="text-2xl font-bold">Settings</h1>
+          <p className="text-muted-foreground">
+            Configure your club manager preferences
+          </p>
+        </div>
 
-            <Tabs defaultValue="general" className="space-y-4">
-              <TabsList>
-                <TabsTrigger value="general">General</TabsTrigger>
-                <TabsTrigger value="activity">Activity Tracking</TabsTrigger>
-                <TabsTrigger value="notifications">Notifications</TabsTrigger>
-                <TabsTrigger value="appearance">Appearance</TabsTrigger>
-                <TabsTrigger value="data">Data</TabsTrigger>
+        <Tabs defaultValue="general" className="space-y-4">
+              <TabsList className="flex flex-wrap h-auto gap-1 p-1">
+                <TabsTrigger value="general" className="text-xs sm:text-sm">General</TabsTrigger>
+                <TabsTrigger value="activity" className="text-xs sm:text-sm">Activity</TabsTrigger>
+                <TabsTrigger value="notifications" className="text-xs sm:text-sm">Notifications</TabsTrigger>
+                <TabsTrigger value="appearance" className="text-xs sm:text-sm">Appearance</TabsTrigger>
+                <TabsTrigger value="data" className="text-xs sm:text-sm">Data</TabsTrigger>
               </TabsList>
 
               {/* General Settings */}
@@ -472,8 +470,6 @@ export default function SettingsPage() {
               </TabsContent>
             </Tabs>
           </div>
-        </main>
-      </div>
-    </div>
+    </LayoutWrapper>
   );
 }

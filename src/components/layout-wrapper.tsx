@@ -1,0 +1,226 @@
+"use client";
+
+import { ReactNode, createContext, useContext, useCallback } from "react";
+import Link from "next/link";
+import { usePathname } from "next/navigation";
+import { useAppStore } from "@/lib/store";
+import { cn } from "@/lib/utils";
+import {
+  LayoutDashboard,
+  Users,
+  Activity,
+  FileText,
+  History,
+  Settings,
+  RefreshCw,
+  Trophy,
+  PanelLeft,
+  X,
+} from "lucide-react";
+import { Button } from "@/components/ui/button";
+
+const navigation = [
+  { name: "Dashboard", href: "/", icon: LayoutDashboard },
+  { name: "Members", href: "/members", icon: Users },
+  { name: "Activity", href: "/activity", icon: Activity },
+  { name: "Reports", href: "/reports", icon: FileText },
+  { name: "History", href: "/history", icon: History },
+  { name: "Settings", href: "/settings", icon: Settings },
+];
+
+// Simple sidebar context
+type SidebarContextType = {
+  isOpen: boolean;
+  toggle: () => void;
+  close: () => void;
+};
+
+const SidebarContext = createContext<SidebarContextType | null>(null);
+
+export function useSidebarContext() {
+  const context = useContext(SidebarContext);
+  if (!context) {
+    throw new Error("useSidebarContext must be used within LayoutWrapper");
+  }
+  return context;
+}
+
+function SimpleSidebar() {
+  const pathname = usePathname();
+  const { clubName, lastSyncTime, isSyncing, clubTag, apiKey } = useAppStore();
+  const { isOpen, close } = useSidebarContext();
+
+  const handleSync = async () => {
+    if (!clubTag || !apiKey) return;
+    
+    try {
+      useAppStore.getState().setIsSyncing(true);
+      const response = await fetch("/api/sync", { 
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ clubTag, apiKey }),
+      });
+      const data = await response.json();
+      if (!response.ok) {
+        console.error("Sync error:", data.error);
+        alert(`Sync failed: ${data.error}`);
+      } else {
+        useAppStore.getState().setLastSyncTime(new Date().toISOString());
+        window.location.reload();
+      }
+    } catch (error) {
+      console.error("Sync failed:", error);
+      alert("Sync failed. Check the console for details.");
+    } finally {
+      useAppStore.getState().setIsSyncing(false);
+    }
+  };
+
+  return (
+    <>
+      {/* Mobile overlay */}
+      {isOpen && (
+        <div 
+          className="fixed inset-0 bg-black/50 z-40 md:hidden" 
+          onClick={close}
+        />
+      )}
+      
+      {/* Sidebar */}
+      <aside
+        className={cn(
+          "fixed top-0 left-0 z-50 h-full w-64 bg-card border-r border-border transform transition-transform duration-200 ease-in-out",
+          isOpen ? "translate-x-0" : "-translate-x-full"
+        )}
+      >
+        <div className="flex flex-col h-full">
+          {/* Header */}
+          <div className="flex items-center justify-between h-16 px-4 border-b border-border">
+            <Link href="/" className="flex items-center gap-3">
+              <div className="flex aspect-square size-10 items-center justify-center rounded-xl bg-gradient-to-br from-yellow-400 to-orange-500 shadow-lg">
+                <Trophy className="size-6 text-white" />
+              </div>
+              <div className="flex flex-col">
+                <span className="font-bold text-base text-foreground">Club Manager</span>
+                {clubName && (
+                  <span className="text-xs text-muted-foreground truncate max-w-[120px]">{clubName}</span>
+                )}
+              </div>
+            </Link>
+            <Button variant="ghost" size="icon" className="md:hidden" onClick={close}>
+              <X className="h-5 w-5" />
+            </Button>
+          </div>
+
+          {/* Navigation */}
+          <nav className="flex-1 px-3 py-4 space-y-1">
+            {navigation.map((item) => {
+              const isActive = pathname === item.href;
+              return (
+                <Link
+                  key={item.name}
+                  href={item.href}
+                  onClick={() => {
+                    // Only close on mobile
+                    if (window.innerWidth < 768) {
+                      close();
+                    }
+                  }}
+                  className={cn(
+                    "flex items-center gap-3 px-3 py-2.5 rounded-lg font-medium transition-all duration-200",
+                    isActive 
+                      ? "bg-primary text-primary-foreground" 
+                      : "text-muted-foreground hover:bg-accent hover:text-foreground"
+                  )}
+                >
+                  <item.icon className="size-5" />
+                  <span>{item.name}</span>
+                </Link>
+              );
+            })}
+          </nav>
+
+          {/* Sync */}
+          <div className="border-t border-border px-3 py-4">
+            <Button
+              onClick={handleSync}
+              disabled={isSyncing}
+              variant="outline"
+              className="w-full justify-center gap-2 border-border"
+            >
+              <RefreshCw className={cn("size-4", isSyncing && "animate-spin")} />
+              <span>{isSyncing ? "Syncing..." : "Sync Now"}</span>
+            </Button>
+            {lastSyncTime && (
+              <p className="text-xs text-muted-foreground text-center mt-2">
+                Last: {new Date(lastSyncTime).toLocaleTimeString()}
+              </p>
+            )}
+          </div>
+        </div>
+      </aside>
+    </>
+  );
+}
+
+function SimpleHeader() {
+  const { clubName, theme, setTheme } = useAppStore();
+  const { toggle, isOpen } = useSidebarContext();
+
+  return (
+    <header className="h-16 border-b bg-card flex items-center justify-between px-4 md:px-6 gap-4">
+      <div className="flex items-center gap-3">
+        <Button
+          variant="ghost"
+          size="icon"
+          onClick={toggle}
+          className="h-9 w-9"
+        >
+          <PanelLeft className="h-5 w-5" />
+          <span className="sr-only">Toggle Sidebar</span>
+        </Button>
+        <h1 className="text-lg md:text-xl font-semibold truncate">{clubName || "Brawl Stars Club Manager"}</h1>
+      </div>
+      <div className="flex items-center gap-2">
+        <Button
+          variant="ghost"
+          size="icon"
+          onClick={() => setTheme(theme === "dark" ? "light" : "dark")}
+        >
+          {theme === "dark" ? (
+            <span className="h-5 w-5">☀️</span>
+          ) : (
+            <span className="h-5 w-5">🌙</span>
+          )}
+        </Button>
+      </div>
+    </header>
+  );
+}
+
+export function LayoutWrapper({ children }: { children: ReactNode }) {
+  const { sidebarOpen, toggleSidebar, setSidebarOpen } = useAppStore();
+  
+  const close = useCallback(() => setSidebarOpen(false), [setSidebarOpen]);
+
+  return (
+    <SidebarContext.Provider value={{ isOpen: sidebarOpen, toggle: toggleSidebar, close }}>
+      <div className="min-h-screen bg-background">
+        <SimpleSidebar />
+        
+        {/* Main content */}
+        <div 
+          className={cn(
+            "min-h-screen transition-all duration-200",
+            sidebarOpen ? "md:ml-64" : "md:ml-0"
+          )}
+        >
+          <SimpleHeader />
+          <main className="p-4 md:p-6">
+            {children}
+          </main>
+        </div>
+      </div>
+    </SidebarContext.Provider>
+  );
+}

@@ -1,8 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { Sidebar } from "@/components/sidebar";
-import { Header } from "@/components/header";
+import { LayoutWrapper } from "@/components/layout-wrapper";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { TrophyChart, ActivityPieChart, MemberBarChart } from "@/components/charts";
@@ -106,15 +105,11 @@ export default function ReportsPage() {
 
   if (isLoading) {
     return (
-      <div className="flex h-screen bg-background">
-        <Sidebar />
-        <div className="flex-1 flex flex-col overflow-hidden">
-          <Header />
-          <main className="flex-1 flex items-center justify-center">
-            <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary"></div>
-          </main>
+      <LayoutWrapper>
+        <div className="flex-1 flex items-center justify-center">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary"></div>
         </div>
-      </div>
+      </LayoutWrapper>
     );
   }
 
@@ -126,28 +121,24 @@ export default function ReportsPage() {
     : [];
 
   return (
-    <div className="flex h-screen bg-background">
-      <Sidebar />
-      <div className="flex-1 flex flex-col overflow-hidden">
-        <Header />
-        <main className="flex-1 overflow-y-auto p-6">
-          <div className="flex items-center justify-between mb-6">
-            <div>
-              <h1 className="text-2xl font-bold">Weekly Report</h1>
-              {report && (
-                <p className="text-muted-foreground">
-                  {formatDate(report.period.start)} - {formatDate(report.period.end)}
+    <LayoutWrapper>
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
+        <div>
+          <h1 className="text-2xl font-bold">Weekly Report</h1>
+          {report && (
+            <p className="text-muted-foreground">
+              {formatDate(report.period.start)} - {formatDate(report.period.end)}
                 </p>
               )}
             </div>
             <div className="flex gap-2">
-              <Button variant="outline" onClick={loadReport}>
-                <RefreshCw className="h-4 w-4 mr-2" />
-                Refresh
+              <Button variant="outline" onClick={loadReport} size="sm" className="sm:size-default">
+                <RefreshCw className="h-4 w-4 sm:mr-2" />
+                <span className="hidden sm:inline">Refresh</span>
               </Button>
-              <Button onClick={handleExportPDF}>
-                <Download className="h-4 w-4 mr-2" />
-                Export
+              <Button onClick={handleExportPDF} size="sm" className="sm:size-default">
+                <Download className="h-4 w-4 sm:mr-2" />
+                <span className="hidden sm:inline">Export</span>
               </Button>
             </div>
           </div>
@@ -328,8 +319,6 @@ export default function ReportsPage() {
               </Card>
             </div>
           )}
-        </main>
-      </div>
-    </div>
+    </LayoutWrapper>
   );
 }

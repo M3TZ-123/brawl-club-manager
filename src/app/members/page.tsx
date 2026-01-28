@@ -2,8 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { useAppStore } from "@/lib/store";
-import { Sidebar } from "@/components/sidebar";
-import { Header } from "@/components/header";
+import { LayoutWrapper } from "@/components/layout-wrapper";
 import { MembersTable } from "@/components/members-table";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -96,57 +95,51 @@ export default function MembersPage() {
   };
 
   return (
-    <div className="flex h-screen bg-background">
-      <Sidebar />
-      <div className="flex-1 flex flex-col overflow-hidden">
-        <Header />
-        <main className="flex-1 overflow-y-auto p-6">
-          <Card>
-            <CardHeader>
-              <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-                <CardTitle>All Members ({members.length})</CardTitle>
-                <div className="flex flex-col sm:flex-row gap-2">
-                  <div className="relative">
-                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-                    <Input
-                      placeholder="Search members..."
-                      value={searchQuery}
-                      onChange={(e) => setSearchQuery(e.target.value)}
-                      className="pl-10 w-full sm:w-64"
-                    />
-                  </div>
-                  <select
-                    value={sortBy}
-                    onChange={(e) => setSortBy(e.target.value as typeof sortBy)}
-                    className="h-10 rounded-md border border-input bg-background px-3 text-sm"
-                  >
-                    <option value="trophies">Sort by Trophies</option>
-                    <option value="name">Sort by Name</option>
-                    <option value="role">Sort by Role</option>
-                  </select>
-                  <Button variant="outline" onClick={loadMembers}>
-                    <RefreshCw className="h-4 w-4 mr-2" />
-                    Refresh
-                  </Button>
-                  <Button variant="outline" onClick={handleExport}>
-                    <Download className="h-4 w-4 mr-2" />
-                    Export
-                  </Button>
-                </div>
+    <LayoutWrapper>
+      <Card>
+        <CardHeader>
+          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+            <CardTitle>All Members ({members.length})</CardTitle>
+            <div className="flex flex-col sm:flex-row gap-2">
+              <div className="relative">
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                <Input
+                  placeholder="Search members..."
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  className="pl-10 w-full sm:w-64"
+                />
               </div>
-            </CardHeader>
-            <CardContent>
-              {isLoading ? (
-                <div className="flex items-center justify-center py-12">
-                  <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
-                </div>
-              ) : (
-                <MembersTable members={filteredMembers} />
-              )}
-            </CardContent>
-          </Card>
-        </main>
-      </div>
-    </div>
+              <select
+                value={sortBy}
+                onChange={(e) => setSortBy(e.target.value as typeof sortBy)}
+                className="h-10 rounded-md border border-input bg-background px-3 text-sm"
+              >
+                <option value="trophies">Sort by Trophies</option>
+                <option value="name">Sort by Name</option>
+                <option value="role">Sort by Role</option>
+              </select>
+              <Button variant="outline" onClick={loadMembers} size="sm" className="sm:size-default">
+                <RefreshCw className="h-4 w-4 sm:mr-2" />
+                <span className="hidden sm:inline">Refresh</span>
+              </Button>
+              <Button variant="outline" onClick={handleExport} size="sm" className="sm:size-default">
+                <Download className="h-4 w-4 sm:mr-2" />
+                <span className="hidden sm:inline">Export</span>
+              </Button>
+            </div>
+          </div>
+        </CardHeader>
+        <CardContent>
+          {isLoading ? (
+            <div className="flex items-center justify-center py-12">
+              <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
+            </div>
+          ) : (
+            <MembersTable members={filteredMembers} />
+          )}
+        </CardContent>
+      </Card>
+    </LayoutWrapper>
   );
 }

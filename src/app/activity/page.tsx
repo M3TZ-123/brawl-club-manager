@@ -1,8 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { Sidebar } from "@/components/sidebar";
-import { Header } from "@/components/header";
+import { LayoutWrapper } from "@/components/layout-wrapper";
 import { ActivityTimeline } from "@/components/activity-timeline";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -49,16 +48,12 @@ export default function ActivityPage() {
   };
 
   return (
-    <div className="flex h-screen bg-background">
-      <Sidebar />
-      <div className="flex-1 flex flex-col overflow-hidden">
-        <Header />
-        <main className="flex-1 overflow-y-auto p-6">
-          <Tabs defaultValue="events" className="space-y-4">
-            <TabsList>
-              <TabsTrigger value="events">Club Events</TabsTrigger>
-              <TabsTrigger value="activity">Activity Log</TabsTrigger>
-            </TabsList>
+    <LayoutWrapper>
+      <Tabs defaultValue="events" className="space-y-4">
+        <TabsList className="w-full sm:w-auto">
+          <TabsTrigger value="events" className="flex-1 sm:flex-none">Club Events</TabsTrigger>
+          <TabsTrigger value="activity" className="flex-1 sm:flex-none">Activity Log</TabsTrigger>
+        </TabsList>
 
             <TabsContent value="events">
               <div className="grid gap-6 lg:grid-cols-2">
@@ -74,12 +69,13 @@ export default function ActivityPage() {
                         <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
                       </div>
                     ) : (
-                      <Table>
+                      <div className="overflow-x-auto -mx-4 sm:mx-0">
+                      <Table className="min-w-[400px] sm:min-w-full">
                         <TableHeader>
                           <TableRow>
                             <TableHead>Player</TableHead>
                             <TableHead>Event</TableHead>
-                            <TableHead>Time</TableHead>
+                            <TableHead className="hidden sm:table-cell">Time</TableHead>
                           </TableRow>
                         </TableHeader>
                         <TableBody>
@@ -87,7 +83,7 @@ export default function ActivityPage() {
                             <TableRow key={event.id}>
                               <TableCell>
                                 <div>
-                                  <p className="font-medium">{event.player_name}</p>
+                                  <p className="font-medium truncate max-w-[100px] sm:max-w-none">{event.player_name}</p>
                                   <p className="text-xs text-muted-foreground">
                                     {event.player_tag}
                                   </p>
@@ -107,13 +103,14 @@ export default function ActivityPage() {
                                     event.event_type.slice(1)}
                                 </span>
                               </TableCell>
-                              <TableCell className="text-muted-foreground">
+                              <TableCell className="hidden sm:table-cell text-muted-foreground">
                                 {formatDateTime(event.event_time)}
                               </TableCell>
                             </TableRow>
                           ))}
                         </TableBody>
                       </Table>
+                      </div>
                     )}
                   </CardContent>
                 </Card>
@@ -127,7 +124,7 @@ export default function ActivityPage() {
                 </CardHeader>
                 <CardContent>
                   <div className="space-y-4">
-                    <div className="grid grid-cols-3 gap-4 text-center">
+                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 text-center">
                       <div className="p-4 rounded-lg bg-green-500/10">
                         <div className="text-2xl mb-1">🟢</div>
                         <p className="font-medium text-green-500">Active</p>
@@ -161,8 +158,6 @@ export default function ActivityPage() {
               </Card>
             </TabsContent>
           </Tabs>
-        </main>
-      </div>
-    </div>
+    </LayoutWrapper>
   );
 }

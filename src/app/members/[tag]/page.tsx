@@ -2,8 +2,7 @@
 
 import { useEffect, useState, use } from "react";
 import { useAppStore } from "@/lib/store";
-import { Sidebar } from "@/components/sidebar";
-import { Header } from "@/components/header";
+import { LayoutWrapper } from "@/components/layout-wrapper";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -114,64 +113,52 @@ export default function MemberDetailPage({ params }: PageProps) {
 
   if (isLoading) {
     return (
-      <div className="flex h-screen bg-background">
-        <Sidebar />
-        <div className="flex-1 flex flex-col overflow-hidden">
-          <Header />
-          <main className="flex-1 flex items-center justify-center">
-            <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary"></div>
-          </main>
+      <LayoutWrapper>
+        <div className="flex-1 flex items-center justify-center">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary"></div>
         </div>
-      </div>
+      </LayoutWrapper>
     );
   }
 
   if (!member) {
     return (
-      <div className="flex h-screen bg-background">
-        <Sidebar />
-        <div className="flex-1 flex flex-col overflow-hidden">
-          <Header />
-          <main className="flex-1 flex items-center justify-center">
-            <Card className="w-96">
-              <CardContent className="pt-6 text-center">
-                <p className="text-muted-foreground">Member not found</p>
-                <Link href="/members">
-                  <Button className="mt-4">
-                    <ArrowLeft className="h-4 w-4 mr-2" />
-                    Back to Members
-                  </Button>
-                </Link>
-              </CardContent>
-            </Card>
-          </main>
+      <LayoutWrapper>
+        <div className="flex-1 flex items-center justify-center">
+          <Card className="w-96">
+            <CardContent className="pt-6 text-center">
+              <p className="text-muted-foreground">Member not found</p>
+              <Link href="/members">
+                <Button className="mt-4">
+                  <ArrowLeft className="h-4 w-4 mr-2" />
+                  Back to Members
+                </Button>
+              </Link>
+            </CardContent>
+          </Card>
         </div>
-      </div>
+      </LayoutWrapper>
     );
   }
 
   return (
-    <div className="flex h-screen bg-background">
-      <Sidebar />
-      <div className="flex-1 flex flex-col overflow-hidden">
-        <Header />
-        <main className="flex-1 overflow-y-auto p-6">
-          {/* Back Button */}
-          <Link href="/members" className="inline-flex items-center text-muted-foreground hover:text-foreground mb-4">
-            <ArrowLeft className="h-4 w-4 mr-2" />
-            Back to Members
-          </Link>
+    <LayoutWrapper>
+      {/* Back Button */}
+      <Link href="/members" className="inline-flex items-center text-muted-foreground hover:text-foreground mb-4">
+        <ArrowLeft className="h-4 w-4 mr-2" />
+        Back to Members
+      </Link>
 
-          <div className="space-y-6">
-            {/* Player Header */}
-            <Card>
-              <CardContent className="pt-6">
-                <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-                  <div className="flex items-center gap-4">
-                    <div className="h-16 w-16 rounded-full bg-gradient-to-br from-yellow-400 to-orange-500 flex items-center justify-center text-2xl font-bold text-white">
-                      {member.player_name.charAt(0)}
-                    </div>
-                    <div>
+      <div className="space-y-6">
+        {/* Player Header */}
+        <Card>
+          <CardContent className="pt-6">
+            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+              <div className="flex items-center gap-4">
+                <div className="h-16 w-16 rounded-full bg-gradient-to-br from-yellow-400 to-orange-500 flex items-center justify-center text-2xl font-bold text-white">
+                  {member.player_name.charAt(0)}
+                </div>
+                <div>
                       <div className="flex items-center gap-2">
                         <h1 className="text-2xl font-bold">{member.player_name}</h1>
                         <span className="text-lg">
@@ -399,8 +386,6 @@ export default function MemberDetailPage({ params }: PageProps) {
               </CardContent>
             </Card>
           </div>
-        </main>
-      </div>
-    </div>
+    </LayoutWrapper>
   );
 }

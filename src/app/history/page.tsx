@@ -1,8 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { Sidebar } from "@/components/sidebar";
-import { Header } from "@/components/header";
+import { LayoutWrapper } from "@/components/layout-wrapper";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import {
@@ -83,20 +82,16 @@ export default function HistoryPage() {
   const returningCount = history.filter((h) => h.times_joined > 1).length;
 
   return (
-    <div className="flex h-screen bg-background">
-      <Sidebar />
-      <div className="flex-1 flex flex-col overflow-hidden">
-        <Header />
-        <main className="flex-1 overflow-y-auto p-6">
-          <div className="space-y-6">
-            {/* Stats */}
-            <div className="grid gap-4 md:grid-cols-4">
-              <Card>
-                <CardHeader className="pb-2">
-                  <CardTitle className="text-sm font-medium">Total Records</CardTitle>
-                </CardHeader>
-                <CardContent>
-                  <div className="text-2xl font-bold">{history.length}</div>
+    <LayoutWrapper>
+      <div className="space-y-6">
+        {/* Stats */}
+        <div className="grid gap-4 md:grid-cols-4">
+          <Card>
+            <CardHeader className="pb-2">
+              <CardTitle className="text-sm font-medium">Total Records</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="text-2xl font-bold">{history.length}</div>
                 </CardContent>
               </Card>
               <Card>
@@ -163,16 +158,17 @@ export default function HistoryPage() {
                     <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
                   </div>
                 ) : (
-                  <Table>
+                  <div className="overflow-x-auto -mx-4 sm:mx-0">
+                  <Table className="min-w-[700px] sm:min-w-full">
                     <TableHeader>
                       <TableRow>
                         <TableHead>Player</TableHead>
                         <TableHead>Status</TableHead>
-                        <TableHead>First Joined</TableHead>
-                        <TableHead>Last Seen</TableHead>
+                        <TableHead className="hidden sm:table-cell">First Joined</TableHead>
+                        <TableHead className="hidden sm:table-cell">Last Seen</TableHead>
                         <TableHead className="text-center">Joined</TableHead>
                         <TableHead className="text-center">Left</TableHead>
-                        <TableHead>Notes</TableHead>
+                        <TableHead className="hidden md:table-cell">Notes</TableHead>
                       </TableRow>
                     </TableHeader>
                     <TableBody>
@@ -187,15 +183,15 @@ export default function HistoryPage() {
                           <TableRow key={h.player_tag}>
                             <TableCell>
                               <div>
-                                <p className="font-medium">{h.player_name}</p>
+                                <p className="font-medium truncate max-w-[120px] sm:max-w-none">{h.player_name}</p>
                                 <p className="text-xs text-muted-foreground">{h.player_tag}</p>
                               </div>
                             </TableCell>
                             <TableCell>{getMemberBadge(h)}</TableCell>
-                            <TableCell className="text-muted-foreground">
+                            <TableCell className="hidden sm:table-cell text-muted-foreground">
                               {formatDate(h.first_seen)}
                             </TableCell>
-                            <TableCell className="text-muted-foreground">
+                            <TableCell className="hidden sm:table-cell text-muted-foreground">
                               {formatDate(h.last_seen)}
                             </TableCell>
                             <TableCell className="text-center">
@@ -210,7 +206,7 @@ export default function HistoryPage() {
                                 {h.times_left}
                               </span>
                             </TableCell>
-                            <TableCell className="text-muted-foreground max-w-[200px] truncate">
+                            <TableCell className="hidden md:table-cell text-muted-foreground max-w-[200px] truncate">
                               {h.notes || "-"}
                             </TableCell>
                           </TableRow>
@@ -218,6 +214,7 @@ export default function HistoryPage() {
                       )}
                     </TableBody>
                   </Table>
+                  </div>
                 )}
               </CardContent>
             </Card>
@@ -257,8 +254,6 @@ export default function HistoryPage() {
               </CardContent>
             </Card>
           </div>
-        </main>
-      </div>
-    </div>
+    </LayoutWrapper>
   );
 }
