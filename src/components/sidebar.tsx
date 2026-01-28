@@ -1,5 +1,6 @@
 "use client";
 
+import { useEffect, useRef } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { cn } from "@/lib/utils";
@@ -27,9 +28,12 @@ const navigation = [
 
 export function Sidebar() {
   const pathname = usePathname();
-  const { clubName, clubTag, apiKey, lastSyncTime, isSyncing } = useAppStore();
+  const { clubName, clubTag, apiKey, lastSyncTime, isSyncing, refreshInterval } = useAppStore();
+  const autoSyncRef = useRef<NodeJS.Timeout | null>(null);
 
-  const handleSync = async () => {
+  const handleSync = async (silent = false) => {
+    if (!clubTag || !apiKey) return;
+    
     // Trigger sync via API
     try {
       useAppStore.getState().setIsSyncing(true);
@@ -41,19 +45,67 @@ export function Sidebar() {
       const data = await response.json();
       if (!response.ok) {
         console.error("Sync error:", data.error);
-        alert(`Sync failed: ${data.error}`);
+        if (!silent) alert(`Sync failed: ${data.error}`);
       } else {
         useAppStore.getState().setLastSyncTime(new Date().toISOString());
         // Reload the page to fetch new data
-        window.location.reload();
+        if (!silent) window.location.reload();
       }
     } catch (error) {
       console.error("Sync failed:", error);
-      alert("Sync failed. Check the console for details.");
+      if (!silent) alert("Sync failed. Check the console for details.");
     } finally {
       useAppStore.getState().setIsSyncing(false);
     }
   };
+
+  // Auto-sync effect
+  useEffect(() => {
+    if (!clubTag || !apiKey) return;
+
+    const intervalMs = refreshInterval * 60 * 1000; // Convert minutes to ms
+    
+    // Check if we should sync on mount (if last sync was too long ago)
+    if (lastSyncTime) {
+      const timeSinceLastSync = Date.now() - new Date(lastSyncTime).getTime();
+      if (timeSinceLastSync >= intervalMs) {
+        console.log("Auto-sync: Syncing because interval has passed");
+        handleSync(true);
+      }
+    }
+
+    // Set up interval for auto-sync
+    autoSyncRef.current = setInterval(() => {
+      console.log("Auto-sync: Running scheduled sync");
+      handleSync(true);
+    }, intervalMs);
+
+    return () => {
+      if (autoSyncRef.current) {
+        clearInterval(autoSyncRef.current);
+      }
+    };
+  }, [clubTag, apiKey, refreshInterval, lastSyncTime]);
+
+  // Fetch last sync time from database on mount
+  useEffect(() => {
+    const fetchSyncStatus = async () => {
+      try {
+        const response = await fetch("/api/sync/status");
+        const data = await response.json();
+        if (data.lastSyncTime) {
+          useAppStore.getState().setLastSyncTime(data.lastSyncTime);
+        }
+      } catch (error) {
+        console.error("Failed to fetch sync status:", error);
+      }
+    };
+    fetchSyncStatus();
+    
+    // Poll every 5 minutes to check if GitHub Actions synced
+    const pollInterval = setInterval(fetchSyncStatus, 5 * 60 * 1000);
+    return () => clearInterval(pollInterval);
+  }, []);
 
   return (
     <div className="flex h-full w-64 flex-col bg-card border-r">
@@ -95,7 +147,7 @@ export function Sidebar() {
       {/* Sync Status */}
       <div className="border-t p-4 space-y-3">
         <Button
-          onClick={handleSync}
+          onClick={() => handleSync(false)}
           disabled={isSyncing}
           className="w-full"
           variant="outline"

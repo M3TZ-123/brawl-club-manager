@@ -246,11 +246,18 @@ export async function POST(request: NextRequest) {
       await supabase.from("club_events").insert(events);
     }
 
+    // Save last sync time to database
+    const syncTime = new Date().toISOString();
+    await supabase.from("settings").upsert({
+      key: "last_sync_time",
+      value: syncTime,
+    }, { onConflict: "key" });
+
     return NextResponse.json({
       success: true,
       synced: memberUpdates.length,
       events: events.length,
-      timestamp: new Date().toISOString(),
+      timestamp: syncTime,
     });
   } catch (error) {
     console.error("Sync error:", error);
