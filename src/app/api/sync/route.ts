@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getClub, getPlayer, setApiKey, getPlayerRankedData, getPlayerWinRate, getPlayerBattleLog, processBattleLog, BrawlStarsBrawler } from "@/lib/brawl-api";
+import { getClub, getPlayer, setApiKey, getPlayerRankedData, getPlayerBattleLog, processBattleLog, calculateWinRateFromBattleLog, BrawlStarsBrawler } from "@/lib/brawl-api";
 import { supabase } from "@/lib/supabase";
 
 // GET handler for Vercel Cron Jobs and GitHub Actions
@@ -187,13 +187,17 @@ async function syncClubData(providedClubTag?: string, providedApiKey?: string, i
       const batchResults = await Promise.all(
         batch.map(async (member) => {
           try {
-            // Run all 4 API calls in parallel for each member (added battle log)
-            const [player, rankedData, winRateData, battleLog] = await Promise.all([
+            // Run 3 API calls in parallel (battleLog is used for both win rate and history)
+            // Brawl Stars API: getPlayer, getPlayerBattleLog
+            // RNT API: getPlayerRankedData
+            const [player, rankedData, battleLog] = await Promise.all([
               getPlayer(member.tag),
               getPlayerRankedData(member.tag),
-              getPlayerWinRate(member.tag),
               getPlayerBattleLog(member.tag),
             ]);
+
+            // Calculate win rate from the already-fetched battle log (no extra API call)
+            const winRateData = calculateWinRateFromBattleLog(battleLog);
 
             const existingMember = existingMemberMap.get(member.tag);
             const trophyChange = existingMember
@@ -242,7 +246,7 @@ async function syncClubData(providedClubTag?: string, providedApiKey?: string, i
           member: typeof batch[0];
           player: Awaited<ReturnType<typeof getPlayer>>;
           rankedData: Awaited<ReturnType<typeof getPlayerRankedData>>;
-          winRateData: Awaited<ReturnType<typeof getPlayerWinRate>>;
+          winRateData: ReturnType<typeof calculateWinRateFromBattleLog>;
           processedBattles: ReturnType<typeof processBattleLog>;
           trophyChange: number;
           activityType: string;

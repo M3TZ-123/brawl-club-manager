@@ -286,47 +286,55 @@ export async function getPlayerWinRate(playerTag: string): Promise<{
 }> {
   try {
     const battleLog = await getPlayerBattleLog(playerTag);
-    
-    if (!battleLog?.items || battleLog.items.length === 0) {
-      return { winRate: null, totalBattles: 0, wins: 0 };
-    }
-    
-    let wins = 0;
-    let validBattles = 0;
-    
-    for (const battle of battleLog.items) {
-      const battleData = battle.battle;
-      if (!battleData) continue;
-      
-      // Count any battle with a result (3v3, Ranked, Map Maker, Friendly, etc.)
-      if (battleData.result) {
-        validBattles++;
-        if (battleData.result === "victory") {
-          wins++;
-        }
-        continue;
-      }
-      
-      // Count Showdown modes (have rank instead of result)
-      if (battleData.rank != null) {
-        validBattles++;
-        // Top 4 in Solo (out of 10) or Top 2 in Duo (out of 5) = win
-        if (battleData.rank <= 4) {
-          wins++;
-        }
-      }
-    }
-    
-    if (validBattles === 0) {
-      return { winRate: null, totalBattles: 0, wins: 0 };
-    }
-    
-    const winRate = Math.round((wins / validBattles) * 100);
-    return { winRate, totalBattles: validBattles, wins };
+    return calculateWinRateFromBattleLog(battleLog);
   } catch (error) {
     console.error(`Error fetching battle log for ${playerTag}:`, error);
     return { winRate: null, totalBattles: 0, wins: 0 };
   }
+}
+
+// Calculate win rate from an already-fetched battle log (to avoid duplicate API calls)
+export function calculateWinRateFromBattleLog(battleLog: BrawlStarsBattleLog | null): {
+  winRate: number | null;
+  totalBattles: number;
+  wins: number;
+} {
+  if (!battleLog?.items || battleLog.items.length === 0) {
+    return { winRate: null, totalBattles: 0, wins: 0 };
+  }
+  
+  let wins = 0;
+  let validBattles = 0;
+  
+  for (const battle of battleLog.items) {
+    const battleData = battle.battle;
+    if (!battleData) continue;
+    
+    // Count any battle with a result (3v3, Ranked, Map Maker, Friendly, etc.)
+    if (battleData.result) {
+      validBattles++;
+      if (battleData.result === "victory") {
+        wins++;
+      }
+      continue;
+    }
+    
+    // Count Showdown modes (have rank instead of result)
+    if (battleData.rank != null) {
+      validBattles++;
+      // Top 4 in Solo (out of 10) or Top 2 in Duo (out of 5) = win
+      if (battleData.rank <= 4) {
+        wins++;
+      }
+    }
+  }
+  
+  if (validBattles === 0) {
+    return { winRate: null, totalBattles: 0, wins: 0 };
+  }
+  
+  const winRate = Math.round((wins / validBattles) * 100);
+  return { winRate, totalBattles: validBattles, wins };
 }
 
 // Get last battle time from battle log
