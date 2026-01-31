@@ -21,6 +21,7 @@ interface AppState {
   hasLoadedSettings: boolean;
   theme: "light" | "dark";
   sidebarOpen: boolean;
+  notificationsReadAt: string | null; // Timestamp when notifications were last read
   
   // Settings
   inactivityThreshold: number; // hours
@@ -46,6 +47,7 @@ interface AppState {
   setRefreshInterval: (minutes: number) => void;
   setNotificationsEnabled: (enabled: boolean) => void;
   setDiscordWebhook: (webhook: string) => void;
+  setNotificationsReadAt: (time: string | null) => void;
   loadSettingsFromDB: () => Promise<void>;
   saveSettingsToDB: () => Promise<void>;
 }
@@ -67,6 +69,7 @@ export const useAppStore = create<AppState>()(
       hasLoadedSettings: false,
       theme: "dark",
       sidebarOpen: true,
+      notificationsReadAt: null,
       inactivityThreshold: 24,
       refreshInterval: 60, // 1 hour
       notificationsEnabled: true,
@@ -90,6 +93,7 @@ export const useAppStore = create<AppState>()(
       setRefreshInterval: (minutes) => set({ refreshInterval: minutes }),
       setNotificationsEnabled: (enabled) => set({ notificationsEnabled: enabled }),
       setDiscordWebhook: (webhook) => set({ discordWebhook: webhook }),
+      setNotificationsReadAt: (time) => set({ notificationsReadAt: time }),
       
       // Load settings from database (only once)
       loadSettingsFromDB: async () => {

@@ -3,46 +3,22 @@ import { supabase } from "@/lib/supabase";
 
 export async function GET() {
   try {
-    // Get settings to find club tag
-    const { data: settings } = await supabase
-      .from("settings")
-      .select("key, value")
-      .eq("key", "club_tag")
-      .single();
+    // Get current member tags from member_history (same logic as /api/members)
+    const { data: currentMemberHistory } = await supabase
+      .from("member_history")
+      .select("player_tag")
+      .eq("is_current_member", true);
+    
+    const currentMemberTags = currentMemberHistory?.map(h => h.player_tag) || [];
 
-    const clubTag = settings?.value;
-
-    // Get only current members by joining with member_history
-    let membersQuery = supabase
+    // Only fetch members who are currently in the club
+    const { data: members, error } = await supabase
       .from("members")
       .select("*")
+      .in("player_tag", currentMemberTags.length > 0 ? currentMemberTags : [''])
       .order("trophies", { ascending: false });
 
-    // If we have a club tag, filter to only current members
-    let members = null;
-    if (clubTag) {
-      const { data: currentMemberTags } = await supabase
-        .from("member_history")
-        .select("player_tag")
-        .eq("club_tag", clubTag)
-        .eq("is_current_member", true);
-
-      if (currentMemberTags && currentMemberTags.length > 0) {
-        const tags = currentMemberTags.map((m) => m.player_tag);
-        const { data } = await supabase
-          .from("members")
-          .select("*")
-          .in("player_tag", tags)
-          .order("trophies", { ascending: false });
-        members = data;
-      }
-    }
-
-    // Fallback to all members if no member_history data
-    if (!members || members.length === 0) {
-      const { data } = await membersQuery;
-      members = data;
-    }
+    if (error) throw error;
 
     // Get activity logs from last 7 days
     const weekAgo = new Date();

@@ -229,7 +229,7 @@ interface NotificationItem {
 }
 
 function SimpleHeader() {
-  const { clubName, theme, setTheme } = useAppStore();
+  const { clubName, theme, setTheme, notificationsReadAt, setNotificationsReadAt } = useAppStore();
   const { toggle } = useSidebarContext();
   const [notifications, setNotifications] = useState<NotificationItem[]>([]);
   const [showNotifications, setShowNotifications] = useState(false);
@@ -258,15 +258,25 @@ function SimpleHeader() {
             time: e.event_time,
           }))
         );
-        // Count events from last 24 hours as "unread"
-        const dayAgo = new Date(Date.now() - 24 * 60 * 60 * 1000);
+        // Count events newer than the last read time
+        const lastRead = useAppStore.getState().notificationsReadAt;
+        const lastReadTime = lastRead ? new Date(lastRead) : new Date(0);
         const recentCount = events.filter(
-          (e: { event_time: string }) => new Date(e.event_time) > dayAgo
+          (e: { event_time: string }) => new Date(e.event_time) > lastReadTime
         ).length;
         setUnreadCount(Math.min(recentCount, 9));
       }
     } catch (error) {
       console.error("Error loading notifications:", error);
+    }
+  };
+
+  const handleBellClick = () => {
+    setShowNotifications(!showNotifications);
+    if (!showNotifications) {
+      // Mark as read when opening - save timestamp to store
+      setNotificationsReadAt(new Date().toISOString());
+      setUnreadCount(0);
     }
   };
 
@@ -302,13 +312,7 @@ function SimpleHeader() {
           <Button
             variant="ghost"
             size="icon"
-            onClick={() => {
-              setShowNotifications(!showNotifications);
-              if (!showNotifications) {
-                // Clear unread count when opening notifications
-                setUnreadCount(0);
-              }
-            }}
+            onClick={handleBellClick}
           >
             <Bell className="h-5 w-5" />
             {unreadCount > 0 && (
