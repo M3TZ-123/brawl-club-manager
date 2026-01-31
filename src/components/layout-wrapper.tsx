@@ -1,10 +1,10 @@
 "use client";
 
-import { ReactNode, createContext, useContext, useCallback, useEffect, useRef } from "react";
+import { ReactNode, createContext, useContext, useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useAppStore } from "@/lib/store";
-import { cn } from "@/lib/utils";
+import { cn, formatDateTime } from "@/lib/utils";
 import {
   LayoutDashboard,
   Users,
@@ -16,8 +16,10 @@ import {
   Trophy,
   PanelLeft,
   X,
+  Bell,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { Card, CardContent } from "@/components/ui/card";
 
 const navigation = [
   { name: "Dashboard", href: "/", icon: LayoutDashboard },
@@ -219,9 +221,54 @@ function SimpleSidebar() {
   );
 }
 
+interface NotificationItem {
+  id: number;
+  type: "join" | "leave";
+  playerName: string;
+  time: string;
+}
+
 function SimpleHeader() {
   const { clubName, theme, setTheme } = useAppStore();
-  const { toggle, isOpen } = useSidebarContext();
+  const { toggle } = useSidebarContext();
+  const [notifications, setNotifications] = useState<NotificationItem[]>([]);
+  const [showNotifications, setShowNotifications] = useState(false);
+  const [unreadCount, setUnreadCount] = useState(0);
+
+  useEffect(() => {
+    loadNotifications();
+    
+    // Listen for data updates to refresh notifications
+    const handleUpdate = () => loadNotifications();
+    window.addEventListener("club-data-updated", handleUpdate);
+    return () => window.removeEventListener("club-data-updated", handleUpdate);
+  }, []);
+
+  const loadNotifications = async () => {
+    try {
+      const response = await fetch("/api/events?limit=10");
+      if (response.ok) {
+        const data = await response.json();
+        const events = data.events || [];
+        setNotifications(
+          events.slice(0, 5).map((e: { id: number; event_type: string; player_name: string; event_time: string }) => ({
+            id: e.id,
+            type: e.event_type as "join" | "leave",
+            playerName: e.player_name,
+            time: e.event_time,
+          }))
+        );
+        // Count events from last 24 hours as "unread"
+        const dayAgo = new Date(Date.now() - 24 * 60 * 60 * 1000);
+        const recentCount = events.filter(
+          (e: { event_time: string }) => new Date(e.event_time) > dayAgo
+        ).length;
+        setUnreadCount(Math.min(recentCount, 9));
+      }
+    } catch (error) {
+      console.error("Error loading notifications:", error);
+    }
+  };
 
   return (
     <header className="h-16 border-b bg-card flex items-center justify-between px-4 md:px-6 gap-4">
@@ -249,6 +296,69 @@ function SimpleHeader() {
             <span className="h-5 w-5">🌙</span>
           )}
         </Button>
+        
+        {/* Notification Bell */}
+        <div className="relative">
+          <Button
+            variant="ghost"
+            size="icon"
+            onClick={() => setShowNotifications(!showNotifications)}
+          >
+            <Bell className="h-5 w-5" />
+            {unreadCount > 0 && (
+              <span className="absolute -top-1 -right-1 h-5 w-5 rounded-full bg-red-500 text-white text-xs flex items-center justify-center">
+                {unreadCount}
+              </span>
+            )}
+          </Button>
+
+          {showNotifications && (
+            <Card className="absolute right-0 top-12 w-80 z-50 shadow-lg">
+              <CardContent className="p-0">
+                <div className="p-3 border-b">
+                  <h3 className="font-semibold">Club Events</h3>
+                </div>
+                {notifications.length === 0 ? (
+                  <p className="p-4 text-sm text-muted-foreground text-center">
+                    No recent events
+                  </p>
+                ) : (
+                  <div className="max-h-80 overflow-y-auto">
+                    {notifications.map((notif) => (
+                      <div
+                        key={notif.id}
+                        className="p-3 border-b last:border-b-0 hover:bg-muted/50"
+                      >
+                        <div className="flex items-center gap-2">
+                          <span
+                            className={`w-2 h-2 rounded-full ${
+                              notif.type === "join" ? "bg-green-500" : "bg-red-500"
+                            }`}
+                          />
+                          <span className="font-medium text-sm">
+                            {notif.playerName}
+                          </span>
+                          <span
+                            className={`text-xs ${
+                              notif.type === "join"
+                                ? "text-green-500"
+                                : "text-red-500"
+                            }`}
+                          >
+                            {notif.type === "join" ? "joined" : "left"}
+                          </span>
+                        </div>
+                        <p className="text-xs text-muted-foreground mt-1">
+                          {formatDateTime(notif.time)}
+                        </p>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+          )}
+        </div>
       </div>
     </header>
   );
