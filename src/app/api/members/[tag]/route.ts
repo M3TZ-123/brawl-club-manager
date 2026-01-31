@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { supabase } from "@/lib/supabase";
-import { getPlayer, setApiKey, estimateRankedInfo, getLastBattleTime } from "@/lib/brawl-api";
+import { getPlayer, setApiKey, estimateRankedInfo, getLastBattleTime, getPlayerBattleStats, getBrawlerPowerDistribution } from "@/lib/brawl-api";
 
 export async function GET(
   request: NextRequest,
@@ -47,14 +47,50 @@ export async function GET(
       .eq("player_tag", playerTag)
       .single();
 
-    // Get last battle time from API
-    const lastBattleTime = await getLastBattleTime(playerTag);
+    // Fetch additional data from API
+    let lastBattleTime = null;
+    let battleStats = null;
+    let powerDistribution = null;
+    let brawlers = null;
+
+    if (apiKey) {
+      try {
+        // Run API calls in parallel
+        const [battleTimeResult, battleStatsResult, playerData] = await Promise.all([
+          getLastBattleTime(playerTag),
+          getPlayerBattleStats(playerTag),
+          getPlayer(playerTag),
+        ]);
+
+        lastBattleTime = battleTimeResult;
+        
+        // Convert Map and Set to serializable format
+        battleStats = {
+          battles: battleStatsResult.battles,
+          wins: battleStatsResult.wins,
+          losses: battleStatsResult.losses,
+          winRate: battleStatsResult.winRate,
+          starPlayer: battleStatsResult.starPlayer,
+          trophyChange: battleStatsResult.trophyChange,
+          activeDays: battleStatsResult.activeDays.size,
+          battlesByDay: Object.fromEntries(battleStatsResult.battlesByDay),
+        };
+
+        brawlers = playerData.brawlers;
+        powerDistribution = getBrawlerPowerDistribution(playerData.brawlers);
+      } catch (apiError) {
+        console.error("Error fetching API data:", apiError);
+      }
+    }
 
     return NextResponse.json({
       member,
       activityHistory: activityHistory || [],
       memberHistory,
       lastBattleTime,
+      battleStats,
+      powerDistribution,
+      brawlers,
     });
   } catch (error) {
     console.error("Error fetching member:", error);

@@ -253,3 +253,262 @@ export function MemberBarChart({ data }: MemberBarChartProps) {
     </Card>
   );
 }
+
+// Activity Calendar Component
+interface ActivityCalendarProps {
+  battlesByDay: Record<string, number>;
+}
+
+export function ActivityCalendar({ battlesByDay }: ActivityCalendarProps) {
+  // Generate calendar for current month
+  const now = new Date();
+  const currentYear = now.getFullYear();
+  const currentMonth = now.getMonth();
+  
+  // Get first day of month and number of days
+  const firstDay = new Date(currentYear, currentMonth, 1);
+  const lastDay = new Date(currentYear, currentMonth + 1, 0);
+  const daysInMonth = lastDay.getDate();
+  const startingDay = firstDay.getDay(); // 0 = Sunday
+  
+  // Calculate days until season reset (assumed every 2 weeks on Monday)
+  const dayOfWeek = now.getDay();
+  const daysUntilMonday = dayOfWeek === 0 ? 1 : 8 - dayOfWeek;
+  const hoursUntilReset = daysUntilMonday * 24 - now.getHours();
+  const daysToReset = Math.floor(hoursUntilReset / 24);
+  const hoursToReset = hoursUntilReset % 24;
+
+  // Get color based on battles count
+  const getColor = (battles: number | undefined) => {
+    if (!battles || battles === 0) return "bg-muted/30 text-muted-foreground";
+    if (battles < 5) return "bg-orange-500/80 text-white";
+    if (battles < 10) return "bg-orange-400 text-white";
+    if (battles < 20) return "bg-green-600 text-white";
+    return "bg-green-500 text-white";
+  };
+
+  const weekDays = ["S", "M", "T", "W", "T", "F", "S"];
+  const monthName = now.toLocaleDateString("en-US", { month: "long", year: "numeric" });
+
+  // Build calendar grid
+  const calendarDays: (number | null)[] = [];
+  for (let i = 0; i < startingDay; i++) {
+    calendarDays.push(null);
+  }
+  for (let day = 1; day <= daysInMonth; day++) {
+    calendarDays.push(day);
+  }
+
+  return (
+    <Card>
+      <CardHeader className="flex flex-row items-center justify-between pb-2">
+        <div className="flex items-center gap-2">
+          <span className="text-lg">📊</span>
+          <CardTitle className="text-sm font-medium">ACTIVITY</CardTitle>
+        </div>
+        <div className="flex items-center gap-2 text-xs bg-orange-500/20 text-orange-400 px-3 py-1 rounded-full">
+          {daysToReset}d {hoursToReset}h to reset
+          <span>→</span>
+        </div>
+      </CardHeader>
+      <CardContent>
+        {/* Week day headers */}
+        <div className="grid grid-cols-7 gap-1 mb-1">
+          {weekDays.map((day, i) => (
+            <div key={i} className="text-center text-xs text-muted-foreground py-1">
+              {day}
+            </div>
+          ))}
+        </div>
+        
+        {/* Calendar grid */}
+        <div className="grid grid-cols-7 gap-1">
+          {calendarDays.map((day, i) => {
+            if (day === null) {
+              return <div key={i} className="aspect-square" />;
+            }
+            
+            const dateKey = `${currentYear}-${String(currentMonth + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+            const battles = battlesByDay[dateKey];
+            const isToday = day === now.getDate();
+            
+            return (
+              <div
+                key={i}
+                className={`aspect-square flex items-center justify-center text-xs font-medium rounded ${getColor(battles)} ${isToday ? 'ring-2 ring-yellow-400' : ''}`}
+                title={battles ? `${dateKey}: ${battles} battles` : dateKey}
+              >
+                {day}
+              </div>
+            );
+          })}
+        </div>
+        
+        {/* Legend */}
+        <div className="flex items-center gap-3 mt-4 text-xs text-muted-foreground">
+          <div className="flex items-center gap-1">
+            <div className="w-3 h-3 rounded bg-muted/30" />
+            <span>Not tracked</span>
+          </div>
+          <div className="flex items-center gap-1">
+            <div className="w-3 h-3 rounded border-2 border-orange-400" />
+            <span>Season</span>
+          </div>
+          <span>Less</span>
+          <div className="flex gap-0.5">
+            <div className="w-3 h-3 rounded bg-orange-500/80" />
+            <div className="w-3 h-3 rounded bg-orange-400" />
+            <div className="w-3 h-3 rounded bg-green-600" />
+            <div className="w-3 h-3 rounded bg-green-500" />
+          </div>
+          <span>More</span>
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+
+// Power Level Distribution Chart
+interface PowerLevelChartProps {
+  distribution: number[];
+  avgPower: number;
+  maxedCount: number;
+}
+
+export function PowerLevelChart({ distribution, avgPower, maxedCount }: PowerLevelChartProps) {
+  const data = distribution.map((count, index) => ({
+    level: index + 1,
+    count,
+  })).filter(d => d.count > 0 || d.level >= 6); // Show from level 6+ or if has brawlers
+
+  const getBarColor = (level: number) => {
+    if (level <= 6) return "#6b7280"; // Gray
+    if (level <= 9) return "#22c55e"; // Green
+    if (level === 10) return "#3b82f6"; // Blue
+    return "#a855f7"; // Purple for level 11
+  };
+
+  return (
+    <Card>
+      <CardHeader className="pb-2">
+        <div className="flex items-center gap-2">
+          <span className="text-yellow-500">⚡</span>
+          <CardTitle className="text-sm font-medium">BY POWER LEVEL</CardTitle>
+        </div>
+      </CardHeader>
+      <CardContent>
+        <ResponsiveContainer width="100%" height={180}>
+          <BarChart data={data} barCategoryGap="20%">
+            <XAxis 
+              dataKey="level" 
+              axisLine={false}
+              tickLine={false}
+              tick={{ fill: 'hsl(var(--muted-foreground))', fontSize: 12 }}
+            />
+            <YAxis hide />
+            <Tooltip
+              contentStyle={{
+                backgroundColor: "hsl(var(--card))",
+                border: "1px solid hsl(var(--border))",
+                borderRadius: "8px",
+              }}
+              formatter={(value) => [`${value} brawlers`, "Count"]}
+            />
+            <Bar 
+              dataKey="count" 
+              radius={[4, 4, 0, 0]}
+              label={{ position: 'top', fill: '#22c55e', fontSize: 12 }}
+            >
+              {data.map((entry, index) => (
+                <Cell key={`cell-${index}`} fill={getBarColor(entry.level)} />
+              ))}
+            </Bar>
+          </BarChart>
+        </ResponsiveContainer>
+        <div className="flex justify-between mt-2 text-sm">
+          <span className="text-muted-foreground">
+            Avg: <span className="text-green-400 font-bold">{avgPower.toFixed(1)}</span>
+          </span>
+          <span className="text-muted-foreground">
+            Maxed: <span className="text-purple-400 font-bold">{maxedCount}</span>
+          </span>
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+
+// Battle Tracking Stats Component
+interface TrackingStatsProps {
+  battles: number;
+  wins: number;
+  losses: number;
+  winRate: number;
+  starPlayer: number;
+  trophyChange: number;
+  activeDays: number;
+}
+
+export function TrackingStats({ 
+  battles, 
+  wins, 
+  losses, 
+  winRate, 
+  starPlayer, 
+  trophyChange, 
+  activeDays 
+}: TrackingStatsProps) {
+  return (
+    <Card>
+      <CardHeader className="pb-2">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <span className="text-green-400">☑</span>
+            <CardTitle className="text-sm font-medium">TRACKING</CardTitle>
+            <span className="text-xs bg-muted px-2 py-0.5 rounded">Last 25 battles</span>
+          </div>
+        </div>
+      </CardHeader>
+      <CardContent>
+        <div className="grid grid-cols-2 gap-x-8 gap-y-3 text-sm">
+          <div className="flex justify-between">
+            <span className="text-muted-foreground">Battles</span>
+            <span className="font-bold">{battles}</span>
+          </div>
+          <div className="flex justify-between">
+            <span className="text-muted-foreground">Active Days</span>
+            <span className="font-bold">{activeDays}/7</span>
+          </div>
+          
+          <div className="flex justify-between">
+            <span className="text-muted-foreground">Wins</span>
+            <span className="font-bold text-green-400">{wins}</span>
+          </div>
+          <div className="flex justify-between">
+            <span className="text-muted-foreground">Losses</span>
+            <span className="font-bold text-red-400">{losses}</span>
+          </div>
+          
+          <div className="flex justify-between">
+            <span className="text-muted-foreground">Win Rate</span>
+            <span className={`font-bold ${winRate >= 50 ? 'text-green-400' : 'text-red-400'}`}>{winRate}%</span>
+          </div>
+          <div className="flex justify-between">
+            <span className="text-muted-foreground">Star Player</span>
+            <span className="font-bold text-yellow-400">{starPlayer}</span>
+          </div>
+          
+          <div className="flex justify-between col-span-2 pt-2 border-t border-border">
+            <div className="flex items-center gap-1">
+              <span className="text-yellow-500">🏆</span>
+              <span className="text-muted-foreground">Trophies</span>
+            </div>
+            <span className={`font-bold ${trophyChange >= 0 ? 'text-green-400' : 'text-red-400'}`}>
+              {trophyChange >= 0 ? '+' : ''}{formatNumber(trophyChange)}
+            </span>
+          </div>
+        </div>
+      </CardContent>
+    </Card>
+  );
+}

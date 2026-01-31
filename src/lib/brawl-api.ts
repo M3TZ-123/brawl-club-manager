@@ -371,6 +371,128 @@ export async function getLastBattleTime(playerTag: string): Promise<string | nul
   }
 }
 
+// Parse battle time from API format to ISO format
+function parseBattleTime(bt: string): string {
+  const year = bt.slice(0, 4);
+  const month = bt.slice(4, 6);
+  const day = bt.slice(6, 8);
+  const hour = bt.slice(9, 11);
+  const min = bt.slice(11, 13);
+  const sec = bt.slice(13, 15);
+  return `${year}-${month}-${day}T${hour}:${min}:${sec}.000Z`;
+}
+
+// Get detailed battle statistics
+export async function getPlayerBattleStats(playerTag: string): Promise<{
+  battles: number;
+  wins: number;
+  losses: number;
+  winRate: number;
+  starPlayer: number;
+  trophyChange: number;
+  activeDays: Set<string>;
+  battlesByDay: Map<string, number>;
+}> {
+  try {
+    const battleLog = await getPlayerBattleLog(playerTag);
+    
+    const stats = {
+      battles: 0,
+      wins: 0,
+      losses: 0,
+      winRate: 0,
+      starPlayer: 0,
+      trophyChange: 0,
+      activeDays: new Set<string>(),
+      battlesByDay: new Map<string, number>(),
+    };
+
+    if (!battleLog?.items || battleLog.items.length === 0) {
+      return stats;
+    }
+
+    for (const battle of battleLog.items) {
+      const battleData = battle.battle;
+      if (!battleData) continue;
+
+      stats.battles++;
+      
+      // Track active days
+      const battleDate = parseBattleTime(battle.battleTime);
+      const dateKey = battleDate.slice(0, 10); // YYYY-MM-DD
+      stats.activeDays.add(dateKey);
+      stats.battlesByDay.set(dateKey, (stats.battlesByDay.get(dateKey) || 0) + 1);
+
+      // Track trophy changes
+      if (battleData.trophyChange) {
+        stats.trophyChange += battleData.trophyChange;
+      }
+
+      // Track star player
+      if (battleData.starPlayer?.tag === playerTag || 
+          battleData.starPlayer?.tag === playerTag.replace('#', '%23')) {
+        stats.starPlayer++;
+      }
+
+      // Count wins/losses
+      if (battleData.result) {
+        if (battleData.result === "victory") {
+          stats.wins++;
+        } else if (battleData.result === "defeat") {
+          stats.losses++;
+        }
+      } else if (battleData.rank != null) {
+        // Showdown: Top 4 = win
+        if (battleData.rank <= 4) {
+          stats.wins++;
+        } else {
+          stats.losses++;
+        }
+      }
+    }
+
+    stats.winRate = stats.battles > 0 ? Math.round((stats.wins / stats.battles) * 100) : 0;
+    
+    return stats;
+  } catch (error) {
+    console.error(`Error fetching battle stats for ${playerTag}:`, error);
+    return {
+      battles: 0,
+      wins: 0,
+      losses: 0,
+      winRate: 0,
+      starPlayer: 0,
+      trophyChange: 0,
+      activeDays: new Set(),
+      battlesByDay: new Map(),
+    };
+  }
+}
+
+// Get brawler power level distribution
+export function getBrawlerPowerDistribution(brawlers: BrawlStarsBrawler[]): {
+  distribution: number[];
+  avgPower: number;
+  maxedCount: number;
+} {
+  const distribution = Array(11).fill(0); // Power levels 1-11
+  let totalPower = 0;
+  let maxedCount = 0;
+
+  for (const brawler of brawlers) {
+    const powerIndex = Math.min(Math.max(brawler.power - 1, 0), 10);
+    distribution[powerIndex]++;
+    totalPower += brawler.power;
+    if (brawler.power === 11) {
+      maxedCount++;
+    }
+  }
+
+  const avgPower = brawlers.length > 0 ? totalPower / brawlers.length : 0;
+
+  return { distribution, avgPower, maxedCount };
+}
+
 // Legacy function for backwards compatibility
 export function estimateRankedInfo(player: BrawlStarsPlayer): {
   currentRank: string;

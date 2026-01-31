@@ -7,7 +7,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
-import { TrophyChart, TrophyStatistics } from "@/components/charts";
+import { TrophyStatistics, ActivityCalendar, PowerLevelChart, TrackingStats } from "@/components/charts";
 import { Member, ActivityLog, MemberHistory } from "@/types/database";
 import {
   formatNumber,
@@ -29,6 +29,23 @@ import {
 } from "lucide-react";
 import Link from "next/link";
 
+interface BattleStats {
+  battles: number;
+  wins: number;
+  losses: number;
+  winRate: number;
+  starPlayer: number;
+  trophyChange: number;
+  activeDays: number;
+  battlesByDay: Record<string, number>;
+}
+
+interface PowerDistribution {
+  distribution: number[];
+  avgPower: number;
+  maxedCount: number;
+}
+
 interface PageProps {
   params: Promise<{ tag: string }>;
 }
@@ -40,6 +57,8 @@ export default function MemberDetailPage({ params }: PageProps) {
   const [activityHistory, setActivityHistory] = useState<ActivityLog[]>([]);
   const [memberHistory, setMemberHistory] = useState<MemberHistory | null>(null);
   const [lastBattleTime, setLastBattleTime] = useState<string | null>(null);
+  const [battleStats, setBattleStats] = useState<BattleStats | null>(null);
+  const [powerDistribution, setPowerDistribution] = useState<PowerDistribution | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [isRefreshing, setIsRefreshing] = useState(false);
 
@@ -59,6 +78,8 @@ export default function MemberDetailPage({ params }: PageProps) {
         setActivityHistory(data.activityHistory || []);
         setMemberHistory(data.memberHistory);
         setLastBattleTime(data.lastBattleTime || null);
+        setBattleStats(data.battleStats || null);
+        setPowerDistribution(data.powerDistribution || null);
       }
     } catch (error) {
       console.error("Error loading member:", error);
@@ -290,6 +311,38 @@ export default function MemberDetailPage({ params }: PageProps) {
             {/* Trophy Statistics Chart */}
             {trophyChartData.length > 0 && (
               <TrophyStatistics data={trophyChartData} currentTrophies={member.trophies} />
+            )}
+
+            {/* Battle Stats Row */}
+            {(battleStats || powerDistribution) && (
+              <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+                {/* Activity Calendar */}
+                {battleStats && (
+                  <ActivityCalendar battlesByDay={battleStats.battlesByDay} />
+                )}
+                
+                {/* Power Level Distribution */}
+                {powerDistribution && (
+                  <PowerLevelChart 
+                    distribution={powerDistribution.distribution}
+                    avgPower={powerDistribution.avgPower}
+                    maxedCount={powerDistribution.maxedCount}
+                  />
+                )}
+                
+                {/* Tracking Stats */}
+                {battleStats && (
+                  <TrackingStats
+                    battles={battleStats.battles}
+                    wins={battleStats.wins}
+                    losses={battleStats.losses}
+                    winRate={battleStats.winRate}
+                    starPlayer={battleStats.starPlayer}
+                    trophyChange={battleStats.trophyChange}
+                    activeDays={battleStats.activeDays}
+                  />
+                )}
+              </div>
             )}
 
             {/* Member History */}
