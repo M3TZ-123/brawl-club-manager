@@ -6,10 +6,11 @@ export async function GET() {
     // Get settings to find club tag
     const { data: settings } = await supabase
       .from("settings")
-      .select("club_tag")
+      .select("key, value")
+      .eq("key", "club_tag")
       .single();
 
-    const clubTag = settings?.club_tag;
+    const clubTag = settings?.value;
 
     // Get only current members by joining with member_history
     let membersQuery = supabase
@@ -109,12 +110,30 @@ export async function GET() {
       inactive: members.filter((m) => !m.is_active).length,
     };
 
-    // Daily trophy totals
+    // Daily trophy totals - aggregate all members' trophies per day
     const dailyTrophies: Record<string, number> = {};
+    
+    // Group logs by date, then sum the latest trophy value for each player on that date
+    const logsByDate: Record<string, Record<string, number>> = {};
     activityLogs?.forEach((log) => {
       const date = new Date(log.recorded_at).toLocaleDateString();
-      dailyTrophies[date] = log.trophies; // Last recorded value for that day
+      if (!logsByDate[date]) {
+        logsByDate[date] = {};
+      }
+      // Keep the latest trophy value for each player on each day
+      logsByDate[date][log.player_tag] = log.trophies;
     });
+
+    // Sum up all players' trophies for each day
+    Object.entries(logsByDate).forEach(([date, playerTrophies]) => {
+      dailyTrophies[date] = Object.values(playerTrophies).reduce((sum, t) => sum + t, 0);
+    });
+
+    // Add today's total from current members if not already present
+    const today = new Date().toLocaleDateString();
+    if (!dailyTrophies[today] && members.length > 0) {
+      dailyTrophies[today] = totalTrophies;
+    }
 
     const report = {
       generatedAt: new Date().toISOString(),

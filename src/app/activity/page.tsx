@@ -48,8 +48,8 @@ export default function ActivityPage() {
         
         // Calculate activity counts based on 24h trophy change
         const counts: ActivityCounts = { active: 0, minimal: 0, inactive: 0 };
-        members.forEach((member: { trophy_change_24h?: number | null }) => {
-          const change = member.trophy_change_24h;
+        members.forEach((member: { trophies_24h?: number | null }) => {
+          const change = member.trophies_24h;
           if (change === null || change === undefined || change === 0) {
             counts.inactive++;
           } else if (Math.abs(change) >= 20) {

@@ -302,7 +302,13 @@ function SimpleHeader() {
           <Button
             variant="ghost"
             size="icon"
-            onClick={() => setShowNotifications(!showNotifications)}
+            onClick={() => {
+              setShowNotifications(!showNotifications);
+              if (!showNotifications) {
+                // Clear unread count when opening notifications
+                setUnreadCount(0);
+              }
+            }}
           >
             <Bell className="h-5 w-5" />
             {unreadCount > 0 && (
