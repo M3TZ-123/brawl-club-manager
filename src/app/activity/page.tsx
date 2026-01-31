@@ -56,26 +56,27 @@ export default function ActivityPage() {
         </TabsList>
 
             <TabsContent value="events">
-              <div className="grid gap-6 lg:grid-cols-2">
-                <ActivityTimeline events={events.slice(0, 15)} />
-                
-                <Card>
-                  <CardHeader>
-                    <CardTitle>All Events</CardTitle>
-                  </CardHeader>
-                  <CardContent>
-                    {isLoading ? (
-                      <div className="flex items-center justify-center py-8">
-                        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
-                      </div>
-                    ) : (
-                      <div className="overflow-x-auto -mx-4 sm:mx-0">
+              <Card>
+                <CardHeader>
+                  <CardTitle>Club Events</CardTitle>
+                </CardHeader>
+                <CardContent>
+                  {isLoading ? (
+                    <div className="flex items-center justify-center py-8">
+                      <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
+                    </div>
+                  ) : events.length === 0 ? (
+                    <p className="text-center text-muted-foreground py-8">
+                      No club events recorded yet
+                    </p>
+                  ) : (
+                    <div className="overflow-x-auto -mx-4 sm:mx-0">
                       <Table className="min-w-[400px] sm:min-w-full">
                         <TableHeader>
                           <TableRow>
                             <TableHead>Player</TableHead>
                             <TableHead>Event</TableHead>
-                            <TableHead className="hidden sm:table-cell">Time</TableHead>
+                            <TableHead>Time</TableHead>
                           </TableRow>
                         </TableHeader>
                         <TableBody>
@@ -83,7 +84,7 @@ export default function ActivityPage() {
                             <TableRow key={event.id}>
                               <TableCell>
                                 <div>
-                                  <p className="font-medium truncate max-w-[100px] sm:max-w-none">{event.player_name}</p>
+                                  <p className="font-medium">{event.player_name}</p>
                                   <p className="text-xs text-muted-foreground">
                                     {event.player_tag}
                                   </p>
@@ -91,30 +92,26 @@ export default function ActivityPage() {
                               </TableCell>
                               <TableCell>
                                 <span
-                                  className={
+                                  className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
                                     event.event_type === "join"
-                                      ? "text-green-500"
-                                      : event.event_type === "leave"
-                                      ? "text-red-500"
-                                      : "text-blue-500"
-                                  }
+                                      ? "bg-green-500/20 text-green-500"
+                                      : "bg-red-500/20 text-red-500"
+                                  }`}
                                 >
-                                  {event.event_type.charAt(0).toUpperCase() +
-                                    event.event_type.slice(1)}
+                                  {event.event_type === "join" ? "Joined" : "Left"}
                                 </span>
                               </TableCell>
-                              <TableCell className="hidden sm:table-cell text-muted-foreground">
+                              <TableCell className="text-muted-foreground">
                                 {formatDateTime(event.event_time)}
                               </TableCell>
                             </TableRow>
                           ))}
                         </TableBody>
                       </Table>
-                      </div>
-                    )}
-                  </CardContent>
-                </Card>
-              </div>
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
             </TabsContent>
 
             <TabsContent value="activity">
