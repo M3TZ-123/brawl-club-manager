@@ -69,7 +69,26 @@ function SimpleSidebar() {
         }
       } else {
         useAppStore.getState().setLastSyncTime(new Date().toISOString());
+        // Check if there were any member changes (joins/leaves)
+        const hasChanges = data.changes?.joins?.length > 0 || data.changes?.leaves?.length > 0;
+        if (hasChanges) {
+          // Dispatch custom event so all components can refresh their data
+          window.dispatchEvent(new CustomEvent("club-data-updated", { detail: data.changes }));
+          // Show browser notification if permitted
+          if (Notification.permission === "granted") {
+            const joins = data.changes?.joins?.length || 0;
+            const leaves = data.changes?.leaves?.length || 0;
+            let message = "";
+            if (joins > 0) message += `${joins} member(s) joined`;
+            if (joins > 0 && leaves > 0) message += ", ";
+            if (leaves > 0) message += `${leaves} member(s) left`;
+            new Notification("Club Update", { body: message, icon: "/favicon.ico" });
+          }
+        }
         if (!isAutoSync) {
+          window.location.reload();
+        } else if (hasChanges) {
+          // Refresh page data when member changes detected during auto-sync
           window.location.reload();
         }
       }

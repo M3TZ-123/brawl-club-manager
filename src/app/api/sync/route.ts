@@ -542,11 +542,19 @@ async function syncClubData(providedClubTag?: string, providedApiKey?: string, i
       value: syncTime,
     }, { onConflict: "key" });
 
+    // Separate joins and leaves for the response
+    const joins = events.filter(e => e.event_type === "join");
+    const leaves = events.filter(e => e.event_type === "leave");
+
     return NextResponse.json({
       success: true,
       synced: memberUpdates.length,
       events: events.length,
       timestamp: syncTime,
+      changes: {
+        joins: joins.map(e => ({ playerTag: e.player_tag, playerName: e.player_name })),
+        leaves: leaves.map(e => ({ playerTag: e.player_tag, playerName: e.player_name })),
+      },
     });
   } catch (error) {
     console.error("Sync error:", error);

@@ -2,7 +2,6 @@
 
 import { useEffect, useState } from "react";
 import { LayoutWrapper } from "@/components/layout-wrapper";
-import { ActivityTimeline } from "@/components/activity-timeline";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
@@ -13,13 +12,18 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { ActivityLog, ClubEvent } from "@/types/database";
-import { formatDateTime, formatNumber, getActivityEmoji } from "@/lib/utils";
-import { TrendingUp, TrendingDown } from "lucide-react";
+import { ClubEvent } from "@/types/database";
+import { formatDateTime } from "@/lib/utils";
+
+interface ActivityCounts {
+  active: number;
+  minimal: number;
+  inactive: number;
+}
 
 export default function ActivityPage() {
   const [events, setEvents] = useState<ClubEvent[]>([]);
-  const [activityLogs, setActivityLogs] = useState<ActivityLog[]>([]);
+  const [activityCounts, setActivityCounts] = useState<ActivityCounts>({ active: 0, minimal: 0, inactive: 0 });
   const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
@@ -38,8 +42,24 @@ export default function ActivityPage() {
         setEvents(data.events || []);
       }
 
-      // For activity logs, we'd need a dedicated endpoint
-      // For now, we'll show events
+      if (membersRes.ok) {
+        const data = await membersRes.json();
+        const members = data.members || [];
+        
+        // Calculate activity counts based on 24h trophy change
+        const counts: ActivityCounts = { active: 0, minimal: 0, inactive: 0 };
+        members.forEach((member: { trophy_change_24h?: number | null }) => {
+          const change = member.trophy_change_24h;
+          if (change === null || change === undefined || change === 0) {
+            counts.inactive++;
+          } else if (Math.abs(change) >= 20) {
+            counts.active++;
+          } else {
+            counts.minimal++;
+          }
+        });
+        setActivityCounts(counts);
+      }
     } catch (error) {
       console.error("Error loading data:", error);
     } finally {
@@ -121,34 +141,41 @@ export default function ActivityPage() {
                 </CardHeader>
                 <CardContent>
                   <div className="space-y-4">
-                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 text-center">
-                      <div className="p-4 rounded-lg bg-green-500/10">
-                        <div className="text-2xl mb-1">🟢</div>
-                        <p className="font-medium text-green-500">Active</p>
-                        <p className="text-sm text-muted-foreground">
-                          Significant trophy changes
-                        </p>
+                    {isLoading ? (
+                      <div className="flex items-center justify-center py-8">
+                        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
                       </div>
-                      <div className="p-4 rounded-lg bg-yellow-500/10">
-                        <div className="text-2xl mb-1">🟡</div>
-                        <p className="font-medium text-yellow-500">Minimal</p>
-                        <p className="text-sm text-muted-foreground">
-                          Opened game (streak keeper)
-                        </p>
+                    ) : (
+                      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 text-center">
+                        <div className="p-4 rounded-lg bg-green-500/10 border border-green-500/20">
+                          <div className="text-2xl mb-1">🟢</div>
+                          <p className="text-3xl font-bold text-green-500">{activityCounts.active}</p>
+                          <p className="font-medium text-green-500">Active</p>
+                          <p className="text-sm text-muted-foreground">
+                            ±20+ trophies
+                          </p>
+                        </div>
+                        <div className="p-4 rounded-lg bg-yellow-500/10 border border-yellow-500/20">
+                          <div className="text-2xl mb-1">🟡</div>
+                          <p className="text-3xl font-bold text-yellow-500">{activityCounts.minimal}</p>
+                          <p className="font-medium text-yellow-500">Minimal</p>
+                          <p className="text-sm text-muted-foreground">
+                            Small changes
+                          </p>
+                        </div>
+                        <div className="p-4 rounded-lg bg-red-500/10 border border-red-500/20">
+                          <div className="text-2xl mb-1">🔴</div>
+                          <p className="text-3xl font-bold text-red-500">{activityCounts.inactive}</p>
+                          <p className="font-medium text-red-500">Inactive</p>
+                          <p className="text-sm text-muted-foreground">
+                            No changes in 24h
+                          </p>
+                        </div>
                       </div>
-                      <div className="p-4 rounded-lg bg-red-500/10">
-                        <div className="text-2xl mb-1">🔴</div>
-                        <p className="font-medium text-red-500">Inactive</p>
-                        <p className="text-sm text-muted-foreground">
-                          No changes in 24+ hours
-                        </p>
-                      </div>
-                    </div>
+                    )}
 
                     <p className="text-sm text-muted-foreground text-center mt-4">
                       Activity is tracked by monitoring trophy changes every sync cycle.
-                      <br />
-                      Active = ±20+ trophies | Minimal = small changes | Inactive = no changes
                     </p>
                   </div>
                 </CardContent>

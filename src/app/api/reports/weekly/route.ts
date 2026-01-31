@@ -3,11 +3,45 @@ import { supabase } from "@/lib/supabase";
 
 export async function GET() {
   try {
-    // Get all members
-    const { data: members } = await supabase
+    // Get settings to find club tag
+    const { data: settings } = await supabase
+      .from("settings")
+      .select("club_tag")
+      .single();
+
+    const clubTag = settings?.club_tag;
+
+    // Get only current members by joining with member_history
+    let membersQuery = supabase
       .from("members")
       .select("*")
       .order("trophies", { ascending: false });
+
+    // If we have a club tag, filter to only current members
+    let members = null;
+    if (clubTag) {
+      const { data: currentMemberTags } = await supabase
+        .from("member_history")
+        .select("player_tag")
+        .eq("club_tag", clubTag)
+        .eq("is_current_member", true);
+
+      if (currentMemberTags && currentMemberTags.length > 0) {
+        const tags = currentMemberTags.map((m) => m.player_tag);
+        const { data } = await supabase
+          .from("members")
+          .select("*")
+          .in("player_tag", tags)
+          .order("trophies", { ascending: false });
+        members = data;
+      }
+    }
+
+    // Fallback to all members if no member_history data
+    if (!members || members.length === 0) {
+      const { data } = await membersQuery;
+      members = data;
+    }
 
     // Get activity logs from last 7 days
     const weekAgo = new Date();
