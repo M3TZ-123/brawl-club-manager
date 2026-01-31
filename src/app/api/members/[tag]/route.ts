@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { supabase } from "@/lib/supabase";
-import { getPlayer, setApiKey, estimateRankedInfo, getLastBattleTime, getPlayerBattleStats, getBrawlerPowerDistribution } from "@/lib/brawl-api";
+import { getPlayer, setApiKey, estimateRankedInfo, getLastBattleTime, getPlayerBattleStats, getBrawlerPowerDistribution, calculateEnhancedStats } from "@/lib/brawl-api";
 
 export async function GET(
   request: NextRequest,
@@ -47,6 +47,30 @@ export async function GET(
       .eq("player_tag", playerTag)
       .single();
 
+    // Get daily stats from database (last 28 days)
+    const twentyEightDaysAgo = new Date();
+    twentyEightDaysAgo.setDate(twentyEightDaysAgo.getDate() - 28);
+    
+    const { data: dailyStats } = await supabase
+      .from("daily_stats")
+      .select("*")
+      .eq("player_tag", playerTag)
+      .gte("date", twentyEightDaysAgo.toISOString().slice(0, 10))
+      .order("date", { ascending: true });
+
+    // Get player tracking info
+    const { data: playerTracking } = await supabase
+      .from("player_tracking")
+      .select("*")
+      .eq("player_tag", playerTag)
+      .single();
+
+    // Calculate enhanced stats from stored data
+    let enhancedStats = null;
+    if (dailyStats && dailyStats.length > 0) {
+      enhancedStats = calculateEnhancedStats(dailyStats, playerTracking);
+    }
+
     // Fetch additional data from API
     let lastBattleTime = null;
     let battleStats = null;
@@ -64,7 +88,7 @@ export async function GET(
 
         lastBattleTime = battleTimeResult;
         
-        // Convert Map and Set to serializable format
+        // Convert Map and Set to serializable format (this is from current battle log - last 25 battles)
         battleStats = {
           battles: battleStatsResult.battles,
           wins: battleStatsResult.wins,
@@ -89,6 +113,7 @@ export async function GET(
       memberHistory,
       lastBattleTime,
       battleStats,
+      enhancedStats, // New: accumulated stats from database
       powerDistribution,
       brawlers,
     });

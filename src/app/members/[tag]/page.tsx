@@ -7,7 +7,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
-import { TrophyStatistics, ActivityCalendar, PowerLevelChart, TrackingStats } from "@/components/charts";
+import { TrophyStatistics, ActivityCalendar, PowerLevelChart, TrackingStats, EnhancedTrackingStats } from "@/components/charts";
 import { Member, ActivityLog, MemberHistory } from "@/types/database";
 import {
   formatNumber,
@@ -46,6 +46,25 @@ interface PowerDistribution {
   maxedCount: number;
 }
 
+interface EnhancedStats {
+  totalBattles: number;
+  totalWins: number;
+  totalLosses: number;
+  winRate: number;
+  starPlayerCount: number;
+  trophiesGained: number;
+  trophiesLost: number;
+  netTrophies: number;
+  activeDays: number;
+  totalDays: number;
+  currentStreak: number;
+  bestStreak: number;
+  peakDayBattles: number;
+  powerUps: number;
+  unlocks: number;
+  trackedDays: number;
+}
+
 interface PageProps {
   params: Promise<{ tag: string }>;
 }
@@ -59,6 +78,7 @@ export default function MemberDetailPage({ params }: PageProps) {
   const [lastBattleTime, setLastBattleTime] = useState<string | null>(null);
   const [battleStats, setBattleStats] = useState<BattleStats | null>(null);
   const [powerDistribution, setPowerDistribution] = useState<PowerDistribution | null>(null);
+  const [enhancedStats, setEnhancedStats] = useState<EnhancedStats | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [isRefreshing, setIsRefreshing] = useState(false);
 
@@ -80,6 +100,7 @@ export default function MemberDetailPage({ params }: PageProps) {
         setLastBattleTime(data.lastBattleTime || null);
         setBattleStats(data.battleStats || null);
         setPowerDistribution(data.powerDistribution || null);
+        setEnhancedStats(data.enhancedStats || null);
       }
     } catch (error) {
       console.error("Error loading member:", error);
@@ -330,8 +351,26 @@ export default function MemberDetailPage({ params }: PageProps) {
                   />
                 )}
                 
-                {/* Tracking Stats */}
-                {battleStats && (
+                {/* Tracking Stats - Use enhanced if available, otherwise basic */}
+                {enhancedStats ? (
+                  <EnhancedTrackingStats
+                    totalBattles={enhancedStats.totalBattles}
+                    totalWins={enhancedStats.totalWins}
+                    totalLosses={enhancedStats.totalLosses}
+                    winRate={enhancedStats.winRate}
+                    starPlayerCount={enhancedStats.starPlayerCount}
+                    trophiesGained={enhancedStats.trophiesGained}
+                    trophiesLost={enhancedStats.trophiesLost}
+                    activeDays={enhancedStats.activeDays}
+                    totalDays={enhancedStats.totalDays}
+                    currentStreak={enhancedStats.currentStreak}
+                    bestStreak={enhancedStats.bestStreak}
+                    peakDayBattles={enhancedStats.peakDayBattles}
+                    powerUps={enhancedStats.powerUps}
+                    unlocks={enhancedStats.unlocks}
+                    trackedDays={enhancedStats.trackedDays}
+                  />
+                ) : battleStats && (
                   <TrackingStats
                     battles={battleStats.battles}
                     wins={battleStats.wins}

@@ -94,3 +94,96 @@ BEGIN
   WHERE recorded_at < NOW() - INTERVAL '30 days';
 END;
 $$ LANGUAGE plpgsql;
+
+-- =============================================
+-- ENHANCED TRACKING TABLES (brawltime.ninja style)
+-- =============================================
+
+-- Battle history table (stores individual battles)
+CREATE TABLE IF NOT EXISTS battle_history (
+  id SERIAL PRIMARY KEY,
+  player_tag VARCHAR(20) NOT NULL,
+  battle_time TIMESTAMP WITH TIME ZONE NOT NULL,
+  mode VARCHAR(50),
+  map VARCHAR(100),
+  result VARCHAR(20), -- victory, defeat, draw
+  trophy_change INT DEFAULT 0,
+  is_star_player BOOLEAN DEFAULT false,
+  brawler_name VARCHAR(50),
+  brawler_power INT,
+  brawler_trophies INT,
+  recorded_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+  UNIQUE(player_tag, battle_time)
+);
+
+-- Player tracking stats (accumulated stats over time)
+CREATE TABLE IF NOT EXISTS player_tracking (
+  player_tag VARCHAR(20) PRIMARY KEY,
+  -- Battle stats (last 28 days)
+  total_battles INT DEFAULT 0,
+  total_wins INT DEFAULT 0,
+  total_losses INT DEFAULT 0,
+  star_player_count INT DEFAULT 0,
+  trophies_gained INT DEFAULT 0,
+  trophies_lost INT DEFAULT 0,
+  -- Activity tracking
+  active_days INT DEFAULT 0,
+  current_streak INT DEFAULT 0,
+  best_streak INT DEFAULT 0,
+  peak_day_battles INT DEFAULT 0,
+  last_battle_date DATE,
+  -- Brawler tracking
+  power_ups INT DEFAULT 0,
+  unlocks INT DEFAULT 0,
+  -- Tracking info
+  tracking_started TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+  last_updated TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+
+-- Brawler snapshots (to track power ups and unlocks)
+CREATE TABLE IF NOT EXISTS brawler_snapshots (
+  id SERIAL PRIMARY KEY,
+  player_tag VARCHAR(20) NOT NULL,
+  brawler_id INT NOT NULL,
+  brawler_name VARCHAR(50) NOT NULL,
+  power_level INT DEFAULT 1,
+  trophies INT DEFAULT 0,
+  rank INT DEFAULT 1,
+  gadgets_count INT DEFAULT 0,
+  star_powers_count INT DEFAULT 0,
+  gears_count INT DEFAULT 0,
+  recorded_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+  UNIQUE(player_tag, brawler_id, recorded_at::date)
+);
+
+-- Daily stats aggregation (for historical tracking)
+CREATE TABLE IF NOT EXISTS daily_stats (
+  id SERIAL PRIMARY KEY,
+  player_tag VARCHAR(20) NOT NULL,
+  date DATE NOT NULL,
+  battles INT DEFAULT 0,
+  wins INT DEFAULT 0,
+  losses INT DEFAULT 0,
+  star_player INT DEFAULT 0,
+  trophies_gained INT DEFAULT 0,
+  trophies_lost INT DEFAULT 0,
+  UNIQUE(player_tag, date)
+);
+
+-- Indexes for new tables
+CREATE INDEX IF NOT EXISTS idx_battle_history_player ON battle_history(player_tag);
+CREATE INDEX IF NOT EXISTS idx_battle_history_time ON battle_history(battle_time DESC);
+CREATE INDEX IF NOT EXISTS idx_brawler_snapshots_player ON brawler_snapshots(player_tag);
+CREATE INDEX IF NOT EXISTS idx_daily_stats_player_date ON daily_stats(player_tag, date DESC);
+
+-- Function to clean old battle history (keep last 60 days)
+CREATE OR REPLACE FUNCTION cleanup_old_battles()
+RETURNS void AS $$
+BEGIN
+  DELETE FROM battle_history
+  WHERE battle_time < NOW() - INTERVAL '60 days';
+  
+  DELETE FROM daily_stats
+  WHERE date < NOW() - INTERVAL '60 days';
+END;
+$$ LANGUAGE plpgsql;

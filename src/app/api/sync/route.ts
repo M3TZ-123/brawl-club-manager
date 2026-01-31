@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getClub, getPlayer, setApiKey, getPlayerRankedData, getPlayerWinRate } from "@/lib/brawl-api";
+import { getClub, getPlayer, setApiKey, getPlayerRankedData, getPlayerWinRate, getPlayerBattleLog, processBattleLog, BrawlStarsBrawler } from "@/lib/brawl-api";
 import { supabase } from "@/lib/supabase";
 
 // GET handler for Vercel Cron Jobs and GitHub Actions
@@ -153,6 +153,18 @@ async function syncClubData(providedClubTag?: string, providedApiKey?: string, i
     const activityLogs = [];
     const events = [];
     const historyUpdates = [];
+    const allBattles: ReturnType<typeof processBattleLog> = [];
+    const brawlerSnapshots: {
+      player_tag: string;
+      brawler_id: number;
+      brawler_name: string;
+      power_level: number;
+      trophies: number;
+      rank: number;
+      gadgets_count: number;
+      star_powers_count: number;
+      gears_count: number;
+    }[] = [];
 
     // Process members in parallel batches of 3 to avoid rate limits
     // Brawl Stars API: ~10 req/sec, RNT API: unknown
@@ -175,11 +187,12 @@ async function syncClubData(providedClubTag?: string, providedApiKey?: string, i
       const batchResults = await Promise.all(
         batch.map(async (member) => {
           try {
-            // Run all 3 API calls in parallel for each member
-            const [player, rankedData, winRateData] = await Promise.all([
+            // Run all 4 API calls in parallel for each member (added battle log)
+            const [player, rankedData, winRateData, battleLog] = await Promise.all([
               getPlayer(member.tag),
               getPlayerRankedData(member.tag),
               getPlayerWinRate(member.tag),
+              getPlayerBattleLog(member.tag),
             ]);
 
             const existingMember = existingMemberMap.get(member.tag);
@@ -200,11 +213,15 @@ async function syncClubData(providedClubTag?: string, providedApiKey?: string, i
             const hadRecentActivity = activePlayersSet.has(member.tag);
             const isActive = hadRecentActivity || Math.abs(trophyChange) > 0;
 
+            // Process battle log for storage
+            const processedBattles = processBattleLog(member.tag, battleLog);
+
             return {
               member,
               player,
               rankedData,
               winRateData,
+              processedBattles,
               trophyChange,
               activityType,
               isActive,
@@ -221,11 +238,12 @@ async function syncClubData(providedClubTag?: string, providedApiKey?: string, i
       for (const result of batchResults) {
         if (!result.success) continue;
 
-        const { member, player, rankedData, winRateData, trophyChange, activityType, isActive } = result as {
+        const { member, player, rankedData, winRateData, processedBattles, trophyChange, activityType, isActive } = result as {
           member: typeof batch[0];
           player: Awaited<ReturnType<typeof getPlayer>>;
           rankedData: Awaited<ReturnType<typeof getPlayerRankedData>>;
           winRateData: Awaited<ReturnType<typeof getPlayerWinRate>>;
+          processedBattles: ReturnType<typeof processBattleLog>;
           trophyChange: number;
           activityType: string;
           isActive: boolean;
@@ -258,6 +276,26 @@ async function syncClubData(providedClubTag?: string, providedApiKey?: string, i
           trophy_change: trophyChange,
           activity_type: activityType,
         });
+
+        // Collect battles for storage
+        if (processedBattles && processedBattles.length > 0) {
+          allBattles.push(...processedBattles);
+        }
+
+        // Collect brawler snapshots
+        for (const brawler of player.brawlers) {
+          brawlerSnapshots.push({
+            player_tag: member.tag,
+            brawler_id: brawler.id,
+            brawler_name: brawler.name,
+            power_level: brawler.power,
+            trophies: brawler.trophies,
+            rank: brawler.rank,
+            gadgets_count: brawler.gadgets?.length || 0,
+            star_powers_count: brawler.starPowers?.length || 0,
+            gears_count: brawler.gears?.length || 0,
+          });
+        }
 
         // Update member history
         const history = historyMap.get(member.tag);
@@ -346,6 +384,139 @@ async function syncClubData(providedClubTag?: string, providedApiKey?: string, i
     // Insert activity logs
     if (activityLogs.length > 0) {
       await supabase.from("activity_log").insert(activityLogs);
+    }
+
+    // Store battle history (upsert to avoid duplicates)
+    if (allBattles.length > 0) {
+      // Insert battles, ignore duplicates
+      const { error: battleError } = await supabase
+        .from("battle_history")
+        .upsert(allBattles, {
+          onConflict: "player_tag,battle_time",
+          ignoreDuplicates: true,
+        });
+      
+      if (battleError) {
+        console.error("Error storing battle history:", battleError);
+      }
+
+      // Update daily stats from battles
+      const dailyStatsMap = new Map<string, {
+        player_tag: string;
+        date: string;
+        battles: number;
+        wins: number;
+        losses: number;
+        star_player: number;
+        trophies_gained: number;
+        trophies_lost: number;
+      }>();
+
+      for (const battle of allBattles) {
+        const date = battle.battle_time.slice(0, 10); // YYYY-MM-DD
+        const key = `${battle.player_tag}_${date}`;
+        
+        if (!dailyStatsMap.has(key)) {
+          dailyStatsMap.set(key, {
+            player_tag: battle.player_tag,
+            date,
+            battles: 0,
+            wins: 0,
+            losses: 0,
+            star_player: 0,
+            trophies_gained: 0,
+            trophies_lost: 0,
+          });
+        }
+        
+        const stats = dailyStatsMap.get(key)!;
+        stats.battles++;
+        if (battle.result === "victory") stats.wins++;
+        if (battle.result === "defeat") stats.losses++;
+        if (battle.is_star_player) stats.star_player++;
+        if (battle.trophy_change > 0) stats.trophies_gained += battle.trophy_change;
+        if (battle.trophy_change < 0) stats.trophies_lost += Math.abs(battle.trophy_change);
+      }
+
+      // Upsert daily stats
+      const dailyStatsArray = Array.from(dailyStatsMap.values());
+      if (dailyStatsArray.length > 0) {
+        const { error: dailyStatsError } = await supabase
+          .from("daily_stats")
+          .upsert(dailyStatsArray, {
+            onConflict: "player_tag,date",
+          });
+        
+        if (dailyStatsError) {
+          console.error("Error storing daily stats:", dailyStatsError);
+        }
+      }
+    }
+
+    // Store brawler snapshots (for tracking power ups/unlocks)
+    if (brawlerSnapshots.length > 0) {
+      // Get previous snapshots to detect changes
+      const playerTags = [...new Set(brawlerSnapshots.map(s => s.player_tag))];
+      
+      for (const playerTag of playerTags) {
+        const playerBrawlers = brawlerSnapshots.filter(s => s.player_tag === playerTag);
+        
+        // Get yesterday's snapshot for comparison
+        const yesterday = new Date();
+        yesterday.setDate(yesterday.getDate() - 1);
+        const yesterdayStr = yesterday.toISOString().slice(0, 10);
+        
+        const { data: prevSnapshots } = await supabase
+          .from("brawler_snapshots")
+          .select("brawler_id, power_level")
+          .eq("player_tag", playerTag)
+          .gte("recorded_at", yesterdayStr);
+        
+        const prevMap = new Map(prevSnapshots?.map(s => [s.brawler_id, s.power_level]) || []);
+        
+        // Calculate power ups and unlocks
+        let powerUps = 0;
+        let unlocks = 0;
+        
+        for (const brawler of playerBrawlers) {
+          const prevPower = prevMap.get(brawler.brawler_id);
+          if (prevPower === undefined) {
+            // New brawler unlocked
+            if (prevSnapshots && prevSnapshots.length > 0) {
+              unlocks++;
+            }
+          } else if (brawler.power_level > prevPower) {
+            // Power level increased
+            powerUps += brawler.power_level - prevPower;
+          }
+        }
+        
+        // Update player tracking
+        if (powerUps > 0 || unlocks > 0) {
+          await supabase
+            .from("player_tracking")
+            .upsert({
+              player_tag: playerTag,
+              power_ups: powerUps,
+              unlocks: unlocks,
+              last_updated: new Date().toISOString(),
+            }, {
+              onConflict: "player_tag",
+            });
+        }
+      }
+      
+      // Store today's brawler snapshot
+      const { error: snapshotError } = await supabase
+        .from("brawler_snapshots")
+        .upsert(brawlerSnapshots, {
+          onConflict: "player_tag,brawler_id,recorded_at",
+          ignoreDuplicates: true,
+        });
+      
+      if (snapshotError) {
+        console.error("Error storing brawler snapshots:", snapshotError);
+      }
     }
 
     // Upsert member history

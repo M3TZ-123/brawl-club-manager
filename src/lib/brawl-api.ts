@@ -493,6 +493,228 @@ export function getBrawlerPowerDistribution(brawlers: BrawlStarsBrawler[]): {
   return { distribution, avgPower, maxedCount };
 }
 
+// Parse battle time from API format to Date
+export function parseBattleTimeToDate(bt: string): Date {
+  const year = bt.slice(0, 4);
+  const month = bt.slice(4, 6);
+  const day = bt.slice(6, 8);
+  const hour = bt.slice(9, 11);
+  const min = bt.slice(11, 13);
+  const sec = bt.slice(13, 15);
+  return new Date(`${year}-${month}-${day}T${hour}:${min}:${sec}.000Z`);
+}
+
+// Process battle log for storage
+export interface ProcessedBattle {
+  player_tag: string;
+  battle_time: string;
+  mode: string;
+  map: string;
+  result: string;
+  trophy_change: number;
+  is_star_player: boolean;
+  brawler_name: string | null;
+  brawler_power: number | null;
+  brawler_trophies: number | null;
+}
+
+export function processBattleLog(playerTag: string, battleLog: BrawlStarsBattleLog): ProcessedBattle[] {
+  const battles: ProcessedBattle[] = [];
+  
+  if (!battleLog?.items) return battles;
+
+  for (const battle of battleLog.items) {
+    const battleData = battle.battle;
+    if (!battleData) continue;
+
+    const battleTime = parseBattleTimeToDate(battle.battleTime);
+    
+    // Determine result
+    let result = "unknown";
+    if (battleData.result) {
+      result = battleData.result;
+    } else if (battleData.rank != null) {
+      result = battleData.rank <= 4 ? "victory" : "defeat";
+    }
+
+    // Check if star player
+    const isStarPlayer = battleData.starPlayer?.tag === playerTag || 
+                         battleData.starPlayer?.tag === playerTag.replace('#', '%23');
+
+    // Find player's brawler in teams
+    let brawlerName: string | null = null;
+    let brawlerPower: number | null = null;
+    let brawlerTrophies: number | null = null;
+
+    if (battleData.teams) {
+      for (const team of battleData.teams) {
+        for (const player of team) {
+          if (player.tag === playerTag || player.tag === playerTag.replace('#', '%23')) {
+            brawlerName = player.brawler?.name || null;
+            brawlerPower = player.brawler?.power || null;
+            brawlerTrophies = player.brawler?.trophies || null;
+            break;
+          }
+        }
+      }
+    }
+
+    battles.push({
+      player_tag: playerTag,
+      battle_time: battleTime.toISOString(),
+      mode: battle.event?.mode || battleData.mode || "unknown",
+      map: battle.event?.map || "unknown",
+      result,
+      trophy_change: battleData.trophyChange || 0,
+      is_star_player: isStarPlayer,
+      brawler_name: brawlerName,
+      brawler_power: brawlerPower,
+      brawler_trophies: brawlerTrophies,
+    });
+  }
+
+  return battles;
+}
+
+// Calculate enhanced tracking stats from battle history
+export interface EnhancedTrackingStats {
+  // Last 28 days stats
+  totalBattles: number;
+  totalWins: number;
+  totalLosses: number;
+  winRate: number;
+  starPlayerCount: number;
+  trophiesGained: number;
+  trophiesLost: number;
+  netTrophies: number;
+  // Activity
+  activeDays: number;
+  totalDays: number;
+  currentStreak: number;
+  bestStreak: number;
+  peakDayBattles: number;
+  // Brawler changes
+  powerUps: number;
+  unlocks: number;
+  // Tracking info
+  trackedDays: number;
+}
+
+export function calculateEnhancedStats(
+  dailyStats: { date: string; battles: number; wins: number; losses: number; star_player: number; trophies_gained: number; trophies_lost: number }[],
+  tracking: { power_ups: number; unlocks: number; tracking_started: string } | null
+): EnhancedTrackingStats {
+  const now = new Date();
+  const twentyEightDaysAgo = new Date(now.getTime() - 28 * 24 * 60 * 60 * 1000);
+  
+  // Filter to last 28 days
+  const recentStats = dailyStats.filter(s => new Date(s.date) >= twentyEightDaysAgo);
+  
+  // Calculate totals
+  let totalBattles = 0;
+  let totalWins = 0;
+  let totalLosses = 0;
+  let starPlayerCount = 0;
+  let trophiesGained = 0;
+  let trophiesLost = 0;
+  let peakDayBattles = 0;
+  const activeDates = new Set<string>();
+
+  for (const stat of recentStats) {
+    totalBattles += stat.battles;
+    totalWins += stat.wins;
+    totalLosses += stat.losses;
+    starPlayerCount += stat.star_player;
+    trophiesGained += stat.trophies_gained;
+    trophiesLost += stat.trophies_lost;
+    
+    if (stat.battles > 0) {
+      activeDates.add(stat.date);
+    }
+    if (stat.battles > peakDayBattles) {
+      peakDayBattles = stat.battles;
+    }
+  }
+
+  // Calculate streak
+  let currentStreak = 0;
+  let bestStreak = 0;
+  let tempStreak = 0;
+  
+  // Sort dates descending
+  const sortedDates = Array.from(activeDates).sort((a, b) => b.localeCompare(a));
+  
+  // Calculate current streak (consecutive days from today)
+  const today = now.toISOString().slice(0, 10);
+  const yesterday = new Date(now.getTime() - 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
+  
+  if (activeDates.has(today)) {
+    currentStreak = 1;
+    let checkDate = new Date(now);
+    checkDate.setDate(checkDate.getDate() - 1);
+    
+    while (activeDates.has(checkDate.toISOString().slice(0, 10))) {
+      currentStreak++;
+      checkDate.setDate(checkDate.getDate() - 1);
+    }
+  } else if (activeDates.has(yesterday)) {
+    // If not played today but played yesterday, count from yesterday
+    currentStreak = 1;
+    let checkDate = new Date(now);
+    checkDate.setDate(checkDate.getDate() - 2);
+    
+    while (activeDates.has(checkDate.toISOString().slice(0, 10))) {
+      currentStreak++;
+      checkDate.setDate(checkDate.getDate() - 1);
+    }
+  }
+
+  // Calculate best streak
+  for (let i = 0; i < sortedDates.length; i++) {
+    const currentDate = new Date(sortedDates[i]);
+    const prevDate = i > 0 ? new Date(sortedDates[i - 1]) : null;
+    
+    if (prevDate) {
+      const diffDays = Math.round((prevDate.getTime() - currentDate.getTime()) / (24 * 60 * 60 * 1000));
+      if (diffDays === 1) {
+        tempStreak++;
+      } else {
+        bestStreak = Math.max(bestStreak, tempStreak);
+        tempStreak = 1;
+      }
+    } else {
+      tempStreak = 1;
+    }
+  }
+  bestStreak = Math.max(bestStreak, tempStreak, currentStreak);
+
+  const winRate = totalBattles > 0 ? Math.round((totalWins / totalBattles) * 100) : 0;
+  
+  // Calculate tracked days
+  const trackedDays = tracking?.tracking_started 
+    ? Math.floor((now.getTime() - new Date(tracking.tracking_started).getTime()) / (24 * 60 * 60 * 1000))
+    : 0;
+
+  return {
+    totalBattles,
+    totalWins,
+    totalLosses,
+    winRate,
+    starPlayerCount,
+    trophiesGained,
+    trophiesLost,
+    netTrophies: trophiesGained - Math.abs(trophiesLost),
+    activeDays: activeDates.size,
+    totalDays: 28,
+    currentStreak,
+    bestStreak,
+    peakDayBattles,
+    powerUps: tracking?.power_ups || 0,
+    unlocks: tracking?.unlocks || 0,
+    trackedDays: Math.max(trackedDays, 1),
+  };
+}
+
 // Legacy function for backwards compatibility
 export function estimateRankedInfo(player: BrawlStarsPlayer): {
   currentRank: string;

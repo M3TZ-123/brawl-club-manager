@@ -438,7 +438,7 @@ export function PowerLevelChart({ distribution, avgPower, maxedCount }: PowerLev
   );
 }
 
-// Battle Tracking Stats Component
+// Battle Tracking Stats Component (Basic - last 25 battles)
 interface TrackingStatsProps {
   battles: number;
   wins: number;
@@ -505,6 +505,139 @@ export function TrackingStats({
             </div>
             <span className={`font-bold ${trophyChange >= 0 ? 'text-green-400' : 'text-red-400'}`}>
               {trophyChange >= 0 ? '+' : ''}{formatNumber(trophyChange)}
+            </span>
+          </div>
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+
+// Enhanced Tracking Stats Component (brawltime.ninja style - last 28 days)
+interface EnhancedTrackingStatsProps {
+  totalBattles: number;
+  totalWins: number;
+  totalLosses: number;
+  winRate: number;
+  starPlayerCount: number;
+  trophiesGained: number;
+  trophiesLost: number;
+  activeDays: number;
+  totalDays: number;
+  currentStreak: number;
+  bestStreak: number;
+  peakDayBattles: number;
+  powerUps: number;
+  unlocks: number;
+  trackedDays: number;
+}
+
+export function EnhancedTrackingStats({
+  totalBattles,
+  totalWins,
+  totalLosses,
+  winRate,
+  starPlayerCount,
+  trophiesGained,
+  trophiesLost,
+  activeDays,
+  totalDays,
+  currentStreak,
+  bestStreak,
+  peakDayBattles,
+  powerUps,
+  unlocks,
+  trackedDays,
+}: EnhancedTrackingStatsProps) {
+  return (
+    <Card>
+      <CardHeader className="pb-2">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <span className="text-green-400">☑</span>
+            <CardTitle className="text-sm font-medium">TRACKING</CardTitle>
+            <span className="text-xs bg-muted px-2 py-0.5 rounded">Last {totalDays} days</span>
+          </div>
+          <span className="text-muted-foreground text-xs">→</span>
+        </div>
+      </CardHeader>
+      <CardContent>
+        <div className="grid grid-cols-2 gap-x-8 gap-y-2 text-sm">
+          {/* Row 1 */}
+          <div className="flex justify-between">
+            <span className="text-muted-foreground">Battles</span>
+            <span className="font-bold">{formatNumber(totalBattles)}</span>
+          </div>
+          <div className="flex justify-between">
+            <span className="text-muted-foreground">Active Days</span>
+            <span className="font-bold">{activeDays}/{totalDays}</span>
+          </div>
+          
+          {/* Row 2 */}
+          <div className="flex justify-between">
+            <span className="text-muted-foreground">Wins</span>
+            <span className="font-bold text-green-400">{formatNumber(totalWins)}</span>
+          </div>
+          <div className="flex justify-between">
+            <span className="text-muted-foreground">Losses</span>
+            <span className="font-bold text-red-400">{formatNumber(totalLosses)}</span>
+          </div>
+          
+          {/* Row 3 */}
+          <div className="flex justify-between">
+            <span className="text-muted-foreground">Win Rate</span>
+            <span className={`font-bold ${winRate >= 50 ? 'text-green-400' : 'text-red-400'}`}>{winRate}%</span>
+          </div>
+          <div className="flex justify-between">
+            <span className="text-muted-foreground">Star Player</span>
+            <span className="font-bold text-yellow-400">{starPlayerCount}</span>
+          </div>
+          
+          {/* Row 4 */}
+          <div className="flex justify-between">
+            <span className="text-muted-foreground">Peak Day</span>
+            <span className="font-bold">{peakDayBattles}</span>
+          </div>
+          <div className="flex justify-between">
+            <span className="text-muted-foreground">Streak</span>
+            <span className="font-bold text-cyan-400">{currentStreak}d</span>
+          </div>
+          
+          {/* Row 5 - Brawler changes */}
+          <div className="flex justify-between">
+            <span className="text-muted-foreground">Power Ups</span>
+            <span className="font-bold text-purple-400">+{powerUps}</span>
+          </div>
+          <div className="flex justify-between">
+            <span className="text-muted-foreground">Unlocks</span>
+            <span className="font-bold text-green-400">+{unlocks}</span>
+          </div>
+          
+          {/* Row 6 - Trophy breakdown */}
+          <div className="flex justify-between">
+            <div className="flex items-center gap-1">
+              <span className="text-yellow-500">🏆</span>
+              <span className="text-muted-foreground">Gained</span>
+            </div>
+            <span className="font-bold text-green-400">+{formatNumber(trophiesGained)}</span>
+          </div>
+          <div className="flex justify-between">
+            <div className="flex items-center gap-1">
+              <span className="text-yellow-500">🏆</span>
+              <span className="text-muted-foreground">Lost</span>
+            </div>
+            <span className="font-bold text-red-400">-{formatNumber(trophiesLost)}</span>
+          </div>
+          
+          {/* Row 7 - Tracking info */}
+          <div className="flex justify-between pt-2 border-t border-border">
+            <span className="text-muted-foreground">Tracked</span>
+            <span className="font-bold">{trackedDays}d</span>
+          </div>
+          <div className="flex justify-between pt-2 border-t border-border">
+            <span className="text-muted-foreground">Best Streak</span>
+            <span className="font-bold">
+              <span className="text-orange-500">🔥</span> {bestStreak}
             </span>
           </div>
         </div>
