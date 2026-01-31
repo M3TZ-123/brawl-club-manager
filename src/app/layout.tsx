@@ -10,6 +10,24 @@ export const metadata: Metadata = {
   description: "Track your club members, activity, and performance",
 };
 
+// Script to prevent theme flash - runs before React hydrates
+const themeScript = `
+  (function() {
+    try {
+      const stored = localStorage.getItem('brawl-club-manager-storage');
+      if (stored) {
+        const parsed = JSON.parse(stored);
+        const theme = parsed.state?.theme || 'dark';
+        document.documentElement.classList.add(theme);
+      } else {
+        document.documentElement.classList.add('dark');
+      }
+    } catch (e) {
+      document.documentElement.classList.add('dark');
+    }
+  })();
+`;
+
 export default function RootLayout({
   children,
 }: {
@@ -17,6 +35,9 @@ export default function RootLayout({
 }) {
   return (
     <html lang="en" suppressHydrationWarning>
+      <head>
+        <script dangerouslySetInnerHTML={{ __html: themeScript }} />
+      </head>
       <body className={`${inter.className} antialiased`}>
         <ThemeProvider>
           {children}
