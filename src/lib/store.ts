@@ -151,6 +151,7 @@ export const useAppStore = create<AppState>()(
       partialize: (state) => ({
         theme: state.theme,
         sidebarOpen: state.sidebarOpen,
+        notificationsReadAt: state.notificationsReadAt,
       }),
     }
   )
