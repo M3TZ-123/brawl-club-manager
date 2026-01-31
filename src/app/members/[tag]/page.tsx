@@ -3,16 +3,15 @@
 import { useEffect, useState, use } from "react";
 import { useAppStore } from "@/lib/store";
 import { LayoutWrapper } from "@/components/layout-wrapper";
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
-import { TrophyChart } from "@/components/charts";
+import { TrophyChart, TrophyStatistics } from "@/components/charts";
 import { Member, ActivityLog, MemberHistory } from "@/types/database";
 import {
   formatNumber,
   formatDate,
-  formatDateTime,
   formatRelativeTime,
   getActivityEmoji,
   getRankColor,
@@ -27,7 +26,6 @@ import {
   RefreshCw,
   ArrowLeft,
   TrendingUp,
-  TrendingDown,
 } from "lucide-react";
 import Link from "next/link";
 
@@ -109,6 +107,7 @@ export default function MemberDetailPage({ params }: PageProps) {
         day: "numeric",
       }),
       trophies: log.trophies,
+      recorded_at: log.recorded_at,
     }));
 
   if (isLoading) {
@@ -288,8 +287,10 @@ export default function MemberDetailPage({ params }: PageProps) {
               </CardContent>
             </Card>
 
-            {/* Trophy Chart */}
-            {trophyChartData.length > 0 && <TrophyChart data={trophyChartData} />}
+            {/* Trophy Statistics Chart */}
+            {trophyChartData.length > 0 && (
+              <TrophyStatistics data={trophyChartData} currentTrophies={member.trophies} />
+            )}
 
             {/* Member History */}
             {memberHistory && (
@@ -339,52 +340,6 @@ export default function MemberDetailPage({ params }: PageProps) {
                 </CardContent>
               </Card>
             )}
-
-            {/* Activity Log */}
-            <Card>
-              <CardHeader>
-                <CardTitle>Recent Activity</CardTitle>
-                <CardDescription>Trophy changes over time</CardDescription>
-              </CardHeader>
-              <CardContent>
-                <div className="space-y-3">
-                  {activityHistory.length === 0 ? (
-                    <p className="text-muted-foreground text-center py-4">
-                      No activity recorded yet
-                    </p>
-                  ) : (
-                    activityHistory.slice(0, 10).map((log) => (
-                      <div
-                        key={log.id}
-                        className="flex items-center justify-between p-3 rounded-lg bg-muted/50"
-                      >
-                        <div className="flex items-center gap-3">
-                          {log.trophy_change >= 0 ? (
-                            <TrendingUp className="h-4 w-4 text-green-500" />
-                          ) : (
-                            <TrendingDown className="h-4 w-4 text-red-500" />
-                          )}
-                          <div>
-                            <p className="font-medium">{formatNumber(log.trophies)} trophies</p>
-                            <p className="text-xs text-muted-foreground">
-                              {formatDateTime(log.recorded_at)}
-                            </p>
-                          </div>
-                        </div>
-                        <div
-                          className={`font-medium ${
-                            log.trophy_change >= 0 ? "text-green-500" : "text-red-500"
-                          }`}
-                        >
-                          {log.trophy_change >= 0 ? "+" : ""}
-                          {log.trophy_change}
-                        </div>
-                      </div>
-                    ))
-                  )}
-                </div>
-              </CardContent>
-            </Card>
           </div>
     </LayoutWrapper>
   );
