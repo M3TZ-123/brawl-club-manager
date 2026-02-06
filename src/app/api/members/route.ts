@@ -28,8 +28,20 @@ export async function GET() {
     
     // For 7 days: look back exactly 7 days
     const sevenDaysAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+    
+    // Get today's date and yesterday's date for daily_stats queries
+    const today = now.toISOString().slice(0, 10);
+    const yesterday = new Date(now.getTime() - 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
+    const sevenDaysAgoDate = sevenDaysAgo.toISOString().slice(0, 10);
 
-    // Get all activity logs for trophy calculations
+    // Get daily stats for trophy calculations (more accurate than activity_log)
+    const { data: dailyStats } = await supabase
+      .from("daily_stats")
+      .select("player_tag, date, trophies_gained, trophies_lost")
+      .gte("date", sevenDaysAgoDate)
+      .order("date", { ascending: true });
+
+    // Get all activity logs as fallback for trophy calculations
     const { data: activityLogs } = await supabase
       .from("activity_log")
       .select("player_tag, trophies, recorded_at")
@@ -37,6 +49,34 @@ export async function GET() {
 
     // Calculate gains for each member
     const membersWithGains = (members || []).map((member) => {
+      // First try to calculate from daily_stats (more accurate - from battle history)
+      const playerDailyStats = dailyStats?.filter(
+        (stat) => stat.player_tag === member.player_tag
+      ) || [];
+      
+      if (playerDailyStats.length > 0) {
+        // Calculate net trophies from daily stats
+        let trophies24h = 0;
+        let trophies7d = 0;
+        
+        for (const stat of playerDailyStats) {
+          const netTrophies = (stat.trophies_gained || 0) - (stat.trophies_lost || 0);
+          trophies7d += netTrophies;
+          
+          // Only include today's stats for 24h (daily stats are per day)
+          if (stat.date === today || stat.date === yesterday) {
+            trophies24h += netTrophies;
+          }
+        }
+        
+        return {
+          ...member,
+          trophies_24h: trophies24h,
+          trophies_7d: trophies7d,
+        };
+      }
+      
+      // Fallback to activity_log if no daily stats
       const playerLogs = activityLogs?.filter(
         (log) => log.player_tag === member.player_tag
       ) || [];
