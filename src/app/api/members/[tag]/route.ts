@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { supabase } from "@/lib/supabase";
-import { getPlayer, setApiKey, estimateRankedInfo, getLastBattleTime, getPlayerBattleStats, getBrawlerPowerDistribution, calculateEnhancedStats } from "@/lib/brawl-api";
+import { getPlayer, setApiKey, getPlayerRankedData, getLastBattleTime, getPlayerBattleStats, getBrawlerPowerDistribution, calculateEnhancedStats, calculateWinRateFromBattleLog, getPlayerBattleLog } from "@/lib/brawl-api";
 
 export async function GET(
   request: NextRequest,
@@ -145,8 +145,16 @@ export async function POST(
     }
 
     setApiKey(apiKey);
-    const player = await getPlayer(playerTag);
-    const rankInfo = estimateRankedInfo(player);
+    
+    // Fetch player data, ranked data, and battle log in parallel
+    const [player, rankedData, battleLog] = await Promise.all([
+      getPlayer(playerTag),
+      getPlayerRankedData(playerTag),
+      getPlayerBattleLog(playerTag),
+    ]);
+    
+    // Calculate win rate from battle log
+    const winRateData = calculateWinRateFromBattleLog(battleLog);
 
     // Get previous trophies
     const { data: existingMember } = await supabase
@@ -174,8 +182,9 @@ export async function POST(
         trophies: player.trophies,
         highest_trophies: player.highestTrophies,
         exp_level: player.expLevel,
-        rank_current: rankInfo.currentRank,
-        rank_highest: rankInfo.highestRank,
+        rank_current: rankedData.currentRank,
+        rank_highest: rankedData.highestRank,
+        win_rate: winRateData.winRate,
         brawlers_count: player.brawlers.length,
         solo_victories: player.soloVictories,
         duo_victories: player.duoVictories,

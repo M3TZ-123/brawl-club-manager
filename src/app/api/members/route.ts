@@ -41,41 +41,35 @@ export async function GET() {
         (log) => log.player_tag === member.player_tag
       ) || [];
 
+      // If no activity logs exist, show 0 (member exists but no historical data yet)
       if (playerLogs.length === 0) {
         return {
           ...member,
-          trophies_24h: null,
-          trophies_7d: null,
+          trophies_24h: 0,
+          trophies_7d: 0,
         };
       }
 
-      // For 24h: Find the oldest log within the last 24 hours, or the most recent log before that
-      const logsLast24h = playerLogs.filter(
-        (log) => new Date(log.recorded_at) >= twentyFourHoursAgo
-      );
-      const logsBefore24h = playerLogs.filter(
-        (log) => new Date(log.recorded_at) < twentyFourHoursAgo
-      );
-      // Use the oldest log from last 24h, or if none, use the most recent log before 24h
-      const baseline24h = logsLast24h.length > 0 
-        ? logsLast24h[0]  // First (oldest) log in last 24h
-        : logsBefore24h.length > 0 
-          ? logsBefore24h[logsBefore24h.length - 1]  // Most recent log before 24h
-          : null;
+      // Get the oldest log available (first log since tracking started)
+      const oldestLog = playerLogs[0];
       
-      // For 7 days: Find the oldest log within the last 7 days, or the most recent log before that
-      const logsLast7d = playerLogs.filter(
-        (log) => new Date(log.recorded_at) >= sevenDaysAgo
+      // For 24h: Find the most recent log that is AT LEAST 24 hours old
+      const logsBefore24h = playerLogs.filter(
+        (log) => new Date(log.recorded_at) <= twentyFourHoursAgo
       );
+      // Use the most recent log that is at least 24h old, or fall back to oldest log for new members
+      const baseline24h = logsBefore24h.length > 0 
+        ? logsBefore24h[logsBefore24h.length - 1]  // Most recent log that is ≥24h old
+        : oldestLog;  // For new members: use oldest available log
+      
+      // For 7 days: Find the most recent log that is AT LEAST 7 days old
       const logsBefore7d = playerLogs.filter(
-        (log) => new Date(log.recorded_at) < sevenDaysAgo
+        (log) => new Date(log.recorded_at) <= sevenDaysAgo
       );
-      // Use the oldest log from last 7 days, or if none, use the most recent log before 7 days
-      const baseline7d = logsLast7d.length > 0 
-        ? logsLast7d[0]  // First (oldest) log in last 7 days
-        : logsBefore7d.length > 0 
-          ? logsBefore7d[logsBefore7d.length - 1]  // Most recent log before 7 days
-          : null;
+      // Use the most recent log that is at least 7 days old, or fall back to oldest log for new members
+      const baseline7d = logsBefore7d.length > 0 
+        ? logsBefore7d[logsBefore7d.length - 1]  // Most recent log that is ≥7d old
+        : oldestLog;  // For new members: use oldest available log
 
       // Calculate 24h gain
       const trophies24h = baseline24h
