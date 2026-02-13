@@ -53,8 +53,9 @@ export async function GET() {
       playerTrophyChanges[log.player_tag] += log.trophy_change;
     });
 
-    // Top gainers
+    // Top gainers (only players who actually gained trophies)
     const topGainers = Object.entries(playerTrophyChanges)
+      .filter(([, change]) => change > 0)
       .map(([tag, change]) => {
         const member = members.find((m) => m.player_tag === tag);
         return {
@@ -66,8 +67,9 @@ export async function GET() {
       .sort((a, b) => b.trophyChange - a.trophyChange)
       .slice(0, 5);
 
-    // Biggest losers
+    // Biggest losers (only players who actually lost trophies)
     const topLosers = Object.entries(playerTrophyChanges)
+      .filter(([, change]) => change < 0)
       .map(([tag, change]) => {
         const member = members.find((m) => m.player_tag === tag);
         return {

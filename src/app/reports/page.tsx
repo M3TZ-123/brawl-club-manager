@@ -235,7 +235,7 @@ export default function ReportsPage() {
                       ))}
                       {report.topGainers.length === 0 && (
                         <p className="text-muted-foreground text-center py-4">
-                          No data available
+                          No trophy gains this week
                         </p>
                       )}
                     </div>
@@ -272,7 +272,7 @@ export default function ReportsPage() {
                       ))}
                       {report.topLosers.length === 0 && (
                         <p className="text-muted-foreground text-center py-4">
-                          No data available
+                          No trophy losses this week
                         </p>
                       )}
                     </div>
@@ -283,8 +283,8 @@ export default function ReportsPage() {
               {/* Recent Events */}
               <Card>
                 <CardHeader>
-                  <CardTitle>Recent Club Events</CardTitle>
-                  <CardDescription>Join/leave activity this week</CardDescription>
+                  <CardTitle>Members Joined & Left</CardTitle>
+                  <CardDescription>Roster changes this week</CardDescription>
                 </CardHeader>
                 <CardContent>
                   <div className="space-y-2">
