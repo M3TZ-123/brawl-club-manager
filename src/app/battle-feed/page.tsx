@@ -13,69 +13,75 @@ import {
   ChevronDown,
   Filter,
   Clock,
-  User,
+  Shield,
+  ShieldAlert,
 } from "lucide-react";
 
-interface Battle {
-  id: number;
-  player_tag: string;
-  player_name: string;
-  battle_time: string;
-  mode: string | null;
-  map: string | null;
-  result: string | null;
-  trophy_change: number;
-  is_star_player: boolean;
-  brawler_name: string | null;
-  brawler_power: number | null;
-  brawler_trophies: number | null;
+interface TeamPlayer {
+  tag: string;
+  name: string;
+  brawler: string | null;
+  power: number | null;
 }
 
-const RESULT_STYLES: Record<string, { bg: string; text: string; label: string }> = {
-  victory: { bg: "bg-green-500/15", text: "text-green-500", label: "Victory" },
-  defeat: { bg: "bg-red-500/15", text: "text-red-500", label: "Defeat" },
-  draw: { bg: "bg-yellow-500/15", text: "text-yellow-500", label: "Draw" },
+interface ClubPlayer {
+  tag: string;
+  name: string;
+  brawler: string | null;
+  power: number | null;
+  result: string;
+  trophy_change: number;
+  is_star_player: boolean;
+}
+
+interface Match {
+  battle_time: string;
+  mode: string;
+  map: string;
+  clubPlayers: ClubPlayer[];
+  ourTeam: TeamPlayer[] | null;
+  theirTeam: TeamPlayer[] | null;
+}
+
+const RESULT_STYLES: Record<string, { bg: string; text: string; border: string; label: string }> = {
+  victory: { bg: "bg-green-500/10", text: "text-green-500", border: "border-green-500/30", label: "Victory" },
+  defeat: { bg: "bg-red-500/10", text: "text-red-500", border: "border-red-500/30", label: "Defeat" },
+  draw: { bg: "bg-yellow-500/10", text: "text-yellow-500", border: "border-yellow-500/30", label: "Draw" },
 };
 
 const MODE_ICONS: Record<string, string> = {
-  gemGrab: "💎",
-  brawlBall: "⚽",
-  heist: "🔓",
-  bounty: "⭐",
-  siege: "🔧",
-  hotZone: "🔥",
-  knockout: "💀",
-  showdown: "🏜️",
-  duoShowdown: "👥",
-  soloShowdown: "🏜️",
-  wipeout: "💥",
-  payload: "📦",
-  trophyThieves: "🏆",
-  duels: "⚔️",
-  paintBrawl: "🎨",
-  brawlBall5V5: "⚽",
+  gemGrab: "\uD83D\uDC8E",
+  brawlBall: "\u26BD",
+  heist: "\uD83D\uDD13",
+  bounty: "\u2B50",
+  siege: "\uD83D\uDD27",
+  hotZone: "\uD83D\uDD25",
+  knockout: "\uD83D\uDC80",
+  showdown: "\uD83C\uDFDC\uFE0F",
+  duoShowdown: "\uD83D\uDC65",
+  soloShowdown: "\uD83C\uDFDC\uFE0F",
+  wipeout: "\uD83D\uDCA5",
+  payload: "\uD83D\uDCE6",
+  trophyThieves: "\uD83C\uDFC6",
+  duels: "\u2694\uFE0F",
+  paintBrawl: "\uD83C\uDFA8",
+  brawlBall5V5: "\u26BD",
 };
 
 function formatMode(mode: string | null): string {
   if (!mode) return "Unknown";
-  // Convert camelCase to Title Case
-  return mode
-    .replace(/([A-Z])/g, " $1")
-    .replace(/^./, (s) => s.toUpperCase())
-    .replace(/5 V 5/, "5v5")
-    .trim();
+  return mode.replace(/([A-Z])/g, " $1").replace(/^./, (s) => s.toUpperCase()).replace(/5 V 5/, "5v5").trim();
 }
 
 function getModeIcon(mode: string | null): string {
-  if (!mode) return "⚔️";
-  return MODE_ICONS[mode] || "⚔️";
+  if (!mode) return "\u2694\uFE0F";
+  return MODE_ICONS[mode] || "\u2694\uFE0F";
 }
 
 function timeAgo(dateStr: string): string {
   const now = new Date();
   const date = new Date(dateStr);
   const seconds = Math.floor((now.getTime() - date.getTime()) / 1000);
-
   if (seconds < 60) return "just now";
   const minutes = Math.floor(seconds / 60);
   if (minutes < 60) return `${minutes}m ago`;
@@ -86,85 +92,166 @@ function timeAgo(dateStr: string): string {
   return date.toLocaleDateString();
 }
 
-function BattleCard({ battle }: { battle: Battle }) {
-  const resultStyle = RESULT_STYLES[battle.result || ""] || {
-    bg: "bg-muted",
-    text: "text-muted-foreground",
-    label: battle.result || "Unknown",
-  };
+function PlayerRow({ tag, name, brawler, power, isClub, trophyChange, isStar, result }: {
+  tag: string;
+  name: string;
+  brawler: string | null;
+  power: number | null;
+  isClub: boolean;
+  trophyChange?: number;
+  isStar?: boolean;
+  result?: string;
+}) {
+  const inner = (
+    <div className="flex items-center justify-between py-1">
+      <div className="flex items-center gap-2 min-w-0">
+        {isClub && <span className="w-1.5 h-1.5 rounded-full bg-blue-500 flex-shrink-0" />}
+        <span className={`text-sm truncate ${isClub ? "font-semibold" : "text-muted-foreground"}`}>
+          {name}
+        </span>
+        {isStar && <Star className="h-3 w-3 text-yellow-500 fill-yellow-500 flex-shrink-0" />}
+      </div>
+      <div className="flex items-center gap-2 flex-shrink-0 ml-2">
+        {brawler && (
+          <span className="text-xs text-muted-foreground">
+            {brawler}{power ? ` Lv${power}` : ""}
+          </span>
+        )}
+        {trophyChange !== undefined && trophyChange !== 0 && (
+          <span className={`text-xs font-bold min-w-[32px] text-right ${trophyChange > 0 ? "text-green-500" : "text-red-500"}`}>
+            {trophyChange > 0 ? `+${trophyChange}` : trophyChange}
+          </span>
+        )}
+      </div>
+    </div>
+  );
+
+  if (isClub) {
+    return (
+      <Link href={`/members/${encodeURIComponent(tag)}`} className="hover:bg-accent/50 rounded px-1 -mx-1 block">
+        {inner}
+      </Link>
+    );
+  }
+  return <div className="px-1 -mx-1">{inner}</div>;
+}
+
+function MatchCard({ match, clubTags }: { match: Match; clubTags: Set<string> }) {
+  const mainResult = match.clubPlayers[0]?.result || "unknown";
+  const style = RESULT_STYLES[mainResult] || RESULT_STYLES.draw;
+  const totalTrophyChange = match.clubPlayers.reduce((s, p) => s + p.trophy_change, 0);
 
   return (
-    <div className="flex items-start gap-3 p-3 rounded-lg border border-border hover:bg-accent/30 transition-colors">
-      {/* Mode icon */}
-      <div className="flex-shrink-0 w-10 h-10 rounded-lg bg-accent flex items-center justify-center text-lg">
-        {getModeIcon(battle.mode)}
-      </div>
-
-      {/* Content */}
-      <div className="flex-1 min-w-0">
-        <div className="flex items-center gap-2 flex-wrap">
-          <Link
-            href={`/members/${encodeURIComponent(battle.player_tag)}`}
-            className="font-semibold text-sm hover:underline truncate"
-          >
-            {battle.player_name}
-          </Link>
-          <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-medium ${resultStyle.bg} ${resultStyle.text}`}>
-            {resultStyle.label}
-          </span>
-          {battle.is_star_player && (
-            <span className="inline-flex items-center gap-0.5 text-yellow-500 text-[11px] font-medium">
-              <Star className="h-3 w-3 fill-yellow-500" /> Star Player
-            </span>
-          )}
+    <div className={`rounded-xl border ${style.border} ${style.bg} overflow-hidden`}>
+      {/* Match header */}
+      <div className="flex items-center justify-between px-4 py-2.5 border-b border-border/50">
+        <div className="flex items-center gap-2">
+          <span className="text-lg">{getModeIcon(match.mode)}</span>
+          <div>
+            <span className="text-sm font-semibold">{formatMode(match.mode)}</span>
+            <span className="text-xs text-muted-foreground ml-2">{match.map !== "unknown" ? match.map : ""}</span>
+          </div>
         </div>
-
-        <div className="flex items-center gap-2 mt-1 text-xs text-muted-foreground flex-wrap">
-          {battle.brawler_name && (
-            <span className="font-medium text-foreground/80">
-              {battle.brawler_name}
-              {battle.brawler_power ? ` (Lv${battle.brawler_power})` : ""}
+        <div className="flex items-center gap-3">
+          <Badge variant="outline" className={`${style.text} border-current text-xs`}>
+            {style.label}
+          </Badge>
+          {totalTrophyChange !== 0 && (
+            <span className={`text-sm font-bold ${totalTrophyChange > 0 ? "text-green-500" : "text-red-500"}`}>
+              {totalTrophyChange > 0 ? `+${totalTrophyChange}` : totalTrophyChange}
             </span>
           )}
-          <span>·</span>
-          <span>{formatMode(battle.mode)}</span>
-          {battle.map && (
-            <>
-              <span>·</span>
-              <span>{battle.map}</span>
-            </>
-          )}
+          <span className="text-xs text-muted-foreground">{timeAgo(match.battle_time)}</span>
         </div>
       </div>
 
-      {/* Trophy change & time */}
-      <div className="flex-shrink-0 text-right">
-        {battle.trophy_change !== 0 && (
-          <p className={`text-sm font-bold ${battle.trophy_change > 0 ? "text-green-500" : "text-red-500"}`}>
-            {battle.trophy_change > 0 ? `+${battle.trophy_change}` : battle.trophy_change}
-          </p>
-        )}
-        <p className="text-[11px] text-muted-foreground mt-0.5">
-          {timeAgo(battle.battle_time)}
-        </p>
+      {/* Teams */}
+      <div className="grid grid-cols-1 md:grid-cols-2 divide-y md:divide-y-0 md:divide-x divide-border/50">
+        {/* Our team */}
+        <div className="px-4 py-3">
+          <div className="flex items-center gap-1.5 mb-2">
+            <Shield className="h-3.5 w-3.5 text-blue-500" />
+            <span className="text-xs font-semibold text-blue-500 uppercase tracking-wide">Your Team</span>
+          </div>
+          <div className="space-y-0.5">
+            {match.ourTeam ? (
+              match.ourTeam.map((p) => {
+                const clubPlayer = match.clubPlayers.find((cp) => cp.tag === p.tag);
+                const isClub = clubTags.has(p.tag) || !!clubPlayer;
+                return (
+                  <PlayerRow
+                    key={p.tag}
+                    tag={p.tag}
+                    name={isClub ? (clubPlayer?.name || p.name) : p.name}
+                    brawler={clubPlayer?.brawler || p.brawler}
+                    power={clubPlayer?.power || p.power}
+                    isClub={isClub}
+                    trophyChange={clubPlayer?.trophy_change}
+                    isStar={clubPlayer?.is_star_player}
+                  />
+                );
+              })
+            ) : (
+              match.clubPlayers.map((p) => (
+                <PlayerRow
+                  key={p.tag}
+                  tag={p.tag}
+                  name={p.name}
+                  brawler={p.brawler}
+                  power={p.power}
+                  isClub={true}
+                  trophyChange={p.trophy_change}
+                  isStar={p.is_star_player}
+                />
+              ))
+            )}
+          </div>
+        </div>
+
+        {/* Opponent team */}
+        <div className="px-4 py-3">
+          <div className="flex items-center gap-1.5 mb-2">
+            <ShieldAlert className="h-3.5 w-3.5 text-red-500" />
+            <span className="text-xs font-semibold text-red-500 uppercase tracking-wide">Opponents</span>
+          </div>
+          <div className="space-y-0.5">
+            {match.theirTeam ? (
+              match.theirTeam.map((p) => (
+                <PlayerRow
+                  key={p.tag}
+                  tag={p.tag}
+                  name={p.name}
+                  brawler={p.brawler}
+                  power={p.power}
+                  isClub={clubTags.has(p.tag)}
+                />
+              ))
+            ) : (
+              <p className="text-xs text-muted-foreground italic py-2">
+                Opponent data available after next sync
+              </p>
+            )}
+          </div>
+        </div>
       </div>
     </div>
   );
 }
 
 export default function BattleFeedPage() {
-  const [battles, setBattles] = useState<Battle[]>([]);
+  const [matches, setMatches] = useState<Match[]>([]);
   const [total, setTotal] = useState(0);
   const [modes, setModes] = useState<string[]>([]);
+  const [clubTags, setClubTags] = useState<Set<string>>(new Set());
   const [isLoading, setIsLoading] = useState(true);
   const [isLoadingMore, setIsLoadingMore] = useState(false);
   const [filterMode, setFilterMode] = useState<string>("");
-  const [filterResult, setFilterResult] = useState<string>("");
   const [showFilters, setShowFilters] = useState(false);
+  const [rawOffset, setRawOffset] = useState(0);
 
   const PAGE_SIZE = 50;
 
-  const loadBattles = useCallback(
+  const loadMatches = useCallback(
     async (offset = 0, append = false) => {
       try {
         if (!append) setIsLoading(true);
@@ -175,40 +262,43 @@ export default function BattleFeedPage() {
           offset: offset.toString(),
         });
         if (filterMode) params.set("mode", filterMode);
-        if (filterResult) params.set("result", filterResult);
 
-        const res = await fetch(`/api/battles/feed?${params}`);
-        if (res.ok) {
-          const data = await res.json();
+        const [feedRes, membersRes] = await Promise.all([
+          fetch(`/api/battles/feed?${params}`),
+          !append ? fetch("/api/members") : Promise.resolve(null),
+        ]);
+
+        if (feedRes.ok) {
+          const data = await feedRes.json();
           if (append) {
-            setBattles((prev) => [...prev, ...data.battles]);
+            setMatches((prev) => [...prev, ...(data.matches || [])]);
           } else {
-            setBattles(data.battles);
+            setMatches(data.matches || []);
             setModes(data.modes || []);
           }
           setTotal(data.total || 0);
+          setRawOffset(offset + PAGE_SIZE);
+        }
+
+        if (membersRes && (membersRes as Response).ok) {
+          const data = await (membersRes as Response).json();
+          const tags = new Set<string>((data.members || []).map((m: { player_tag: string }) => m.player_tag));
+          setClubTags(tags);
         }
       } catch (err) {
-        console.error("Error loading battle feed:", err);
+        console.error("Error loading matches:", err);
       } finally {
         setIsLoading(false);
         setIsLoadingMore(false);
       }
     },
-    [filterMode, filterResult]
+    [filterMode]
   );
 
   useEffect(() => {
-    loadBattles(0, false);
-  }, [loadBattles]);
-
-  // Compute quick stats from loaded battles
-  const stats = {
-    total: total,
-    victories: battles.filter((b) => b.result === "victory").length,
-    defeats: battles.filter((b) => b.result === "defeat").length,
-    starPlayers: battles.filter((b) => b.is_star_player).length,
-  };
+    setRawOffset(0);
+    loadMatches(0, false);
+  }, [loadMatches]);
 
   return (
     <LayoutWrapper>
@@ -232,10 +322,8 @@ export default function BattleFeedPage() {
           >
             <Filter className="h-3.5 w-3.5" />
             Filters
-            {(filterMode || filterResult) && (
-              <Badge variant="secondary" className="ml-1 h-4 px-1.5 text-[10px]">
-                {(filterMode ? 1 : 0) + (filterResult ? 1 : 0)}
-              </Badge>
+            {filterMode && (
+              <Badge variant="secondary" className="ml-1 h-4 px-1.5 text-[10px]">1</Badge>
             )}
           </Button>
         </div>
@@ -250,7 +338,7 @@ export default function BattleFeedPage() {
                   <select
                     value={filterMode}
                     onChange={(e) => setFilterMode(e.target.value)}
-                    className="block w-40 rounded-md border border-border bg-background px-2 py-1.5 text-sm"
+                    className="block w-44 rounded-md border border-border bg-background px-2 py-1.5 text-sm"
                   >
                     <option value="">All Modes</option>
                     {modes.map((m) => (
@@ -260,29 +348,9 @@ export default function BattleFeedPage() {
                     ))}
                   </select>
                 </div>
-                <div className="space-y-1">
-                  <label className="text-xs font-medium text-muted-foreground">Result</label>
-                  <select
-                    value={filterResult}
-                    onChange={(e) => setFilterResult(e.target.value)}
-                    className="block w-32 rounded-md border border-border bg-background px-2 py-1.5 text-sm"
-                  >
-                    <option value="">All Results</option>
-                    <option value="victory">Victory</option>
-                    <option value="defeat">Defeat</option>
-                    <option value="draw">Draw</option>
-                  </select>
-                </div>
-                {(filterMode || filterResult) && (
+                {filterMode && (
                   <div className="flex items-end">
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      onClick={() => {
-                        setFilterMode("");
-                        setFilterResult("");
-                      }}
-                    >
+                    <Button variant="ghost" size="sm" onClick={() => setFilterMode("")}>
                       Clear
                     </Button>
                   </div>
@@ -292,74 +360,49 @@ export default function BattleFeedPage() {
           </Card>
         )}
 
-        {/* Quick Stats Bar */}
-        {!isLoading && battles.length > 0 && (
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-            {[
-              { label: "Total Battles", value: total.toLocaleString(), icon: Swords, color: "text-blue-500" },
-              { label: "Victories", value: stats.victories, icon: Trophy, color: "text-green-500" },
-              { label: "Defeats", value: stats.defeats, icon: Clock, color: "text-red-500" },
-              { label: "Star Players", value: stats.starPlayers, icon: Star, color: "text-yellow-500" },
-            ].map((s) => (
-              <div key={s.label} className="flex items-center gap-2 p-3 rounded-lg border border-border bg-card">
-                <s.icon className={`h-4 w-4 ${s.color}`} />
-                <div>
-                  <p className="text-lg font-bold leading-tight">{s.value}</p>
-                  <p className="text-[11px] text-muted-foreground">{s.label}</p>
-                </div>
-              </div>
-            ))}
+        {/* Matches */}
+        {isLoading ? (
+          <div className="flex items-center justify-center py-16">
+            <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary" />
           </div>
-        )}
+        ) : matches.length === 0 ? (
+          <Card>
+            <CardContent className="py-12 text-center text-muted-foreground">
+              <Swords className="h-12 w-12 mx-auto mb-3 opacity-30" />
+              <p className="font-medium">No matches recorded yet</p>
+              <p className="text-sm mt-1">Matches will appear here after syncing your club.</p>
+            </CardContent>
+          </Card>
+        ) : (
+          <div className="space-y-3">
+            {matches.map((match, i) => (
+              <MatchCard
+                key={`${match.battle_time}-${match.mode}-${i}`}
+                match={match}
+                clubTags={clubTags}
+              />
+            ))}
 
-        {/* Battle Feed */}
-        <Card>
-          <CardHeader className="pb-3">
-            <CardTitle className="text-lg flex items-center gap-2">
-              <Clock className="h-4 w-4 text-muted-foreground" />
-              Recent Battles
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            {isLoading ? (
-              <div className="flex items-center justify-center py-12">
-                <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary" />
-              </div>
-            ) : battles.length === 0 ? (
-              <div className="text-center py-12 text-muted-foreground">
-                <Swords className="h-12 w-12 mx-auto mb-3 opacity-30" />
-                <p className="font-medium">No battles recorded yet</p>
-                <p className="text-sm mt-1">Battles will appear here after syncing your club.</p>
-              </div>
-            ) : (
-              <div className="space-y-2">
-                {battles.map((battle) => (
-                  <BattleCard key={`${battle.player_tag}-${battle.battle_time}`} battle={battle} />
-                ))}
-
-                {/* Load More */}
-                {battles.length < total && (
-                  <div className="pt-3 text-center">
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={() => loadBattles(battles.length, true)}
-                      disabled={isLoadingMore}
-                      className="gap-1.5"
-                    >
-                      {isLoadingMore ? (
-                        <div className="animate-spin rounded-full h-3.5 w-3.5 border-b-2 border-primary" />
-                      ) : (
-                        <ChevronDown className="h-3.5 w-3.5" />
-                      )}
-                      Load More ({total - battles.length} remaining)
-                    </Button>
-                  </div>
-                )}
+            {rawOffset < total && (
+              <div className="pt-2 text-center">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => loadMatches(rawOffset, true)}
+                  disabled={isLoadingMore}
+                  className="gap-1.5"
+                >
+                  {isLoadingMore ? (
+                    <div className="animate-spin rounded-full h-3.5 w-3.5 border-b-2 border-primary" />
+                  ) : (
+                    <ChevronDown className="h-3.5 w-3.5" />
+                  )}
+                  Load More
+                </Button>
               </div>
             )}
-          </CardContent>
-        </Card>
+          </div>
+        )}
       </div>
     </LayoutWrapper>
   );

@@ -554,6 +554,7 @@ export interface ProcessedBattle {
   brawler_name: string | null;
   brawler_power: number | null;
   brawler_trophies: number | null;
+  teams_json: string | null;
 }
 
 export function processBattleLog(playerTag: string, battleLog: BrawlStarsBattleLog): ProcessedBattle[] {
@@ -597,6 +598,22 @@ export function processBattleLog(playerTag: string, battleLog: BrawlStarsBattleL
       }
     }
 
+    // Serialize full teams data for match context
+    let teamsJson: string | null = null;
+    if (battleData.teams) {
+      try {
+        teamsJson = JSON.stringify(battleData.teams.map(team =>
+          team.map(p => ({
+            tag: p.tag,
+            name: p.name,
+            brawler: p.brawler?.name || null,
+            power: p.brawler?.power || null,
+            trophies: p.brawler?.trophies || null,
+          }))
+        ));
+      } catch { /* ignore serialization errors */ }
+    }
+
     battles.push({
       player_tag: playerTag,
       battle_time: battleTime.toISOString(),
@@ -608,6 +625,7 @@ export function processBattleLog(playerTag: string, battleLog: BrawlStarsBattleL
       brawler_name: brawlerName,
       brawler_power: brawlerPower,
       brawler_trophies: brawlerTrophies,
+      teams_json: teamsJson,
     });
   }
 

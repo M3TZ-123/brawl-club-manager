@@ -112,9 +112,18 @@ CREATE TABLE IF NOT EXISTS battle_history (
   brawler_name VARCHAR(50),
   brawler_power INT,
   brawler_trophies INT,
+  teams_json JSONB,
   recorded_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
   UNIQUE(player_tag, battle_time)
 );
+
+-- Migration: Add teams_json column if it doesn't exist
+DO $$
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'battle_history' AND column_name = 'teams_json') THEN
+    ALTER TABLE battle_history ADD COLUMN teams_json JSONB;
+  END IF;
+END $$;
 
 -- Player tracking stats (accumulated stats over time)
 CREATE TABLE IF NOT EXISTS player_tracking (

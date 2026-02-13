@@ -14,6 +14,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import {
   Trophy,
   Swords,
@@ -161,45 +162,76 @@ function LeaderboardTable({
   }[];
 }) {
   const rest = members.slice(3);
+  const PAGE_SIZE = 10;
+  const [page, setPage] = useState(0);
+  const totalPages = Math.ceil(rest.length / PAGE_SIZE);
+  const paginated = rest.slice(page * PAGE_SIZE, (page + 1) * PAGE_SIZE);
+
   if (rest.length === 0) return null;
 
   return (
-    <div className="overflow-x-auto -mx-4 sm:mx-0 rounded-lg border border-border">
-      <Table>
-        <TableHeader>
-          <TableRow>
-            <TableHead className="w-12">#</TableHead>
-            <TableHead>Player</TableHead>
-            {columns.map((col) => (
-              <TableHead key={col.header} className={col.className}>
-                {col.header}
-              </TableHead>
-            ))}
-          </TableRow>
-        </TableHeader>
-        <TableBody>
-          {rest.map((member, i) => (
-            <TableRow key={member.tag} className="group">
-              <TableCell>
-                <RankBadge rank={i + 4} />
-              </TableCell>
-              <TableCell>
-                <Link
-                  href={`/members/${encodeURIComponent(member.tag)}`}
-                  className="hover:underline font-medium"
-                >
-                  {member.name}
-                </Link>
-              </TableCell>
+    <div>
+      <div className="overflow-x-auto -mx-4 sm:mx-0 rounded-lg border border-border">
+        <Table>
+          <TableHeader>
+            <TableRow>
+              <TableHead className="w-12">#</TableHead>
+              <TableHead>Player</TableHead>
               {columns.map((col) => (
-                <TableCell key={col.header} className={col.className}>
-                  {col.value(member)}
-                </TableCell>
+                <TableHead key={col.header} className={col.className}>
+                  {col.header}
+                </TableHead>
               ))}
             </TableRow>
-          ))}
-        </TableBody>
-      </Table>
+          </TableHeader>
+          <TableBody>
+            {paginated.map((member, i) => (
+              <TableRow key={member.tag} className="group">
+                <TableCell>
+                  <RankBadge rank={page * PAGE_SIZE + i + 4} />
+                </TableCell>
+                <TableCell>
+                  <Link
+                    href={`/members/${encodeURIComponent(member.tag)}`}
+                    className="hover:underline font-medium"
+                  >
+                    {member.name}
+                  </Link>
+                </TableCell>
+                {columns.map((col) => (
+                  <TableCell key={col.header} className={col.className}>
+                    {col.value(member)}
+                  </TableCell>
+                ))}
+              </TableRow>
+            ))}
+          </TableBody>
+        </Table>
+      </div>
+      {totalPages > 1 && (
+        <div className="flex items-center justify-end pt-3 px-1">
+          <div className="flex gap-1">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setPage((p) => Math.max(0, p - 1))}
+              disabled={page === 0}
+              className="h-7 px-2 text-xs"
+            >
+              Previous
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setPage((p) => Math.min(totalPages - 1, p + 1))}
+              disabled={page >= totalPages - 1}
+              className="h-7 px-2 text-xs"
+            >
+              Next
+            </Button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

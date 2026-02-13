@@ -4,19 +4,19 @@ import { supabase } from "@/lib/supabase";
 export async function GET(request: Request) {
   try {
     const { searchParams } = new URL(request.url);
-    const limit = Math.min(parseInt(searchParams.get("limit") || "100"), 500);
+    const limit = Math.min(parseInt(searchParams.get("limit") || "50"), 200);
     const offset = parseInt(searchParams.get("offset") || "0");
     const mode = searchParams.get("mode") || null;
-    const result = searchParams.get("result") || null;
 
-    // Get current member tags for name lookup
+    // Get current member tags and names
     const { data: members } = await supabase
       .from("members")
       .select("player_tag, player_name");
 
     const nameMap = new Map((members || []).map((m) => [m.player_tag, m.player_name]));
+    const clubTags = new Set(nameMap.keys());
 
-    // Build query
+    // Build query - fetch raw battles
     let query = supabase
       .from("battle_history")
       .select("*", { count: "exact" })
@@ -26,21 +26,129 @@ export async function GET(request: Request) {
     if (mode) {
       query = query.eq("mode", mode);
     }
-    if (result) {
-      query = query.eq("result", result);
-    }
 
     const { data: battles, error, count } = await query;
-
     if (error) throw error;
 
-    // Enrich with player names
-    const enriched = (battles || []).map((b) => ({
-      ...b,
-      player_name: nameMap.get(b.player_tag) || b.player_tag,
-    }));
+    // Group battles into matches
+    // Key: battle_time + mode + map (battles at the same time on the same map = same match)
+    const matchMap = new Map<string, {
+      battle_time: string;
+      mode: string;
+      map: string;
+      clubPlayers: {
+        tag: string;
+        name: string;
+        brawler: string | null;
+        power: number | null;
+        result: string;
+        trophy_change: number;
+        is_star_player: boolean;
+      }[];
+      teams: { tag: string; name: string; brawler: string | null; power: number | null; trophies: number | null }[][] | null;
+    }>();
 
-    // Get distinct modes for filter dropdown
+    for (const b of battles || []) {
+      const key = `${b.battle_time}|${b.mode}|${b.map}`;
+
+      if (!matchMap.has(key)) {
+        // Parse teams_json if available
+        let teams = null;
+        if (b.teams_json) {
+          try {
+            teams = typeof b.teams_json === "string" ? JSON.parse(b.teams_json) : b.teams_json;
+          } catch { /* ignore */ }
+        }
+
+        matchMap.set(key, {
+          battle_time: b.battle_time,
+          mode: b.mode || "unknown",
+          map: b.map || "unknown",
+          clubPlayers: [],
+          teams,
+        });
+      }
+
+      const match = matchMap.get(key)!;
+      // Add this club member to the match (avoid duplicates)
+      if (!match.clubPlayers.some((p) => p.tag === b.player_tag)) {
+        match.clubPlayers.push({
+          tag: b.player_tag,
+          name: nameMap.get(b.player_tag) || b.player_tag,
+          brawler: b.brawler_name,
+          power: b.brawler_power,
+          result: b.result || "unknown",
+          trophy_change: b.trophy_change || 0,
+          is_star_player: b.is_star_player || false,
+        });
+      }
+
+      // If this battle has teams_json and the match doesn't yet, use it
+      if (!match.teams && b.teams_json) {
+        try {
+          match.teams = typeof b.teams_json === "string" ? JSON.parse(b.teams_json) : b.teams_json;
+        } catch { /* ignore */ }
+      }
+    }
+
+    // Convert to array, sorted by time descending
+    const matches = [...matchMap.values()].sort(
+      (a, b) => new Date(b.battle_time).getTime() - new Date(a.battle_time).getTime()
+    );
+
+    // For each match, identify which team is "ours" and which is "theirs"
+    const enrichedMatches = matches.map((match) => {
+      let ourTeam: { tag: string; name: string; brawler: string | null; power: number | null }[] = [];
+      let theirTeam: { tag: string; name: string; brawler: string | null; power: number | null }[] = [];
+
+      if (match.teams && match.teams.length >= 2) {
+        // Find which team contains a club member
+        const clubPlayerTags = new Set(match.clubPlayers.map((p) => p.tag));
+        let ourTeamIndex = -1;
+
+        for (let i = 0; i < match.teams.length; i++) {
+          const team = match.teams[i];
+          if (team.some((p: { tag: string }) => clubPlayerTags.has(p.tag) || clubTags.has(p.tag))) {
+            ourTeamIndex = i;
+            break;
+          }
+        }
+
+        if (ourTeamIndex >= 0) {
+          ourTeam = match.teams[ourTeamIndex].map((p: { tag: string; name: string; brawler: string | null; power: number | null }) => ({
+            tag: p.tag,
+            name: nameMap.get(p.tag) || p.name,
+            brawler: p.brawler,
+            power: p.power,
+          }));
+
+          // All other teams are opponents
+          for (let i = 0; i < match.teams.length; i++) {
+            if (i !== ourTeamIndex) {
+              theirTeam.push(
+                ...match.teams[i].map((p: { tag: string; name: string; brawler: string | null; power: number | null }) => ({
+                  tag: p.tag,
+                  name: p.name,
+                  brawler: p.brawler,
+                  power: p.power,
+                }))
+              );
+            }
+          }
+        }
+      }
+
+      return {
+        battle_time: match.battle_time,
+        mode: match.mode,
+        map: match.map,
+        clubPlayers: match.clubPlayers,
+        ourTeam: ourTeam.length > 0 ? ourTeam : null,
+        theirTeam: theirTeam.length > 0 ? theirTeam : null,
+      };
+    });
+
+    // Get distinct modes for filter
     const { data: modes } = await supabase
       .from("battle_history")
       .select("mode")
@@ -49,7 +157,7 @@ export async function GET(request: Request) {
     const uniqueModes = [...new Set((modes || []).map((m) => m.mode))].filter(Boolean).sort();
 
     return NextResponse.json({
-      battles: enriched,
+      matches: enrichedMatches,
       total: count || 0,
       modes: uniqueModes,
     });
