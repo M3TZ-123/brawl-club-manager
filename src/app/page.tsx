@@ -82,8 +82,8 @@ export default function DashboardPage() {
   const avgTrophies = members.length > 0 ? Math.round(totalTrophies / members.length) : 0;
 
   const activityData = [
-    { name: "Active", value: activeMembers || 1, color: "#22c55e" },
-    { name: "Inactive", value: Math.max(members.length - activeMembers, 0) || 1, color: "#ef4444" },
+    { name: "Active", value: activeMembers, color: "#22c55e" },
+    { name: "Inactive", value: Math.max(members.length - activeMembers, 0), color: "#ef4444" },
   ];
 
   const topMembers = members.slice(0, 10).map((m) => ({

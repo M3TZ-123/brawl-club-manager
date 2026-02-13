@@ -223,60 +223,92 @@ function SimpleSidebar() {
 
 interface NotificationItem {
   id: number;
-  type: "join" | "leave";
-  playerName: string;
-  time: string;
+  type: string;
+  title: string;
+  message: string;
+  player_tag: string | null;
+  player_name: string | null;
+  is_read: boolean;
+  created_at: string;
 }
 
 function SimpleHeader() {
-  const { clubName, theme, setTheme, notificationsReadAt, setNotificationsReadAt } = useAppStore();
+  const { clubName, theme, setTheme } = useAppStore();
   const { toggle } = useSidebarContext();
   const [notifications, setNotifications] = useState<NotificationItem[]>([]);
   const [showNotifications, setShowNotifications] = useState(false);
   const [unreadCount, setUnreadCount] = useState(0);
+  const panelRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     loadNotifications();
-    
-    // Listen for data updates to refresh notifications
     const handleUpdate = () => loadNotifications();
     window.addEventListener("club-data-updated", handleUpdate);
     return () => window.removeEventListener("club-data-updated", handleUpdate);
   }, []);
 
+  // Close panel on click outside
+  useEffect(() => {
+    function handleClickOutside(e: MouseEvent) {
+      if (panelRef.current && !panelRef.current.contains(e.target as Node)) {
+        setShowNotifications(false);
+      }
+    }
+    if (showNotifications) {
+      document.addEventListener("mousedown", handleClickOutside);
+      return () => document.removeEventListener("mousedown", handleClickOutside);
+    }
+  }, [showNotifications]);
+
   const loadNotifications = async () => {
     try {
-      const response = await fetch("/api/events?limit=10");
+      const response = await fetch("/api/notifications?limit=30");
       if (response.ok) {
         const data = await response.json();
-        const events = data.events || [];
-        setNotifications(
-          events.slice(0, 5).map((e: { id: number; event_type: string; player_name: string; event_time: string }) => ({
-            id: e.id,
-            type: e.event_type as "join" | "leave",
-            playerName: e.player_name,
-            time: e.event_time,
-          }))
-        );
-        // Count events newer than the last read time
-        const lastRead = useAppStore.getState().notificationsReadAt;
-        const lastReadTime = lastRead ? new Date(lastRead) : new Date(0);
-        const recentCount = events.filter(
-          (e: { event_time: string }) => new Date(e.event_time) > lastReadTime
-        ).length;
-        setUnreadCount(Math.min(recentCount, 9));
+        setNotifications(data.notifications || []);
+        setUnreadCount(data.unreadCount || 0);
       }
     } catch (error) {
       console.error("Error loading notifications:", error);
     }
   };
 
-  const handleBellClick = () => {
-    setShowNotifications(!showNotifications);
-    if (!showNotifications) {
-      // Mark as read when opening - save timestamp to store
-      setNotificationsReadAt(new Date().toISOString());
+  const markAsRead = async (id: number) => {
+    try {
+      await fetch("/api/notifications", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ids: [id] }),
+      });
+      setNotifications((prev) =>
+        prev.map((n) => (n.id === id ? { ...n, is_read: true } : n))
+      );
+      setUnreadCount((c) => Math.max(0, c - 1));
+    } catch (error) {
+      console.error("Error marking notification as read:", error);
+    }
+  };
+
+  const markAllAsRead = async () => {
+    try {
+      await fetch("/api/notifications", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ all: true }),
+      });
+      setNotifications((prev) => prev.map((n) => ({ ...n, is_read: true })));
       setUnreadCount(0);
+    } catch (error) {
+      console.error("Error marking all as read:", error);
+    }
+  };
+
+  const getNotifIcon = (type: string) => {
+    switch (type) {
+      case "join": return { dot: "bg-green-500", label: "Joined", color: "text-green-500" };
+      case "leave": return { dot: "bg-red-500", label: "Left", color: "text-red-500" };
+      case "inactive": return { dot: "bg-amber-500", label: "Inactive", color: "text-amber-500" };
+      default: return { dot: "bg-blue-500", label: type, color: "text-blue-500" };
     }
   };
 
@@ -308,61 +340,75 @@ function SimpleHeader() {
         </Button>
         
         {/* Notification Bell */}
-        <div className="relative">
+        <div className="relative" ref={panelRef}>
           <Button
             variant="ghost"
             size="icon"
-            onClick={handleBellClick}
+            onClick={() => setShowNotifications(!showNotifications)}
           >
             <Bell className="h-5 w-5" />
             {unreadCount > 0 && (
               <span className="absolute -top-1 -right-1 h-5 w-5 rounded-full bg-red-500 text-white text-xs flex items-center justify-center">
-                {unreadCount}
+                {unreadCount > 9 ? "9+" : unreadCount}
               </span>
             )}
           </Button>
 
           {showNotifications && (
-            <Card className="absolute right-0 top-12 w-80 z-50 shadow-lg">
+            <Card className="absolute right-0 top-12 w-96 z-50 shadow-lg">
               <CardContent className="p-0">
-                <div className="p-3 border-b">
-                  <h3 className="font-semibold">Club Events</h3>
+                <div className="p-3 border-b flex items-center justify-between">
+                  <h3 className="font-semibold">Notifications</h3>
+                  {unreadCount > 0 && (
+                    <button
+                      onClick={markAllAsRead}
+                      className="text-xs text-primary hover:underline"
+                    >
+                      Mark all as read
+                    </button>
+                  )}
                 </div>
                 {notifications.length === 0 ? (
-                  <p className="p-4 text-sm text-muted-foreground text-center">
-                    No recent events
+                  <p className="p-6 text-sm text-muted-foreground text-center">
+                    No notifications yet
                   </p>
                 ) : (
-                  <div className="max-h-80 overflow-y-auto">
-                    {notifications.map((notif) => (
-                      <div
-                        key={notif.id}
-                        className="p-3 border-b last:border-b-0 hover:bg-muted/50"
-                      >
-                        <div className="flex items-center gap-2">
-                          <span
-                            className={`w-2 h-2 rounded-full ${
-                              notif.type === "join" ? "bg-green-500" : "bg-red-500"
-                            }`}
-                          />
-                          <span className="font-medium text-sm">
-                            {notif.playerName}
-                          </span>
-                          <span
-                            className={`text-xs ${
-                              notif.type === "join"
-                                ? "text-green-500"
-                                : "text-red-500"
-                            }`}
-                          >
-                            {notif.type === "join" ? "joined" : "left"}
-                          </span>
+                  <div className="max-h-96 overflow-y-auto">
+                    {notifications.map((notif) => {
+                      const style = getNotifIcon(notif.type);
+                      return (
+                        <div
+                          key={notif.id}
+                          onClick={() => !notif.is_read && markAsRead(notif.id)}
+                          className={cn(
+                            "p-3 border-b last:border-b-0 cursor-pointer transition-colors",
+                            notif.is_read
+                              ? "hover:bg-muted/30 opacity-60"
+                              : "bg-primary/5 hover:bg-primary/10"
+                          )}
+                        >
+                          <div className="flex items-start gap-2">
+                            <span className={cn("w-2 h-2 rounded-full mt-1.5 shrink-0", style.dot)} />
+                            <div className="flex-1 min-w-0">
+                              <div className="flex items-center gap-2">
+                                <span className={cn("text-xs font-semibold", style.color)}>
+                                  {notif.title}
+                                </span>
+                                {!notif.is_read && (
+                                  <span className="w-1.5 h-1.5 rounded-full bg-primary shrink-0" />
+                                )}
+                              </div>
+                              <p className="text-sm text-muted-foreground mt-0.5 break-words">
+                                {notif.message}
+                              </p>
+                              <p className="text-xs text-muted-foreground/70 mt-1">
+                                {formatDateTime(notif.created_at)}
+                              </p>
+                            </div>
+                          </div>
                         </div>
-                        <p className="text-xs text-muted-foreground mt-1">
-                          {formatDateTime(notif.time)}
-                        </p>
-                      </div>
-                    ))}
+                      );
+                    })}
                   </div>
                 )}
               </CardContent>

@@ -115,8 +115,8 @@ export default function ReportsPage() {
 
   const activityData = report
     ? [
-        { name: "Active", value: report.activityDistribution.active || 1, color: "#22c55e" },
-        { name: "Inactive", value: report.activityDistribution.inactive || 1, color: "#ef4444" },
+        { name: "Active", value: report.activityDistribution.active, color: "#22c55e" },
+        { name: "Inactive", value: report.activityDistribution.inactive, color: "#ef4444" },
       ]
     : [];
 

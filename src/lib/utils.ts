@@ -35,27 +35,6 @@ export function formatDateTime(date: Date | string): string {
   });
 }
 
-export function getActivityStatus(
-  trophyChange: number,
-  hoursSinceLastChange: number
-): "active" | "minimal" | "inactive" {
-  if (hoursSinceLastChange > 24) return "inactive";
-  if (Math.abs(trophyChange) >= 20) return "active";
-  if (Math.abs(trophyChange) > 0) return "minimal";
-  return "inactive";
-}
-
-export function getActivityColor(status: "active" | "minimal" | "inactive"): string {
-  switch (status) {
-    case "active":
-      return "text-green-500";
-    case "minimal":
-      return "text-yellow-500";
-    case "inactive":
-      return "text-red-500";
-  }
-}
-
 export function getActivityEmoji(status: "active" | "minimal" | "inactive"): string {
   switch (status) {
     case "active":

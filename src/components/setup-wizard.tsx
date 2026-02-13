@@ -55,8 +55,13 @@ export function SetupWizard({ onComplete }: SetupWizardProps) {
   const handleComplete = async () => {
     setIsLoading(true);
     try {
-      // Trigger initial sync
-      await fetch("/api/sync", { method: "POST" });
+      // Trigger initial sync with credentials
+      const state = useAppStore.getState();
+      await fetch("/api/sync", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ clubTag: state.clubTag, apiKey: state.apiKey, initialSetup: true }),
+      });
       onComplete();
     } catch (err) {
       console.error(err);

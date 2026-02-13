@@ -1,18 +1,11 @@
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
-import { Member, ActivityLog, ClubEvent, MemberHistory } from "@/types/database";
 
 interface AppState {
   // Club info
   clubTag: string;
   clubName: string;
   apiKey: string;
-  
-  // Data
-  members: Member[];
-  activityLogs: ActivityLog[];
-  clubEvents: ClubEvent[];
-  memberHistory: MemberHistory[];
   
   // UI State
   lastSyncTime: string | null;
@@ -21,7 +14,6 @@ interface AppState {
   hasLoadedSettings: boolean;
   theme: "light" | "dark";
   sidebarOpen: boolean;
-  notificationsReadAt: string | null; // Timestamp when notifications were last read
   
   // Settings
   inactivityThreshold: number; // hours
@@ -33,10 +25,6 @@ interface AppState {
   setClubTag: (tag: string) => void;
   setClubName: (name: string) => void;
   setApiKey: (key: string) => void;
-  setMembers: (members: Member[]) => void;
-  setActivityLogs: (logs: ActivityLog[]) => void;
-  setClubEvents: (events: ClubEvent[]) => void;
-  setMemberHistory: (history: MemberHistory[]) => void;
   setLastSyncTime: (time: string | null) => void;
   setIsSyncing: (syncing: boolean) => void;
   setIsLoadingSettings: (loading: boolean) => void;
@@ -47,7 +35,6 @@ interface AppState {
   setRefreshInterval: (minutes: number) => void;
   setNotificationsEnabled: (enabled: boolean) => void;
   setDiscordWebhook: (webhook: string) => void;
-  setNotificationsReadAt: (time: string | null) => void;
   loadSettingsFromDB: () => Promise<void>;
   saveSettingsToDB: () => Promise<void>;
 }
@@ -59,17 +46,12 @@ export const useAppStore = create<AppState>()(
       clubTag: "",
       clubName: "",
       apiKey: "",
-      members: [],
-      activityLogs: [],
-      clubEvents: [],
-      memberHistory: [],
       lastSyncTime: null,
       isSyncing: false,
       isLoadingSettings: true,
       hasLoadedSettings: false,
       theme: "dark",
       sidebarOpen: true,
-      notificationsReadAt: null,
       inactivityThreshold: 24,
       refreshInterval: 60, // 1 hour
       notificationsEnabled: true,
@@ -79,10 +61,6 @@ export const useAppStore = create<AppState>()(
       setClubTag: (tag) => set({ clubTag: tag }),
       setClubName: (name) => set({ clubName: name }),
       setApiKey: (key) => set({ apiKey: key }),
-      setMembers: (members) => set({ members }),
-      setActivityLogs: (logs) => set({ activityLogs: logs }),
-      setClubEvents: (events) => set({ clubEvents: events }),
-      setMemberHistory: (history) => set({ memberHistory: history }),
       setLastSyncTime: (time) => set({ lastSyncTime: time }),
       setIsSyncing: (syncing) => set({ isSyncing: syncing }),
       setIsLoadingSettings: (loading) => set({ isLoadingSettings: loading }),
@@ -93,7 +71,6 @@ export const useAppStore = create<AppState>()(
       setRefreshInterval: (minutes) => set({ refreshInterval: minutes }),
       setNotificationsEnabled: (enabled) => set({ notificationsEnabled: enabled }),
       setDiscordWebhook: (webhook) => set({ discordWebhook: webhook }),
-      setNotificationsReadAt: (time) => set({ notificationsReadAt: time }),
       
       // Load settings from database (only once)
       loadSettingsFromDB: async () => {
@@ -151,7 +128,6 @@ export const useAppStore = create<AppState>()(
       partialize: (state) => ({
         theme: state.theme,
         sidebarOpen: state.sidebarOpen,
-        notificationsReadAt: state.notificationsReadAt,
       }),
     }
   )

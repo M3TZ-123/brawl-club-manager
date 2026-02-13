@@ -52,12 +52,17 @@ async function syncClubData(providedClubTag?: string, providedApiKey?: string, i
     let apiKey = providedApiKey;
 
     // Always try to get from database first (most up-to-date)
-    if (!clubTag || !apiKey) {
-      console.log("Fetching credentials from database...");
+    let discordWebhook = "";
+    let notificationsEnabled = false;
+    let inactivityThreshold = 48;
+
+    // Always fetch all settings from database
+    {
+      console.log("Fetching settings from database...");
       const { data: settings, error: settingsError } = await supabase
         .from("settings")
         .select("key, value")
-        .in("key", ["club_tag", "api_key"]);
+        .in("key", ["club_tag", "api_key", "discord_webhook", "notifications_enabled", "inactivity_threshold"]);
       
       if (settingsError) {
         console.error("Error fetching settings:", settingsError);
@@ -72,6 +77,9 @@ async function syncClubData(providedClubTag?: string, providedApiKey?: string, i
         for (const setting of settings) {
           if (setting.key === "club_tag" && !clubTag) clubTag = setting.value;
           if (setting.key === "api_key" && !apiKey) apiKey = setting.value;
+          if (setting.key === "discord_webhook") discordWebhook = setting.value;
+          if (setting.key === "notifications_enabled") notificationsEnabled = setting.value === "true";
+          if (setting.key === "inactivity_threshold") inactivityThreshold = parseInt(setting.value) || 48;
         }
       } else {
         console.log("No settings found in database");
@@ -104,16 +112,7 @@ async function syncClubData(providedClubTag?: string, providedApiKey?: string, i
     setApiKey(apiKey);
     console.log("API key set, fetching club data...");
 
-    // Get inactivity threshold from settings (default 48 hours)
-    let inactivityThreshold = 48;
-    const { data: thresholdSetting } = await supabase
-      .from("settings")
-      .select("value")
-      .eq("key", "inactivity_threshold")
-      .single();
-    if (thresholdSetting?.value) {
-      inactivityThreshold = parseInt(thresholdSetting.value);
-    }
+    // inactivityThreshold already loaded from settings above (default 48 hours)
 
     // Fetch club data
     const club = await getClub(clubTag);
@@ -459,24 +458,36 @@ async function syncClubData(providedClubTag?: string, providedApiKey?: string, i
 
     // Store brawler snapshots (for tracking power ups/unlocks)
     if (brawlerSnapshots.length > 0) {
-      // Get previous snapshots to detect changes
+      // Get previous snapshots to detect changes — batch query for ALL players at once
       const playerTags = [...new Set(brawlerSnapshots.map(s => s.player_tag))];
-      
+      const yesterday = new Date();
+      yesterday.setDate(yesterday.getDate() - 1);
+      const yesterdayStr = yesterday.toISOString().slice(0, 10);
+
+      const { data: allPrevSnapshots } = await supabase
+        .from("brawler_snapshots")
+        .select("player_tag, brawler_id, power_level")
+        .in("player_tag", playerTags)
+        .gte("recorded_at", yesterdayStr);
+
+      // Group previous snapshots by player_tag
+      const prevByPlayer = new Map<string, Map<number, number>>();
+      const playersWithPrevData = new Set<string>();
+      for (const snap of allPrevSnapshots || []) {
+        playersWithPrevData.add(snap.player_tag);
+        if (!prevByPlayer.has(snap.player_tag)) {
+          prevByPlayer.set(snap.player_tag, new Map());
+        }
+        prevByPlayer.get(snap.player_tag)!.set(snap.brawler_id, snap.power_level);
+      }
+
+      // Track updates to batch upsert
+      const trackingUpdates: Array<{ player_tag: string; power_ups: number; unlocks: number; last_updated: string }> = [];
+
       for (const playerTag of playerTags) {
         const playerBrawlers = brawlerSnapshots.filter(s => s.player_tag === playerTag);
-        
-        // Get yesterday's snapshot for comparison
-        const yesterday = new Date();
-        yesterday.setDate(yesterday.getDate() - 1);
-        const yesterdayStr = yesterday.toISOString().slice(0, 10);
-        
-        const { data: prevSnapshots } = await supabase
-          .from("brawler_snapshots")
-          .select("brawler_id, power_level")
-          .eq("player_tag", playerTag)
-          .gte("recorded_at", yesterdayStr);
-        
-        const prevMap = new Map(prevSnapshots?.map(s => [s.brawler_id, s.power_level]) || []);
+        const prevMap = prevByPlayer.get(playerTag) || new Map();
+        const hadPrevData = playersWithPrevData.has(playerTag);
         
         // Calculate power ups and unlocks
         let powerUps = 0;
@@ -485,29 +496,27 @@ async function syncClubData(providedClubTag?: string, providedApiKey?: string, i
         for (const brawler of playerBrawlers) {
           const prevPower = prevMap.get(brawler.brawler_id);
           if (prevPower === undefined) {
-            // New brawler unlocked
-            if (prevSnapshots && prevSnapshots.length > 0) {
-              unlocks++;
-            }
+            if (hadPrevData) unlocks++;
           } else if (brawler.power_level > prevPower) {
-            // Power level increased
             powerUps += brawler.power_level - prevPower;
           }
         }
         
-        // Update player tracking
         if (powerUps > 0 || unlocks > 0) {
-          await supabase
-            .from("player_tracking")
-            .upsert({
-              player_tag: playerTag,
-              power_ups: powerUps,
-              unlocks: unlocks,
-              last_updated: new Date().toISOString(),
-            }, {
-              onConflict: "player_tag",
-            });
+          trackingUpdates.push({
+            player_tag: playerTag,
+            power_ups: powerUps,
+            unlocks: unlocks,
+            last_updated: new Date().toISOString(),
+          });
         }
+      }
+
+      // Batch upsert player tracking
+      if (trackingUpdates.length > 0) {
+        await supabase
+          .from("player_tracking")
+          .upsert(trackingUpdates, { onConflict: "player_tag" });
       }
       
       // Store today's brawler snapshot
@@ -535,6 +544,144 @@ async function syncClubData(providedClubTag?: string, providedApiKey?: string, i
       await supabase.from("club_events").insert(events);
     }
 
+    // Insert DB notifications for the notification panel
+    {
+      const notifRows: Array<{ type: string; title: string; message: string; player_tag: string | null; player_name: string | null }> = [];
+
+      for (const evt of events) {
+        if (evt.event_type === "join") {
+          notifRows.push({
+            type: "join",
+            title: "Member Joined",
+            message: `${evt.player_name} (${evt.player_tag}) joined the club.`,
+            player_tag: evt.player_tag,
+            player_name: evt.player_name,
+          });
+        } else if (evt.event_type === "leave") {
+          notifRows.push({
+            type: "leave",
+            title: "Member Left",
+            message: `${evt.player_name} (${evt.player_tag}) left the club.`,
+            player_tag: evt.player_tag,
+            player_name: evt.player_name,
+          });
+        }
+      }
+
+      // Inactive members notification — reuse the same 24h throttle logic
+      const inactiveMembersForNotif = memberUpdates.filter(m => !m.is_active);
+      if (inactiveMembersForNotif.length > 0) {
+        const { data: lastAlert } = await supabase
+          .from("settings")
+          .select("value")
+          .eq("key", "last_inactive_notif")
+          .single();
+        const lastTime = lastAlert?.value ? new Date(lastAlert.value).getTime() : 0;
+        if ((Date.now() - lastTime) / (1000 * 60 * 60) >= 24) {
+          const names = inactiveMembersForNotif.slice(0, 10).map(m => m.player_name).join(", ");
+          const extra = inactiveMembersForNotif.length > 10 ? ` and ${inactiveMembersForNotif.length - 10} more` : "";
+          notifRows.push({
+            type: "inactive",
+            title: `${inactiveMembersForNotif.length} Inactive Member(s)`,
+            message: `${names}${extra} — inactive for ${inactivityThreshold}+ hours.`,
+            player_tag: null,
+            player_name: null,
+          });
+          await supabase.from("settings").upsert({ key: "last_inactive_notif", value: new Date().toISOString() }, { onConflict: "key" });
+        }
+      }
+
+      if (notifRows.length > 0) {
+        const { error: notifError } = await supabase.from("notifications").insert(notifRows);
+        if (notifError) console.error("Error inserting notifications:", notifError);
+        else console.log(`Inserted ${notifRows.length} notification(s) into DB`);
+      }
+    }
+
+    // Send Discord webhook notifications for joins/leaves/inactivity
+    if (notificationsEnabled && discordWebhook && discordWebhook.startsWith("https://discord.com/api/webhooks/")) {
+      try {
+        const embeds: Array<{ title: string; description: string; color: number; timestamp: string }> = [];
+
+        // Join events
+        for (const evt of events.filter(e => e.event_type === "join")) {
+          embeds.push({
+            title: "\u2705 Member Joined",
+            description: `**${evt.player_name}** (${evt.player_tag}) joined the club.`,
+            color: 0x22c55e, // green
+            timestamp: new Date().toISOString(),
+          });
+        }
+
+        // Leave events
+        for (const evt of events.filter(e => e.event_type === "leave")) {
+          embeds.push({
+            title: "\u274c Member Left",
+            description: `**${evt.player_name}** (${evt.player_tag}) left the club.`,
+            color: 0xef4444, // red
+            timestamp: new Date().toISOString(),
+          });
+        }
+
+        // Inactive members alert — only send once per day to avoid spam
+        const inactiveMembers = memberUpdates.filter(m => !m.is_active);
+        if (inactiveMembers.length > 0) {
+          // Check when we last sent an inactive alert
+          const { data: lastInactiveAlert } = await supabase
+            .from("settings")
+            .select("value")
+            .eq("key", "last_inactive_alert")
+            .single();
+          
+          const lastAlertTime = lastInactiveAlert?.value ? new Date(lastInactiveAlert.value).getTime() : 0;
+          const hoursSinceLastAlert = (Date.now() - lastAlertTime) / (1000 * 60 * 60);
+          
+          // Only send once every 24 hours
+          if (hoursSinceLastAlert >= 24) {
+            const inactiveList = inactiveMembers
+              .slice(0, 15)
+              .map(m => `\u2022 **${m.player_name}** (${m.player_tag})`)
+              .join("\n");
+            const extra = inactiveMembers.length > 15 ? `\n... and ${inactiveMembers.length - 15} more` : "";
+            embeds.push({
+              title: `\u23f0 ${inactiveMembers.length} Inactive Member(s)`,
+              description: `These members have been inactive for ${inactivityThreshold}+ hours:\n${inactiveList}${extra}`,
+              color: 0xf59e0b, // amber
+              timestamp: new Date().toISOString(),
+            });
+            
+            // Save the timestamp so we don't spam
+            await supabase.from("settings").upsert({
+              key: "last_inactive_alert",
+              value: new Date().toISOString(),
+            }, { onConflict: "key" });
+          }
+        }
+
+        // Send embeds in batches of 10 (Discord limit)
+        for (let i = 0; i < embeds.length; i += 10) {
+          const batch = embeds.slice(i, i + 10);
+          const res = await fetch(discordWebhook, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              username: "Brawl Club Manager",
+              embeds: batch,
+            }),
+          });
+          if (!res.ok) {
+            console.error("Discord webhook error:", res.status, await res.text());
+          }
+        }
+
+        if (embeds.length > 0) {
+          console.log(`Sent ${embeds.length} Discord notification(s)`);
+        }
+      } catch (webhookError) {
+        console.error("Failed to send Discord notification:", webhookError);
+      }
+    }
+
     // Save last sync time to database
     const syncTime = new Date().toISOString();
     await supabase.from("settings").upsert({
@@ -559,9 +706,11 @@ async function syncClubData(providedClubTag?: string, providedApiKey?: string, i
   } catch (error) {
     console.error("Sync error:", error);
     const errorMessage = error instanceof Error ? error.message : "Unknown error";
-    const errorStack = error instanceof Error ? error.stack : undefined;
+    if (error instanceof Error && error.stack) {
+      console.error("Stack trace:", error.stack);
+    }
     return NextResponse.json(
-      { error: "Failed to sync data", message: errorMessage, stack: errorStack },
+      { error: "Failed to sync data", message: errorMessage },
       { status: 500 }
     );
   }

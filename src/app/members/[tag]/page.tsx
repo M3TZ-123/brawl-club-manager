@@ -291,7 +291,7 @@ export default function MemberDetailPage({ params }: PageProps) {
                     <Progress
                       value={
                         (member.trio_victories /
-                          (member.trio_victories + member.solo_victories + member.duo_victories || 1)) *
+                          ((member.trio_victories + member.solo_victories + member.duo_victories) || 1)) *
                         100
                       }
                       className="h-2"
@@ -305,7 +305,7 @@ export default function MemberDetailPage({ params }: PageProps) {
                     <Progress
                       value={
                         (member.solo_victories /
-                          (member.trio_victories + member.solo_victories + member.duo_victories || 1)) *
+                          ((member.trio_victories + member.solo_victories + member.duo_victories) || 1)) *
                         100
                       }
                       className="h-2"
@@ -319,7 +319,7 @@ export default function MemberDetailPage({ params }: PageProps) {
                     <Progress
                       value={
                         (member.duo_victories /
-                          (member.trio_victories + member.solo_victories + member.duo_victories || 1)) *
+                          ((member.trio_victories + member.solo_victories + member.duo_victories) || 1)) *
                         100
                       }
                       className="h-2"

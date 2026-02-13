@@ -92,7 +92,7 @@ export async function GET() {
     // Group logs by date, then sum the latest trophy value for each player on that date
     const logsByDate: Record<string, Record<string, number>> = {};
     activityLogs?.forEach((log) => {
-      const date = new Date(log.recorded_at).toLocaleDateString();
+      const date = new Date(log.recorded_at).toISOString().slice(0, 10);
       if (!logsByDate[date]) {
         logsByDate[date] = {};
       }
@@ -106,7 +106,7 @@ export async function GET() {
     });
 
     // Add today's total from current members if not already present
-    const today = new Date().toLocaleDateString();
+    const today = new Date().toISOString().slice(0, 10);
     if (!dailyTrophies[today] && members.length > 0) {
       dailyTrophies[today] = totalTrophies;
     }

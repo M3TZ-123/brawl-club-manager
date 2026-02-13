@@ -1,7 +1,6 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { useAppStore } from "@/lib/store";
 import { LayoutWrapper } from "@/components/layout-wrapper";
 import { MembersTable } from "@/components/members-table";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -11,7 +10,6 @@ import { Member } from "@/types/database";
 import { Search, RefreshCw, Download } from "lucide-react";
 
 export default function MembersPage() {
-  const { clubTag } = useAppStore();
   const [members, setMembers] = useState<Member[]>([]);
   const [filteredMembers, setFilteredMembers] = useState<Member[]>([]);
   const [isLoading, setIsLoading] = useState(true);

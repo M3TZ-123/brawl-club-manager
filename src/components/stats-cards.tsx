@@ -36,7 +36,7 @@ export function StatsCards({
       title: "Active Players",
       value: activeMembers,
       icon: Activity,
-      description: `${Math.round((activeMembers / totalMembers) * 100)}% active`,
+      description: `${totalMembers > 0 ? Math.round((activeMembers / totalMembers) * 100) : 0}% active`,
       color: "text-green-500",
     },
     {

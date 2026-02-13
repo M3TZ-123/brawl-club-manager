@@ -171,11 +171,6 @@ export async function getPlayerBattleLog(playerTag: string): Promise<BrawlStarsB
   }
 }
 
-export async function getAllBrawlers(): Promise<{ items: { id: number; name: string }[] }> {
-  const response = await brawlApi.get("/brawlers");
-  return response.data;
-}
-
 // RNT API for ranked data
 const RNT_API_URL = "https://api.rnt.dev";
 
@@ -721,15 +716,6 @@ export function calculateEnhancedStats(
     unlocks: tracking?.unlocks || 0,
     trackedDays: Math.max(trackedDays, 1),
   };
-}
-
-// Legacy function for backwards compatibility
-export function estimateRankedInfo(player: BrawlStarsPlayer): {
-  currentRank: string;
-  highestRank: string;
-} {
-  // This is now just a fallback - use getPlayerRankedData for real data
-  return { currentRank: "Unranked", highestRank: "Unranked" };
 }
 
 export { brawlApi };

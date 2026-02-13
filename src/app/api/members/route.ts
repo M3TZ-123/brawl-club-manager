@@ -38,11 +38,18 @@ export async function GET() {
       .gte("recorded_at", new Date(sevenDaysAgo.getTime() - 24 * 60 * 60 * 1000).toISOString())
       .order("recorded_at", { ascending: true });
 
+    // Pre-group logs by player_tag for O(1) lookups instead of O(n) per member
+    const logsByPlayer = new Map<string, typeof activityLogs>();
+    for (const log of activityLogs || []) {
+      if (!logsByPlayer.has(log.player_tag)) {
+        logsByPlayer.set(log.player_tag, []);
+      }
+      logsByPlayer.get(log.player_tag)!.push(log);
+    }
+
     // Calculate gains for each member
     const membersWithGains = (members || []).map((member) => {
-      const playerLogs = activityLogs?.filter(
-        (log) => log.player_tag === member.player_tag
-      ) || [];
+      const playerLogs = logsByPlayer.get(member.player_tag) || [];
 
       // If no activity logs exist, we have no historical data yet
       if (playerLogs.length === 0) {

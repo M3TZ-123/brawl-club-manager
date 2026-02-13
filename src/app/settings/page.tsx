@@ -326,8 +326,7 @@ export default function SettingsPage() {
                       <ul className="text-sm text-muted-foreground space-y-1">
                         <li>• Member joins the club</li>
                         <li>• Member leaves the club</li>
-                        <li>• Member inactive for 48+ hours</li>
-                        <li>• Weekly report available</li>
+                        <li>• Inactive members summary (once per day)</li>
                       </ul>
                     </div>
 

@@ -187,3 +187,30 @@ BEGIN
   WHERE date < NOW() - INTERVAL '60 days';
 END;
 $$ LANGUAGE plpgsql;
+
+-- =============================================
+-- NOTIFICATIONS TABLE
+-- =============================================
+
+CREATE TABLE IF NOT EXISTS notifications (
+  id SERIAL PRIMARY KEY,
+  type VARCHAR(30) NOT NULL,            -- join, leave, inactive, sync_error, milestone
+  title VARCHAR(100) NOT NULL,
+  message TEXT NOT NULL,
+  player_tag VARCHAR(20),               -- optional, related player
+  player_name VARCHAR(50),              -- optional, related player name
+  is_read BOOLEAN DEFAULT false,
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_notifications_read ON notifications(is_read, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_notifications_time ON notifications(created_at DESC);
+
+-- Clean old notifications (keep last 90 days)
+CREATE OR REPLACE FUNCTION cleanup_old_notifications()
+RETURNS void AS $$
+BEGIN
+  DELETE FROM notifications
+  WHERE created_at < NOW() - INTERVAL '90 days';
+END;
+$$ LANGUAGE plpgsql;

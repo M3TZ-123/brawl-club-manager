@@ -18,16 +18,7 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
     }
   }, [theme]);
 
-  // Set initial theme on mount
-  useEffect(() => {
-    const savedTheme = useAppStore.getState().theme;
-    const root = document.documentElement;
-    if (savedTheme === "dark") {
-      root.classList.add("dark");
-    } else {
-      root.classList.remove("dark");
-    }
-  }, []);
+
 
   return <>{children}</>;
 }
