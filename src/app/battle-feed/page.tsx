@@ -16,6 +16,8 @@ import {
   Shield,
   ShieldAlert,
   Search,
+  Radio,
+  X,
 } from "lucide-react";
 
 interface TeamPlayer {
@@ -67,10 +69,16 @@ const MODE_ICONS: Record<string, string> = {
   duels: "\u2694\uFE0F",
   paintBrawl: "\uD83C\uDFA8",
   brawlBall5V5: "\u26BD",
+  unknown: "\u2694\uFE0F",
 };
 
+interface MemberOption {
+  tag: string;
+  name: string;
+}
+
 function formatMode(mode: string | null): string {
-  if (!mode) return "Unknown";
+  if (!mode || mode === "unknown") return "Friendly/Custom";
   return mode.replace(/([A-Z])/g, " $1").replace(/^./, (s) => s.toUpperCase()).replace(/5 V 5/, "5v5").trim();
 }
 
@@ -243,13 +251,17 @@ export default function BattleFeedPage() {
   const [matches, setMatches] = useState<Match[]>([]);
   const [total, setTotal] = useState(0);
   const [modes, setModes] = useState<string[]>([]);
+  const [memberList, setMemberList] = useState<MemberOption[]>([]);
   const [clubTags, setClubTags] = useState<Set<string>>(new Set());
   const [isLoading, setIsLoading] = useState(true);
   const [isLoadingMore, setIsLoadingMore] = useState(false);
   const [filterMode, setFilterMode] = useState<string>("");
   const [filterPlayer, setFilterPlayer] = useState<string>("");
-  const [playerInput, setPlayerInput] = useState<string>("");
+  const [memberSearch, setMemberSearch] = useState<string>("");
+  const [showMemberDropdown, setShowMemberDropdown] = useState(false);
   const [rawOffset, setRawOffset] = useState(0);
+  const [isLive, setIsLive] = useState(false);
+  const memberDropdownRef = useRef<HTMLDivElement>(null);
 
   const PAGE_SIZE = 50;
 
@@ -278,6 +290,7 @@ export default function BattleFeedPage() {
           } else {
             setMatches(data.matches || []);
             setModes(data.modes || []);
+            if (data.members) setMemberList(data.members);
           }
           setTotal(data.total || 0);
           setRawOffset(offset + PAGE_SIZE);
@@ -318,12 +331,34 @@ export default function BattleFeedPage() {
           loadMatchesRef.current(0, false);
         }
       )
-      .subscribe();
+      .subscribe((status) => {
+        setIsLive(status === "SUBSCRIBED");
+      });
 
     return () => {
       supabase.removeChannel(channel);
+      setIsLive(false);
     };
   }, []);
+
+  // Close member dropdown on outside click
+  useEffect(() => {
+    function handleClickOutside(e: MouseEvent) {
+      if (memberDropdownRef.current && !memberDropdownRef.current.contains(e.target as Node)) {
+        setShowMemberDropdown(false);
+      }
+    }
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, []);
+
+  const filteredMembers = memberList.filter(
+    (m) =>
+      m.name.toLowerCase().includes(memberSearch.toLowerCase()) ||
+      m.tag.toLowerCase().includes(memberSearch.toLowerCase())
+  );
+
+  const selectedMemberName = memberList.find((m) => m.tag === filterPlayer)?.name || "";
 
   return (
     <LayoutWrapper>
@@ -334,9 +369,17 @@ export default function BattleFeedPage() {
             <Swords className="h-6 w-6 text-blue-500" />
             Battle Feed
           </h1>
-          <p className="text-sm text-muted-foreground">
-            {total.toLocaleString()} battles tracked
-          </p>
+          <div className="flex items-center gap-3">
+            <p className="text-sm text-muted-foreground">
+              {total.toLocaleString()} battles tracked
+            </p>
+            {isLive && (
+              <span className="flex items-center gap-1.5 text-xs font-medium text-green-500">
+                <Radio className="h-3 w-3 animate-pulse" />
+                Live
+              </span>
+            )}
+          </div>
         </div>
 
         {/* Filters */}
@@ -356,37 +399,55 @@ export default function BattleFeedPage() {
               ))}
             </select>
           </div>
-          <div className="space-y-1">
-            <label className="text-xs font-medium text-muted-foreground">Player Tag</label>
-            <div className="flex gap-1.5">
+          <div className="space-y-1 relative" ref={memberDropdownRef}>
+            <label className="text-xs font-medium text-muted-foreground">Member</label>
+            <div className="relative">
               <input
                 type="text"
-                value={playerInput}
-                onChange={(e) => setPlayerInput(e.target.value.toUpperCase())}
-                onKeyDown={(e) => {
-                  if (e.key === "Enter") {
-                    const tag = playerInput.trim();
-                    setFilterPlayer(tag.startsWith("#") ? tag : tag ? `#${tag}` : "");
-                  }
+                value={filterPlayer ? selectedMemberName : memberSearch}
+                onChange={(e) => {
+                  setMemberSearch(e.target.value);
+                  setFilterPlayer("");
+                  setShowMemberDropdown(true);
                 }}
-                placeholder="#ABC123"
-                className="block w-36 rounded-md border border-border bg-background px-2 py-1.5 text-sm placeholder:text-muted-foreground/50"
+                onFocus={() => setShowMemberDropdown(true)}
+                placeholder="Search member..."
+                className="block w-48 rounded-md border border-border bg-background px-2 py-1.5 text-sm placeholder:text-muted-foreground/50 pr-7"
               />
-              <Button
-                variant="outline"
-                size="sm"
-                className="h-[34px] px-2"
-                onClick={() => {
-                  const tag = playerInput.trim();
-                  setFilterPlayer(tag.startsWith("#") ? tag : tag ? `#${tag}` : "");
-                }}
-              >
-                <Search className="h-3.5 w-3.5" />
-              </Button>
+              {filterPlayer && (
+                <button
+                  onClick={() => { setFilterPlayer(""); setMemberSearch(""); }}
+                  className="absolute right-1.5 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+                >
+                  <X className="h-3.5 w-3.5" />
+                </button>
+              )}
+              {showMemberDropdown && !filterPlayer && (
+                <div className="absolute z-50 mt-1 w-full max-h-52 overflow-y-auto rounded-md border border-border bg-background shadow-lg">
+                  {filteredMembers.length === 0 ? (
+                    <div className="px-3 py-2 text-xs text-muted-foreground">No members found</div>
+                  ) : (
+                    filteredMembers.map((m) => (
+                      <button
+                        key={m.tag}
+                        onClick={() => {
+                          setFilterPlayer(m.tag);
+                          setMemberSearch("");
+                          setShowMemberDropdown(false);
+                        }}
+                        className="w-full text-left px-3 py-1.5 text-sm hover:bg-accent/50 flex justify-between items-center"
+                      >
+                        <span>{m.name}</span>
+                        <span className="text-xs text-muted-foreground">{m.tag}</span>
+                      </button>
+                    ))
+                  )}
+                </div>
+              )}
             </div>
           </div>
           {(filterMode || filterPlayer) && (
-            <Button variant="ghost" size="sm" onClick={() => { setFilterMode(""); setFilterPlayer(""); setPlayerInput(""); }}>
+            <Button variant="ghost" size="sm" onClick={() => { setFilterMode(""); setFilterPlayer(""); setMemberSearch(""); }}>
               Clear
             </Button>
           )}
