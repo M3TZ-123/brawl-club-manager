@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { cn, formatDateTime } from "@/lib/utils";
+import { LayoutWrapper } from "@/components/layout-wrapper";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Bell, CheckCheck, Loader2 } from "lucide-react";
@@ -91,6 +92,7 @@ export default function NotificationsPage() {
     : notifications;
 
   return (
+    <LayoutWrapper>
     <div className="space-y-6">
       {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
@@ -202,5 +204,6 @@ export default function NotificationsPage() {
         </div>
       )}
     </div>
+    </LayoutWrapper>
   );
 }

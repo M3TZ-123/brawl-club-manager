@@ -13,6 +13,7 @@ export default function MembersPage() {
   const [members, setMembers] = useState<Member[]>([]);
   const [filteredMembers, setFilteredMembers] = useState<Member[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+  const [isRefreshing, setIsRefreshing] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
   const [sortBy, setSortBy] = useState<"trophies" | "name" | "role">("trophies");
 
@@ -55,6 +56,7 @@ export default function MembersPage() {
 
   const loadMembers = async () => {
     try {
+      setIsRefreshing(true);
       const response = await fetch("/api/members");
       if (response.ok) {
         const data = await response.json();
@@ -64,6 +66,7 @@ export default function MembersPage() {
       console.error("Error loading members:", error);
     } finally {
       setIsLoading(false);
+      setIsRefreshing(false);
     }
   };
 
@@ -117,9 +120,9 @@ export default function MembersPage() {
                 <option value="name">Sort by Name</option>
                 <option value="role">Sort by Role</option>
               </select>
-              <Button variant="outline" onClick={loadMembers} size="sm" className="sm:size-default">
-                <RefreshCw className="h-4 w-4 sm:mr-2" />
-                <span className="hidden sm:inline">Refresh</span>
+              <Button variant="outline" onClick={loadMembers} size="sm" className="sm:size-default" disabled={isRefreshing}>
+                <RefreshCw className={`h-4 w-4 sm:mr-2 ${isRefreshing ? "animate-spin" : ""}`} />
+                <span className="hidden sm:inline">{isRefreshing ? "Refreshing..." : "Refresh"}</span>
               </Button>
               <Button variant="outline" onClick={handleExport} size="sm" className="sm:size-default">
                 <Download className="h-4 w-4 sm:mr-2" />

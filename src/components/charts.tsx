@@ -235,10 +235,10 @@ export function MemberBarChart({ data }: MemberBarChartProps) {
       </CardHeader>
       <CardContent>
         <ResponsiveContainer width="100%" height={300}>
-          <BarChart data={data} layout="vertical">
+          <BarChart data={data} layout="vertical" margin={{ left: 20 }}>
             <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
             <XAxis type="number" className="text-xs" />
-            <YAxis dataKey="name" type="category" className="text-xs" width={100} />
+            <YAxis dataKey="name" type="category" className="text-xs" width={150} tick={{ fontSize: 12 }} />
             <Tooltip
               contentStyle={{
                 backgroundColor: "hsl(var(--card))",

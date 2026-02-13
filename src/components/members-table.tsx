@@ -13,7 +13,8 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
-import { Copy, Check } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { Copy, Check, ChevronLeft, ChevronRight } from "lucide-react";
 
 interface MemberWithGains extends Member {
   trophies_24h?: number | null;
@@ -22,10 +23,17 @@ interface MemberWithGains extends Member {
 
 interface MembersTableProps {
   members: MemberWithGains[];
+  pageSize?: number;
+  showPagination?: boolean;
 }
 
-export function MembersTable({ members }: MembersTableProps) {
+export function MembersTable({ members, pageSize = 15, showPagination = true }: MembersTableProps) {
   const [copiedTag, setCopiedTag] = useState<string | null>(null);
+  const [currentPage, setCurrentPage] = useState(1);
+
+  const totalPages = Math.max(1, Math.ceil(members.length / pageSize));
+  const startIndex = (currentPage - 1) * pageSize;
+  const paginatedMembers = showPagination ? members.slice(startIndex, startIndex + pageSize) : members;
 
   const copyToClipboard = async (text: string, tag: string) => {
     try {
@@ -51,6 +59,7 @@ export function MembersTable({ members }: MembersTableProps) {
   };
 
   return (
+    <>
     <div className="overflow-x-auto -mx-4 sm:mx-0">
       <Table className="min-w-[600px] sm:min-w-full">
         <TableHeader>
@@ -69,9 +78,9 @@ export function MembersTable({ members }: MembersTableProps) {
           </TableRow>
         </TableHeader>
         <TableBody>
-        {members.map((member, index) => (
+        {paginatedMembers.map((member, index) => (
           <TableRow key={member.player_tag}>
-            <TableCell className="font-medium">{index + 1}</TableCell>
+            <TableCell className="font-medium">{startIndex + index + 1}</TableCell>
             <TableCell>
               <div className="flex items-center gap-1 sm:gap-2">
                 <Link
@@ -164,5 +173,36 @@ export function MembersTable({ members }: MembersTableProps) {
       </TableBody>
     </Table>
     </div>
+    {showPagination && totalPages > 1 && (
+      <div className="flex items-center justify-between pt-4 px-1">
+        <p className="text-sm text-muted-foreground">
+          Showing {startIndex + 1}-{Math.min(startIndex + pageSize, members.length)} of {members.length}
+        </p>
+        <div className="flex items-center gap-2">
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
+            disabled={currentPage === 1}
+          >
+            <ChevronLeft className="h-4 w-4" />
+            Prev
+          </Button>
+          <span className="text-sm font-medium px-2">
+            {currentPage} / {totalPages}
+          </span>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
+            disabled={currentPage === totalPages}
+          >
+            Next
+            <ChevronRight className="h-4 w-4" />
+          </Button>
+        </div>
+      </div>
+    )}
+    </>
   );
 }

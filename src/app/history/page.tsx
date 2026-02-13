@@ -13,9 +13,10 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { Input } from "@/components/ui/input";
+import { Button } from "@/components/ui/button";
 import { MemberHistory } from "@/types/database";
 import { formatDate, formatDateTime } from "@/lib/utils";
-import { Search, UserPlus, UserMinus, Star, RefreshCw } from "lucide-react";
+import { Search, UserPlus, UserMinus, Star, RefreshCw, Pencil, Check, X } from "lucide-react";
 
 export default function HistoryPage() {
   const [history, setHistory] = useState<MemberHistory[]>([]);
@@ -23,6 +24,9 @@ export default function HistoryPage() {
   const [isLoading, setIsLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState("");
   const [filter, setFilter] = useState<"all" | "current" | "former">("all");
+  const [editingTag, setEditingTag] = useState<string | null>(null);
+  const [editingNote, setEditingNote] = useState("");
+  const [savingNote, setSavingNote] = useState(false);
 
   useEffect(() => {
     loadHistory();
@@ -66,15 +70,46 @@ export default function HistoryPage() {
 
   const getMemberBadge = (h: MemberHistory) => {
     if (!h.is_current_member) {
-      return <Badge variant="destructive">Former Member</Badge>;
+      return <Badge variant="destructive">Former</Badge>;
     }
-    if (h.times_joined === 1 && h.times_left === 0) {
-      return <Badge variant="success">⭐ Original</Badge>;
-    }
-    if (h.times_joined > 1) {
+    if (h.times_left > 0 || h.times_joined > 1) {
       return <Badge variant="warning">🔄 Returned ({h.times_joined}x)</Badge>;
     }
-    return <Badge variant="default">Current</Badge>;
+    return <Badge variant="success">⭐ Original</Badge>;
+  };
+
+  const startEditingNote = (playerTag: string, currentNote: string | null) => {
+    setEditingTag(playerTag);
+    setEditingNote(currentNote || "");
+  };
+
+  const cancelEditingNote = () => {
+    setEditingTag(null);
+    setEditingNote("");
+  };
+
+  const saveNote = async (playerTag: string) => {
+    try {
+      setSavingNote(true);
+      const response = await fetch("/api/history", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ player_tag: playerTag, notes: editingNote.trim() }),
+      });
+      if (response.ok) {
+        setHistory((prev) =>
+          prev.map((h) =>
+            h.player_tag === playerTag ? { ...h, notes: editingNote.trim() || null } : h
+          )
+        );
+        setEditingTag(null);
+        setEditingNote("");
+      }
+    } catch (error) {
+      console.error("Error saving note:", error);
+    } finally {
+      setSavingNote(false);
+    }
   };
 
   const currentCount = history.filter((h) => h.is_current_member).length;
@@ -206,8 +241,50 @@ export default function HistoryPage() {
                                 {h.times_left}
                               </span>
                             </TableCell>
-                            <TableCell className="hidden md:table-cell text-muted-foreground max-w-[200px] truncate">
-                              {h.notes || "-"}
+                            <TableCell className="hidden md:table-cell max-w-[200px]">
+                              {editingTag === h.player_tag ? (
+                                <div className="flex items-center gap-1">
+                                  <Input
+                                    value={editingNote}
+                                    onChange={(e) => setEditingNote(e.target.value)}
+                                    placeholder="Add a note..."
+                                    className="h-8 text-sm"
+                                    autoFocus
+                                    onKeyDown={(e) => {
+                                      if (e.key === "Enter") saveNote(h.player_tag);
+                                      if (e.key === "Escape") cancelEditingNote();
+                                    }}
+                                  />
+                                  <Button
+                                    variant="ghost"
+                                    size="icon"
+                                    className="h-7 w-7 shrink-0"
+                                    onClick={() => saveNote(h.player_tag)}
+                                    disabled={savingNote}
+                                  >
+                                    <Check className="h-3.5 w-3.5 text-green-500" />
+                                  </Button>
+                                  <Button
+                                    variant="ghost"
+                                    size="icon"
+                                    className="h-7 w-7 shrink-0"
+                                    onClick={cancelEditingNote}
+                                  >
+                                    <X className="h-3.5 w-3.5 text-red-500" />
+                                  </Button>
+                                </div>
+                              ) : (
+                                <div
+                                  className="flex items-center gap-1 cursor-pointer group"
+                                  onClick={() => startEditingNote(h.player_tag, h.notes)}
+                                  title="Click to edit note"
+                                >
+                                  <span className="text-muted-foreground truncate">
+                                    {h.notes || "-"}
+                                  </span>
+                                  <Pencil className="h-3 w-3 text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity shrink-0" />
+                                </div>
+                              )}
                             </TableCell>
                           </TableRow>
                         ))
@@ -229,19 +306,13 @@ export default function HistoryPage() {
                   <div className="flex items-center gap-2">
                     <Badge variant="success">⭐ Original</Badge>
                     <span className="text-sm text-muted-foreground">
-                      Never left since joining
+                      Never left since joining — loyal member
                     </span>
                   </div>
                   <div className="flex items-center gap-2">
                     <Badge variant="warning">🔄 Returned</Badge>
                     <span className="text-sm text-muted-foreground">
-                      Left and rejoined the club
-                    </span>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <Badge variant="default">Current</Badge>
-                    <span className="text-sm text-muted-foreground">
-                      Currently in the club
+                      Left at least once but came back
                     </span>
                   </div>
                   <div className="flex items-center gap-2">

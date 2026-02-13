@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import Link from "next/link";
 import { useAppStore } from "@/lib/store";
 import { LayoutWrapper } from "@/components/layout-wrapper";
 import { SetupWizard } from "@/components/setup-wizard";
@@ -117,11 +118,14 @@ export default function DashboardPage() {
           <div className="grid gap-6 lg:grid-cols-3">
             <div className="lg:col-span-2">
               <Card>
-                <CardHeader>
+                <CardHeader className="flex flex-row items-center justify-between">
                   <CardTitle>Club Members</CardTitle>
+                  <Link href="/members" className="text-sm text-primary hover:underline">
+                    View All →
+                  </Link>
                 </CardHeader>
                 <CardContent>
-                  <MembersTable members={members.slice(0, 10)} />
+                  <MembersTable members={members.slice(0, 10)} showPagination={false} />
                 </CardContent>
               </Card>
             </div>
