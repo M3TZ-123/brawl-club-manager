@@ -160,8 +160,15 @@ export function TrophyStatistics({ data, currentTrophies }: TrophyStatisticsProp
               axisLine={false}
               tickLine={false}
               tick={{ fill: 'hsl(var(--muted-foreground))' }}
-              tickFormatter={(value) => `${Math.round(value / 1000)}k`}
-              domain={['dataMin - 500', 'dataMax + 500']}
+              tickFormatter={(value) => {
+                if (value >= 1000) {
+                  const k = value / 1000;
+                  return k % 1 === 0 ? `${k}k` : `${k.toFixed(1)}k`;
+                }
+                return formatNumber(value);
+              }}
+              domain={[(dataMin: number) => Math.floor(dataMin - Math.max(dataMin * 0.005, 200)), (dataMax: number) => Math.ceil(dataMax + Math.max(dataMax * 0.005, 200))]}
+              tickCount={5}
             />
             <Tooltip
               contentStyle={{
