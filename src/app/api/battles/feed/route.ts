@@ -7,6 +7,7 @@ export async function GET(request: Request) {
     const limit = Math.min(parseInt(searchParams.get("limit") || "50"), 200);
     const offset = parseInt(searchParams.get("offset") || "0");
     const mode = searchParams.get("mode") || null;
+    const player = searchParams.get("player") || null;
 
     // Get current member tags and names
     const { data: members } = await supabase
@@ -25,6 +26,10 @@ export async function GET(request: Request) {
 
     if (mode) {
       query = query.eq("mode", mode);
+    }
+
+    if (player) {
+      query = query.eq("player_tag", player);
     }
 
     const { data: battles, error, count } = await query;
@@ -156,10 +161,17 @@ export async function GET(request: Request) {
 
     const uniqueModes = [...new Set((modes || []).map((m) => m.mode))].filter(Boolean).sort();
 
+    // Build members list for filter dropdown
+    const memberList = (members || []).map((m) => ({
+      tag: m.player_tag,
+      name: m.player_name,
+    })).sort((a, b) => a.name.localeCompare(b.name));
+
     return NextResponse.json({
       matches: enrichedMatches,
       total: count || 0,
       modes: uniqueModes,
+      members: memberList,
     });
   } catch (error) {
     console.error("Error fetching battle feed:", error);

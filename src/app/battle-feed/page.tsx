@@ -11,10 +11,10 @@ import {
   Trophy,
   Star,
   ChevronDown,
-  Filter,
   Clock,
   Shield,
   ShieldAlert,
+  Search,
 } from "lucide-react";
 
 interface TeamPlayer {
@@ -246,7 +246,8 @@ export default function BattleFeedPage() {
   const [isLoading, setIsLoading] = useState(true);
   const [isLoadingMore, setIsLoadingMore] = useState(false);
   const [filterMode, setFilterMode] = useState<string>("");
-  const [showFilters, setShowFilters] = useState(false);
+  const [filterPlayer, setFilterPlayer] = useState<string>("");
+  const [playerInput, setPlayerInput] = useState<string>("");
   const [rawOffset, setRawOffset] = useState(0);
 
   const PAGE_SIZE = 50;
@@ -262,6 +263,7 @@ export default function BattleFeedPage() {
           offset: offset.toString(),
         });
         if (filterMode) params.set("mode", filterMode);
+        if (filterPlayer) params.set("player", filterPlayer);
 
         const [feedRes, membersRes] = await Promise.all([
           fetch(`/api/battles/feed?${params}`),
@@ -292,7 +294,7 @@ export default function BattleFeedPage() {
         setIsLoadingMore(false);
       }
     },
-    [filterMode]
+    [filterMode, filterPlayer]
   );
 
   useEffect(() => {
@@ -300,65 +302,81 @@ export default function BattleFeedPage() {
     loadMatches(0, false);
   }, [loadMatches]);
 
+  // Refresh automatically after a sync completes
+  useEffect(() => {
+    const handleSyncDone = () => {
+      loadMatches(0, false);
+    };
+    window.addEventListener("club-data-updated", handleSyncDone);
+    return () => window.removeEventListener("club-data-updated", handleSyncDone);
+  }, [loadMatches]);
+
   return (
     <LayoutWrapper>
       <div className="space-y-4">
         {/* Header */}
-        <div className="flex items-center justify-between flex-wrap gap-2">
-          <div>
-            <h1 className="text-2xl font-bold flex items-center gap-2">
-              <Swords className="h-6 w-6 text-blue-500" />
-              Battle Feed
-            </h1>
-            <p className="text-sm text-muted-foreground">
-              {total.toLocaleString()} battles tracked
-            </p>
-          </div>
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => setShowFilters(!showFilters)}
-            className="gap-1.5"
-          >
-            <Filter className="h-3.5 w-3.5" />
-            Filters
-            {filterMode && (
-              <Badge variant="secondary" className="ml-1 h-4 px-1.5 text-[10px]">1</Badge>
-            )}
-          </Button>
+        <div>
+          <h1 className="text-2xl font-bold flex items-center gap-2">
+            <Swords className="h-6 w-6 text-blue-500" />
+            Battle Feed
+          </h1>
+          <p className="text-sm text-muted-foreground">
+            {total.toLocaleString()} battles tracked
+          </p>
         </div>
 
         {/* Filters */}
-        {showFilters && (
-          <Card>
-            <CardContent className="pt-4 pb-3">
-              <div className="flex flex-wrap gap-3">
-                <div className="space-y-1">
-                  <label className="text-xs font-medium text-muted-foreground">Mode</label>
-                  <select
-                    value={filterMode}
-                    onChange={(e) => setFilterMode(e.target.value)}
-                    className="block w-44 rounded-md border border-border bg-background px-2 py-1.5 text-sm"
-                  >
-                    <option value="">All Modes</option>
-                    {modes.map((m) => (
-                      <option key={m} value={m}>
-                        {getModeIcon(m)} {formatMode(m)}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-                {filterMode && (
-                  <div className="flex items-end">
-                    <Button variant="ghost" size="sm" onClick={() => setFilterMode("")}>
-                      Clear
-                    </Button>
-                  </div>
-                )}
-              </div>
-            </CardContent>
-          </Card>
-        )}
+        <div className="flex flex-wrap items-end gap-3">
+          <div className="space-y-1">
+            <label className="text-xs font-medium text-muted-foreground">Mode</label>
+            <select
+              value={filterMode}
+              onChange={(e) => setFilterMode(e.target.value)}
+              className="block w-44 rounded-md border border-border bg-background px-2 py-1.5 text-sm"
+            >
+              <option value="">All Modes</option>
+              {modes.map((m) => (
+                <option key={m} value={m}>
+                  {getModeIcon(m)} {formatMode(m)}
+                </option>
+              ))}
+            </select>
+          </div>
+          <div className="space-y-1">
+            <label className="text-xs font-medium text-muted-foreground">Player Tag</label>
+            <div className="flex gap-1.5">
+              <input
+                type="text"
+                value={playerInput}
+                onChange={(e) => setPlayerInput(e.target.value.toUpperCase())}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") {
+                    const tag = playerInput.trim();
+                    setFilterPlayer(tag.startsWith("#") ? tag : tag ? `#${tag}` : "");
+                  }
+                }}
+                placeholder="#ABC123"
+                className="block w-36 rounded-md border border-border bg-background px-2 py-1.5 text-sm placeholder:text-muted-foreground/50"
+              />
+              <Button
+                variant="outline"
+                size="sm"
+                className="h-[34px] px-2"
+                onClick={() => {
+                  const tag = playerInput.trim();
+                  setFilterPlayer(tag.startsWith("#") ? tag : tag ? `#${tag}` : "");
+                }}
+              >
+                <Search className="h-3.5 w-3.5" />
+              </Button>
+            </div>
+          </div>
+          {(filterMode || filterPlayer) && (
+            <Button variant="ghost" size="sm" onClick={() => { setFilterMode(""); setFilterPlayer(""); setPlayerInput(""); }}>
+              Clear
+            </Button>
+          )}
+        </div>
 
         {/* Matches */}
         {isLoading ? (

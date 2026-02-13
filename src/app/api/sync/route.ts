@@ -561,6 +561,31 @@ async function syncClubData(providedClubTag?: string, providedApiKey?: string, i
     // Wait for all secondary DB writes
     await Promise.all(secondaryDbWrites);
 
+    // Auto-purge old data to prevent DB from filling up (keep last 30 days)
+    const retentionDays = 30;
+    const cutoffDate = new Date();
+    cutoffDate.setDate(cutoffDate.getDate() - retentionDays);
+    const cutoffISO = cutoffDate.toISOString();
+    const cutoffDateStr = cutoffISO.slice(0, 10);
+
+    await Promise.all([
+      supabase.from("battle_history").delete().lt("battle_time", cutoffISO)
+        .then(({ error, count }) => {
+          if (error) console.error("Error purging old battles:", error);
+          else if (count && count > 0) console.log(`Purged ${count} battles older than ${retentionDays} days`);
+        }),
+      supabase.from("daily_stats").delete().lt("date", cutoffDateStr)
+        .then(({ error, count }) => {
+          if (error) console.error("Error purging old daily stats:", error);
+          else if (count && count > 0) console.log(`Purged ${count} daily stats older than ${retentionDays} days`);
+        }),
+      supabase.from("brawler_snapshots").delete().lt("recorded_at", cutoffDateStr)
+        .then(({ error, count }) => {
+          if (error) console.error("Error purging old brawler snapshots:", error);
+          else if (count && count > 0) console.log(`Purged ${count} snapshots older than ${retentionDays} days`);
+        }),
+    ]);
+
     // Insert DB notifications for the notification panel
       const notifRows: Array<{ type: string; title: string; message: string; player_tag: string | null; player_name: string | null }> = [];
 

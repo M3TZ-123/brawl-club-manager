@@ -130,3 +130,12 @@ body {
   color: hsl(var(--foreground));
 }
 
+/* Hide scrollbar on filter chip rows */
+.scrollbar-hide {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+.scrollbar-hide::-webkit-scrollbar {
+  display: none;
+}
+

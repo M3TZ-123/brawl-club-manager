@@ -4,101 +4,112 @@ import { supabase } from "@/lib/supabase";
 export async function GET() {
   try {
     const now = new Date();
-    const thirtyDaysAgo = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
     const sevenDaysAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+    const prevWeekStart = new Date(now.getTime() - 14 * 24 * 60 * 60 * 1000);
+    const todayStr = now.toISOString().split("T")[0];
+    const weekAgoStr = sevenDaysAgo.toISOString().split("T")[0];
+    const prevWeekStr = prevWeekStart.toISOString().split("T")[0];
+    const fortyEightHoursAgo = new Date(now.getTime() - 48 * 60 * 60 * 1000).toISOString();
 
     // Parallel data fetches
-    const [membersRes, historyRes, trackingRes, dailyStatsRes, battlesRes] = await Promise.all([
-      supabase.from("members").select("player_tag, trophies, is_active"),
-      supabase.from("member_history").select("player_tag, first_seen, times_joined, times_left, is_current_member"),
-      supabase.from("player_tracking").select("player_tag, total_battles, total_wins, active_days, current_streak"),
-      supabase.from("daily_stats").select("player_tag, date, battles, wins").gte("date", sevenDaysAgo.toISOString().split("T")[0]),
-      supabase.from("battle_history").select("battle_time").gte("battle_time", sevenDaysAgo.toISOString()).order("battle_time", { ascending: true }),
+    const [membersRes, thisWeekStatsRes, prevWeekStatsRes, recentBattlesRes, eventBattlesRes] = await Promise.all([
+      supabase.from("members").select("player_tag, player_name, trophies, is_active, last_seen"),
+      supabase.from("daily_stats").select("player_tag, date, battles, wins, trophies_gained, trophies_lost").gte("date", weekAgoStr),
+      supabase.from("daily_stats").select("player_tag, battles").gte("date", prevWeekStr).lt("date", weekAgoStr),
+      supabase.from("battle_history").select("player_tag, battle_time").gte("battle_time", fortyEightHoursAgo),
+      supabase.from("battle_history").select("mode, battle_time").gte("battle_time", sevenDaysAgo.toISOString()).not("mode", "is", null),
     ]);
 
     const members = membersRes.data || [];
-    const history = historyRes.data || [];
-    const tracking = trackingRes.data || [];
-    const dailyStats = dailyStatsRes.data || [];
-    const battles = battlesRes.data || [];
+    const thisWeekStats = thisWeekStatsRes.data || [];
+    const prevWeekStats = prevWeekStatsRes.data || [];
+    const recentBattles = recentBattlesRes.data || [];
+    const eventBattles = eventBattlesRes.data || [];
 
-    const currentMembers = history.filter((h) => h.is_current_member);
-    const totalMembers = currentMembers.length || members.length;
-
-    // --- Member Retention Rate ---
-    // Members who joined in last 30 days and are still in the club
-    const recentJoins = history.filter(
-      (h) => new Date(h.first_seen) >= thirtyDaysAgo
+    // ============================
+    // 1. EVENT STATUS — Club League / ranked modes activity
+    // ============================
+    const rankedModes = ["clubLeague", "soloRanked", "teamRanked", "duels", "ranked"];
+    const eventModeBattles = eventBattles.filter((b) =>
+      rankedModes.some((rm) => (b.mode || "").toLowerCase().includes(rm.toLowerCase()))
     );
-    const retained = recentJoins.filter((h) => h.is_current_member);
-    const retentionRate = recentJoins.length > 0
-      ? Math.round((retained.length / recentJoins.length) * 100)
-      : 100; // If no new joins, 100% retention
+    const totalEventBattles = eventModeBattles.length;
+    const eventPlayers = new Set(eventModeBattles.map((b) => b.mode)).size; // unique modes played
+    const totalBattlesThisWeek = eventBattles.length;
+    const eventRate = totalBattlesThisWeek > 0
+      ? Math.round((totalEventBattles / totalBattlesThisWeek) * 100)
+      : 0;
 
-    // Total leaves ever
-    const totalLeaves = history.reduce((sum, h) => sum + (h.times_left || 0), 0);
+    let eventLabel: string;
+    let eventStatus: "good" | "warning" | "bad";
+    if (totalEventBattles > 0) {
+      eventLabel = `${totalEventBattles} competitive`;
+      eventStatus = totalEventBattles >= 20 ? "good" : "warning";
+    } else {
+      eventLabel = "No ranked games";
+      eventStatus = "bad";
+    }
 
-    // --- Average Battles Per Member (weekly) ---
-    const weeklyBattlesByPlayer = new Map<string, number>();
-    for (const ds of dailyStats) {
-      weeklyBattlesByPlayer.set(
-        ds.player_tag,
-        (weeklyBattlesByPlayer.get(ds.player_tag) || 0) + (ds.battles || 0)
+    // ============================
+    // 2. KICK LIST — Members with 0 battles in last 48h
+    // ============================
+    const recentActiveTags = new Set(recentBattles.map((b) => b.player_tag));
+    const kickCandidates = members
+      .filter((m) => !recentActiveTags.has(m.player_tag))
+      .map((m) => ({ tag: m.player_tag, name: m.player_name }))
+      .sort((a, b) => a.name.localeCompare(b.name));
+
+    // ============================
+    // 3. ACTIVITY TREND — This week vs last week total battles
+    // ============================
+    const thisWeekTotal = thisWeekStats.reduce((sum, s) => sum + (s.battles || 0), 0);
+    const prevWeekTotal = prevWeekStats.reduce((sum, s) => sum + (s.battles || 0), 0);
+    const trendDiff = prevWeekTotal > 0
+      ? Math.round(((thisWeekTotal - prevWeekTotal) / prevWeekTotal) * 100)
+      : thisWeekTotal > 0 ? 100 : 0;
+    const trendDirection: "up" | "down" | "flat" = trendDiff > 5 ? "up" : trendDiff < -5 ? "down" : "flat";
+
+    // ============================
+    // 4. MVP OF THE WEEK — Most trophies gained this week
+    // ============================
+    const trophyGainByPlayer = new Map<string, number>();
+    for (const s of thisWeekStats) {
+      trophyGainByPlayer.set(
+        s.player_tag,
+        (trophyGainByPlayer.get(s.player_tag) || 0) + (s.trophies_gained || 0)
       );
     }
-    const playersWithBattles = weeklyBattlesByPlayer.size;
-    const totalWeeklyBattles = [...weeklyBattlesByPlayer.values()].reduce((a, b) => a + b, 0);
-    const avgBattlesPerMember = totalMembers > 0
-      ? Math.round(totalWeeklyBattles / totalMembers)
-      : 0;
 
-    // --- Peak Activity Hours ---
-    const hourCounts = new Array(24).fill(0);
-    for (const b of battles) {
-      const hour = new Date(b.battle_time).getUTCHours();
-      hourCounts[hour]++;
+    let mvpTag = "";
+    let mvpTrophies = 0;
+    for (const [tag, trophies] of trophyGainByPlayer) {
+      if (trophies > mvpTrophies) {
+        mvpTag = tag;
+        mvpTrophies = trophies;
+      }
     }
-    const peakHour = hourCounts.indexOf(Math.max(...hourCounts));
-    const peakHourLabel = battles.length > 0
-      ? `${peakHour.toString().padStart(2, "0")}:00 UTC`
-      : null;
 
-    // --- Weekly Activity Rate ---
-    const weeklyActivePlayers = playersWithBattles;
-    const weeklyActivityRate = totalMembers > 0
-      ? Math.round((weeklyActivePlayers / totalMembers) * 100)
-      : 0;
-
-    // --- Club Health Score (0-100) ---
-    // Composite of: activity rate (40%), retention (30%), avg battles (30%)
-    const activityScore = Math.min(weeklyActivityRate, 100);
-    const retentionScore = Math.min(retentionRate, 100);
-    // Normalize battles: 20+ per member per week = perfect
-    const battleScore = Math.min(Math.round((avgBattlesPerMember / 20) * 100), 100);
-
-    const healthScore = Math.round(
-      activityScore * 0.4 + retentionScore * 0.3 + battleScore * 0.3
-    );
-
-    // Health label
-    let healthLabel: string;
-    if (healthScore >= 80) healthLabel = "Excellent";
-    else if (healthScore >= 60) healthLabel = "Good";
-    else if (healthScore >= 40) healthLabel = "Fair";
-    else healthLabel = "Needs Attention";
+    const mvpMember = members.find((m) => m.player_tag === mvpTag);
+    const mvpName = mvpMember?.player_name || mvpTag || null;
 
     return NextResponse.json({
       insights: {
-        retentionRate,
-        recentJoins: recentJoins.length,
-        totalLeaves,
-        avgBattlesPerMember,
-        totalWeeklyBattles,
-        weeklyActivePlayers,
-        weeklyActivityRate,
-        peakHour: peakHourLabel,
-        healthScore,
-        healthLabel,
+        // Event Status
+        eventLabel,
+        eventStatus,
+        totalEventBattles,
+        eventRate,
+        // Kick List
+        kickList: kickCandidates,
+        kickCount: kickCandidates.length,
+        // Activity Trend
+        thisWeekTotal,
+        prevWeekTotal,
+        trendDiff,
+        trendDirection,
+        // MVP
+        mvpName,
+        mvpTrophies,
       },
     });
   } catch (error) {
