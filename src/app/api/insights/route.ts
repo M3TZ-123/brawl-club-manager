@@ -79,7 +79,25 @@ export async function GET() {
       }
     }
 
-    const mvpName = nameMap.get(mvpTag) || (mvpTag ? mvpTag : null);
+    // Try all possible tag formats for name lookup
+    let mvpName: string | null = null;
+    if (mvpTag) {
+      mvpName = nameMap.get(mvpTag)
+        || nameMap.get(mvpTag.replace("#", ""))
+        || nameMap.get(`#${mvpTag}`)
+        || null;
+      
+      // If still not found, query directly
+      if (!mvpName) {
+        const { data: mvpMember } = await supabase
+          .from("members")
+          .select("player_name")
+          .or(`player_tag.eq.${mvpTag},player_tag.eq.#${mvpTag},player_tag.eq.${mvpTag.replace("#", "")}`)
+          .limit(1)
+          .single();
+        mvpName = mvpMember?.player_name || mvpTag;
+      }
+    }
 
     return NextResponse.json({
       insights: {
