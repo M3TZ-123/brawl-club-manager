@@ -1,7 +1,8 @@
 "use client";
 
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback, useRef } from "react";
 import Link from "next/link";
+import { supabase } from "@/lib/supabase";
 import { LayoutWrapper } from "@/components/layout-wrapper";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -302,14 +303,27 @@ export default function BattleFeedPage() {
     loadMatches(0, false);
   }, [loadMatches]);
 
-  // Refresh automatically after a sync completes
+  // Supabase Realtime: listen for new battle_history inserts
+  const loadMatchesRef = useRef(loadMatches);
+  loadMatchesRef.current = loadMatches;
+
   useEffect(() => {
-    const handleSyncDone = () => {
-      loadMatches(0, false);
+    const channel = supabase
+      .channel("battle-feed-realtime")
+      .on(
+        "postgres_changes",
+        { event: "INSERT", schema: "public", table: "battle_history" },
+        () => {
+          // Reload from the top when new battles arrive
+          loadMatchesRef.current(0, false);
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
     };
-    window.addEventListener("club-data-updated", handleSyncDone);
-    return () => window.removeEventListener("club-data-updated", handleSyncDone);
-  }, [loadMatches]);
+  }, []);
 
   return (
     <LayoutWrapper>
