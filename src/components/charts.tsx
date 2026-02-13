@@ -228,16 +228,25 @@ interface MemberBarChartProps {
 }
 
 export function MemberBarChart({ data }: MemberBarChartProps) {
+  // Calculate a smart minimum so the chart doesn't waste space showing 0 to min
+  const minTrophies = data.length > 0 ? Math.min(...data.map((d) => d.trophies)) : 0;
+  const domainMin = Math.max(0, Math.floor(minTrophies * 0.9 / 1000) * 1000); // Round down to nearest 1000, 90% of min
+
   return (
     <Card>
       <CardHeader>
         <CardTitle>Top Members by Trophies</CardTitle>
       </CardHeader>
       <CardContent>
-        <ResponsiveContainer width="100%" height={300}>
+        <ResponsiveContainer width="100%" height={400}>
           <BarChart data={data} layout="vertical" margin={{ left: 20 }}>
             <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
-            <XAxis type="number" className="text-xs" />
+            <XAxis
+              type="number"
+              className="text-xs"
+              domain={[domainMin, "auto"]}
+              tickFormatter={(v: number) => formatNumber(v)}
+            />
             <YAxis dataKey="name" type="category" className="text-xs" width={150} tick={{ fontSize: 12 }} />
             <Tooltip
               contentStyle={{
@@ -245,6 +254,7 @@ export function MemberBarChart({ data }: MemberBarChartProps) {
                 border: "1px solid hsl(var(--border))",
                 borderRadius: "8px",
               }}
+              formatter={(value: number | undefined) => [formatNumber(value ?? 0), "Trophies"]}
             />
             <Bar dataKey="trophies" fill="hsl(var(--primary))" radius={[0, 4, 4, 0]} />
           </BarChart>
