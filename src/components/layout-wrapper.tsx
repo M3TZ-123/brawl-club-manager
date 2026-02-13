@@ -27,6 +27,7 @@ const navigation = [
   { name: "Activity", href: "/activity", icon: Activity },
   { name: "Reports", href: "/reports", icon: FileText },
   { name: "History", href: "/history", icon: History },
+  { name: "Notifications", href: "/notifications", icon: Bell },
   { name: "Settings", href: "/settings", icon: Settings },
 ];
 
@@ -262,7 +263,7 @@ function SimpleHeader() {
 
   const loadNotifications = async () => {
     try {
-      const response = await fetch("/api/notifications?limit=30");
+      const response = await fetch("/api/notifications?limit=5");
       if (response.ok) {
         const data = await response.json();
         setNotifications(data.notifications || []);
@@ -373,7 +374,7 @@ function SimpleHeader() {
                     No notifications yet
                   </p>
                 ) : (
-                  <div className="max-h-96 overflow-y-auto">
+                  <div className="max-h-80 overflow-y-auto">
                     {notifications.map((notif) => {
                       const style = getNotifIcon(notif.type);
                       return (
@@ -411,6 +412,13 @@ function SimpleHeader() {
                     })}
                   </div>
                 )}
+                <Link
+                  href="/notifications"
+                  onClick={() => setShowNotifications(false)}
+                  className="block p-3 border-t text-center text-sm text-primary hover:bg-muted/50 transition-colors"
+                >
+                  View all notifications
+                </Link>
               </CardContent>
             </Card>
           )}
