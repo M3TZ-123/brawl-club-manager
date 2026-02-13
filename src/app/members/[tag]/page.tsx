@@ -79,6 +79,7 @@ export default function MemberDetailPage({ params }: PageProps) {
   const [battleStats, setBattleStats] = useState<BattleStats | null>(null);
   const [powerDistribution, setPowerDistribution] = useState<PowerDistribution | null>(null);
   const [enhancedStats, setEnhancedStats] = useState<EnhancedStats | null>(null);
+  const [calendarBattlesByDay, setCalendarBattlesByDay] = useState<Record<string, number>>({});
   const [isLoading, setIsLoading] = useState(true);
   const [isRefreshing, setIsRefreshing] = useState(false);
 
@@ -101,6 +102,7 @@ export default function MemberDetailPage({ params }: PageProps) {
         setBattleStats(data.battleStats || null);
         setPowerDistribution(data.powerDistribution || null);
         setEnhancedStats(data.enhancedStats || null);
+        setCalendarBattlesByDay(data.calendarBattlesByDay || {});
       }
     } catch (error) {
       console.error("Error loading member:", error);
@@ -335,11 +337,15 @@ export default function MemberDetailPage({ params }: PageProps) {
             )}
 
             {/* Battle Stats Row */}
-            {(battleStats || powerDistribution) && (
+            {(battleStats || powerDistribution || enhancedStats || Object.keys(calendarBattlesByDay).length > 0) && (
               <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
                 {/* Activity Calendar */}
-                {battleStats && (
-                  <ActivityCalendar battlesByDay={battleStats.battlesByDay} />
+                {(Object.keys(calendarBattlesByDay).length > 0 || battleStats) && (
+                  <ActivityCalendar battlesByDay={
+                    Object.keys(calendarBattlesByDay).length > 0 
+                      ? calendarBattlesByDay 
+                      : (battleStats?.battlesByDay || {})
+                  } />
                 )}
                 
                 {/* Power Level Distribution */}

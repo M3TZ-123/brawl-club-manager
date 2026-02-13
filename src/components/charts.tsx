@@ -140,7 +140,7 @@ export function TrophyStatistics({ data, currentTrophies }: TrophyStatisticsProp
       </CardHeader>
       <CardContent>
         <ResponsiveContainer width="100%" height={300}>
-          <AreaChart data={chartData}>
+          <AreaChart data={chartData} margin={{ left: 10, bottom: 5 }}>
             <defs>
               <linearGradient id="trophyGradient" x1="0" y1="0" x2="0" y2="1">
                 <stop offset="5%" stopColor="#f59e0b" stopOpacity={0.3} />
@@ -393,10 +393,9 @@ interface PowerLevelChartProps {
 }
 
 export function PowerLevelChart({ distribution, avgPower, maxedCount }: PowerLevelChartProps) {
-  const data = distribution.map((count, index) => ({
-    level: index + 1,
-    count,
-  })).filter(d => d.count > 0 || d.level >= 6); // Show from level 6+ or if has brawlers
+  const data = distribution
+    .map((count, index) => ({ level: index + 1, count }))
+    .filter((d) => d.count > 0);
 
   const getBarColor = (level: number) => {
     if (level <= 6) return "#6b7280"; // Gray
@@ -414,8 +413,8 @@ export function PowerLevelChart({ distribution, avgPower, maxedCount }: PowerLev
         </div>
       </CardHeader>
       <CardContent>
-        <ResponsiveContainer width="100%" height={180}>
-          <BarChart data={data} barCategoryGap="20%">
+        <ResponsiveContainer width="100%" height={220}>
+          <BarChart data={data} barCategoryGap="20%" margin={{ top: 20 }}>
             <XAxis 
               dataKey="level" 
               axisLine={false}

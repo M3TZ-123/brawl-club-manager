@@ -16,7 +16,7 @@ import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { MemberHistory } from "@/types/database";
 import { formatDate, formatDateTime } from "@/lib/utils";
-import { Search, UserPlus, UserMinus, Star, RefreshCw, Pencil, Check, X } from "lucide-react";
+import { Search, UserPlus, UserMinus, Star, RefreshCw, Pencil, Check, X, Trash2 } from "lucide-react";
 
 export default function HistoryPage() {
   const [history, setHistory] = useState<MemberHistory[]>([]);
@@ -283,6 +283,32 @@ export default function HistoryPage() {
                                     {h.notes || "-"}
                                   </span>
                                   <Pencil className="h-3 w-3 text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity shrink-0" />
+                                  {h.notes && (
+                                    <button
+                                      className="h-5 w-5 flex items-center justify-center rounded hover:bg-destructive/20 opacity-0 group-hover:opacity-100 transition-opacity shrink-0"
+                                      title="Delete note"
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        setEditingNote("");
+                                        setSavingNote(true);
+                                        fetch("/api/history", {
+                                          method: "PATCH",
+                                          headers: { "Content-Type": "application/json" },
+                                          body: JSON.stringify({ player_tag: h.player_tag, notes: "" }),
+                                        }).then((res) => {
+                                          if (res.ok) {
+                                            setHistory((prev) =>
+                                              prev.map((item) =>
+                                                item.player_tag === h.player_tag ? { ...item, notes: null } : item
+                                              )
+                                            );
+                                          }
+                                        }).finally(() => setSavingNote(false));
+                                      }}
+                                    >
+                                      <Trash2 className="h-3 w-3 text-red-500" />
+                                    </button>
+                                  )}
                                 </div>
                               )}
                             </TableCell>

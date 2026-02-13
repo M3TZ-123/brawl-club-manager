@@ -107,15 +107,39 @@ export async function GET(
       }
     }
 
+    // Build calendar data from daily_stats (more reliable than battle log)
+    const calendarBattlesByDay: Record<string, number> = {};
+    if (dailyStats) {
+      for (const stat of dailyStats) {
+        if (stat.battles > 0) {
+          calendarBattlesByDay[stat.date] = stat.battles;
+        }
+      }
+    }
+
+    // Calculate tracked days from first activity log or member creation
+    let trackedDays = 1;
+    if (activityHistory && activityHistory.length > 0) {
+      const oldest = activityHistory[activityHistory.length - 1]; // oldest (sorted desc)
+      const firstDate = new Date(oldest.recorded_at);
+      trackedDays = Math.max(1, Math.floor((Date.now() - firstDate.getTime()) / (24 * 60 * 60 * 1000)));
+    }
+
+    // Override tracked days in enhanced stats if we have better data
+    if (enhancedStats) {
+      enhancedStats.trackedDays = trackedDays;
+    }
+
     return NextResponse.json({
       member,
       activityHistory: activityHistory || [],
       memberHistory,
       lastBattleTime,
       battleStats,
-      enhancedStats, // New: accumulated stats from database
+      enhancedStats,
       powerDistribution,
       brawlers,
+      calendarBattlesByDay,
     });
   } catch (error) {
     console.error("Error fetching member:", error);
