@@ -238,16 +238,16 @@ export function MemberBarChart({ data }: MemberBarChartProps) {
         <CardTitle>Top Members by Trophies</CardTitle>
       </CardHeader>
       <CardContent>
-        <ResponsiveContainer width="100%" height={400}>
-          <BarChart data={data} layout="vertical" margin={{ left: 20 }}>
+        <ResponsiveContainer width="100%" height={500}>
+          <BarChart data={data} layout="vertical" margin={{ left: 30, right: 20, top: 10, bottom: 10 }}>
             <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
             <XAxis
               type="number"
-              className="text-xs"
+              className="text-sm"
               domain={[domainMin, "auto"]}
               tickFormatter={(v: number) => formatNumber(v)}
             />
-            <YAxis dataKey="name" type="category" className="text-xs" width={150} tick={{ fontSize: 12 }} />
+            <YAxis dataKey="name" type="category" className="text-sm" width={180} tick={{ fontSize: 14 }} />
             <Tooltip
               contentStyle={{
                 backgroundColor: "hsl(var(--card))",
