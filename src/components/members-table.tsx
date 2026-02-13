@@ -174,11 +174,7 @@ export function MembersTable({ members, pageSize = 10, showPagination = true }: 
     </Table>
     </div>
     {showPagination && totalPages > 1 && (
-      <div className="flex items-center justify-between pt-4 px-1">
-        <p className="text-sm text-muted-foreground">
-          Showing {startIndex + 1}-{Math.min(startIndex + pageSize, members.length)} of {members.length}
-        </p>
-        <div className="flex items-center gap-2">
+      <div className="flex items-center justify-end gap-2 pt-4 px-1">
           <Button
             variant="outline"
             size="sm"
@@ -200,7 +196,6 @@ export function MembersTable({ members, pageSize = 10, showPagination = true }: 
             Next
             <ChevronRight className="h-4 w-4" />
           </Button>
-        </div>
       </div>
     )}
     </>

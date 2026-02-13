@@ -121,7 +121,7 @@ async function syncClubData(providedClubTag?: string, providedApiKey?: string, i
     // Get existing members from database
     const { data: existingMembers } = await supabase
       .from("members")
-      .select("player_tag, trophies");
+      .select("player_tag, trophies, rank_current, rank_highest");
 
     const existingMemberMap = new Map(
       existingMembers?.map((m) => [m.player_tag, m]) || []
@@ -254,6 +254,15 @@ async function syncClubData(providedClubTag?: string, providedApiKey?: string, i
         };
 
         // Prepare member update
+        // If RNT API failed (returned Unranked), preserve existing rank data
+        const existingMemberData = existingMemberMap.get(member.tag);
+        const resolvedCurrentRank = rankedData.currentRank !== "Unranked" 
+          ? rankedData.currentRank 
+          : (existingMemberData?.rank_current || "Unranked");
+        const resolvedHighestRank = rankedData.highestRank !== "Unranked" 
+          ? rankedData.highestRank 
+          : (existingMemberData?.rank_highest || "Unranked");
+
         memberUpdates.push({
           player_tag: member.tag,
           player_name: member.name,
@@ -261,8 +270,8 @@ async function syncClubData(providedClubTag?: string, providedApiKey?: string, i
           trophies: player.trophies,
           highest_trophies: player.highestTrophies,
           exp_level: player.expLevel,
-          rank_current: rankedData.currentRank,
-          rank_highest: rankedData.highestRank,
+          rank_current: resolvedCurrentRank,
+          rank_highest: resolvedHighestRank,
           win_rate: winRateData.winRate,
           brawlers_count: player.brawlers.length,
           solo_victories: player.soloVictories,

@@ -224,21 +224,52 @@ export function formatLeagueRankFromPoints(points: number): string {
   return "Unranked";
 }
 
-// Fetch real ranked data from RNT API
+// Fetch real ranked data from RNT API (with retry)
 export async function getPlayerRankedData(playerTag: string): Promise<{
   currentRank: string;
   highestRank: string;
   currentPoints: number;
   highestPoints: number;
 }> {
-  try {
-    // Remove # from tag if present
-    const cleanTag = playerTag.replace('#', '');
-    const response = await axios.get(`${RNT_API_URL}/profile?tag=${cleanTag}`, {
-      timeout: 5000,
-    });
-    
-    if (!response.data?.ok || !response.data?.result?.stats) {
+  const MAX_RETRIES = 2;
+  const cleanTag = playerTag.replace('#', '');
+
+  for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
+    try {
+      const response = await axios.get(`${RNT_API_URL}/profile?tag=${cleanTag}`, {
+        timeout: 8000,
+      });
+      
+      if (!response.data?.ok || !response.data?.result?.stats) {
+        return {
+          currentRank: "Unranked",
+          highestRank: "Unranked",
+          currentPoints: 0,
+          highestPoints: 0,
+        };
+      }
+      
+      const stats = response.data.result.stats;
+      
+      // Find ranked stats by ID:
+      // 24: CurrentRankedPoints
+      // 25: HighestRankedPoints
+      const currentPoints = stats.find((s: { id: number }) => s.id === 24)?.value || 0;
+      const highestPoints = stats.find((s: { id: number }) => s.id === 25)?.value || 0;
+      
+      return {
+        currentRank: formatLeagueRankFromPoints(currentPoints),
+        highestRank: formatLeagueRankFromPoints(highestPoints),
+        currentPoints,
+        highestPoints,
+      };
+    } catch (error) {
+      if (attempt < MAX_RETRIES) {
+        // Wait before retrying (500ms, then 1000ms)
+        await new Promise((resolve) => setTimeout(resolve, 500 * (attempt + 1)));
+        continue;
+      }
+      console.error(`Error fetching ranked data for ${playerTag} after ${MAX_RETRIES + 1} attempts:`, error);
       return {
         currentRank: "Unranked",
         highestRank: "Unranked",
@@ -246,30 +277,10 @@ export async function getPlayerRankedData(playerTag: string): Promise<{
         highestPoints: 0,
       };
     }
-    
-    const stats = response.data.result.stats;
-    
-    // Find ranked stats by ID:
-    // 24: CurrentRankedPoints
-    // 25: HighestRankedPoints
-    const currentPoints = stats.find((s: { id: number }) => s.id === 24)?.value || 0;
-    const highestPoints = stats.find((s: { id: number }) => s.id === 25)?.value || 0;
-    
-    return {
-      currentRank: formatLeagueRankFromPoints(currentPoints),
-      highestRank: formatLeagueRankFromPoints(highestPoints),
-      currentPoints,
-      highestPoints,
-    };
-  } catch (error) {
-    console.error(`Error fetching ranked data for ${playerTag}:`, error);
-    return {
-      currentRank: "Unranked",
-      highestRank: "Unranked",
-      currentPoints: 0,
-      highestPoints: 0,
-    };
   }
+
+  // TypeScript fallback (unreachable)
+  return { currentRank: "Unranked", highestRank: "Unranked", currentPoints: 0, highestPoints: 0 };
 }
 
 // Calculate win rate from battle log
