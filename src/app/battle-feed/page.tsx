@@ -363,33 +363,31 @@ export default function BattleFeedPage() {
   return (
     <LayoutWrapper>
       <div className="space-y-4">
-        {/* Header */}
-        <div>
-          <h1 className="text-2xl font-bold flex items-center gap-2">
-            <Swords className="h-6 w-6 text-blue-500" />
-            Battle Feed
-          </h1>
-          <div className="flex items-center gap-3">
-            <p className="text-sm text-muted-foreground">
-              {total.toLocaleString()} battles tracked
-            </p>
-            {isLive && (
-              <span className="flex items-center gap-1.5 text-xs font-medium text-green-500">
-                <Radio className="h-3 w-3 animate-pulse" />
-                Live
-              </span>
-            )}
+        {/* Header + Filters */}
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <div>
+            <h1 className="text-2xl font-bold flex items-center gap-2">
+              <Swords className="h-6 w-6 text-blue-500" />
+              Battle Feed
+            </h1>
+            <div className="flex items-center gap-3">
+              <p className="text-sm text-muted-foreground">
+                {total.toLocaleString()} battles tracked
+              </p>
+              {isLive && (
+                <span className="flex items-center gap-1.5 text-xs font-medium text-green-500">
+                  <Radio className="h-3 w-3 animate-pulse" />
+                  Live
+                </span>
+              )}
+            </div>
           </div>
-        </div>
 
-        {/* Filters */}
-        <div className="flex flex-wrap items-end gap-3">
-          <div className="space-y-1">
-            <label className="text-xs font-medium text-muted-foreground">Mode</label>
+          <div className="flex items-center gap-2">
             <select
               value={filterMode}
               onChange={(e) => setFilterMode(e.target.value)}
-              className="block w-44 rounded-md border border-border bg-background px-2 py-1.5 text-sm"
+              className="h-9 rounded-md border border-border bg-background px-2 text-sm"
             >
               <option value="">All Modes</option>
               {modes.map((m) => (
@@ -398,59 +396,58 @@ export default function BattleFeedPage() {
                 </option>
               ))}
             </select>
-          </div>
-          <div className="space-y-1 relative" ref={memberDropdownRef}>
-            <label className="text-xs font-medium text-muted-foreground">Member</label>
-            <div className="relative">
-              <input
-                type="text"
-                value={filterPlayer ? selectedMemberName : memberSearch}
-                onChange={(e) => {
-                  setMemberSearch(e.target.value);
-                  setFilterPlayer("");
-                  setShowMemberDropdown(true);
-                }}
-                onFocus={() => setShowMemberDropdown(true)}
-                placeholder="Search member..."
-                className="block w-48 rounded-md border border-border bg-background px-2 py-1.5 text-sm placeholder:text-muted-foreground/50 pr-7"
-              />
-              {filterPlayer && (
-                <button
-                  onClick={() => { setFilterPlayer(""); setMemberSearch(""); }}
-                  className="absolute right-1.5 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
-                >
-                  <X className="h-3.5 w-3.5" />
-                </button>
-              )}
-              {showMemberDropdown && !filterPlayer && (
-                <div className="absolute z-50 mt-1 w-full max-h-52 overflow-y-auto rounded-md border border-border bg-background shadow-lg">
-                  {filteredMembers.length === 0 ? (
-                    <div className="px-3 py-2 text-xs text-muted-foreground">No members found</div>
-                  ) : (
-                    filteredMembers.map((m) => (
-                      <button
-                        key={m.tag}
-                        onClick={() => {
-                          setFilterPlayer(m.tag);
-                          setMemberSearch("");
-                          setShowMemberDropdown(false);
-                        }}
-                        className="w-full text-left px-3 py-1.5 text-sm hover:bg-accent/50 flex justify-between items-center"
-                      >
-                        <span>{m.name}</span>
-                        <span className="text-xs text-muted-foreground">{m.tag}</span>
-                      </button>
-                    ))
-                  )}
-                </div>
-              )}
+            <div className="relative" ref={memberDropdownRef}>
+              <div className="relative">
+                <input
+                  type="text"
+                  value={filterPlayer ? selectedMemberName : memberSearch}
+                  onChange={(e) => {
+                    setMemberSearch(e.target.value);
+                    setFilterPlayer("");
+                    setShowMemberDropdown(true);
+                  }}
+                  onFocus={() => setShowMemberDropdown(true)}
+                  placeholder="Search member..."
+                  className="h-9 w-44 rounded-md border border-border bg-background px-2 text-sm placeholder:text-muted-foreground/50 pr-7"
+                />
+                {filterPlayer && (
+                  <button
+                    onClick={() => { setFilterPlayer(""); setMemberSearch(""); }}
+                    className="absolute right-1.5 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+                  >
+                    <X className="h-3.5 w-3.5" />
+                  </button>
+                )}
+                {showMemberDropdown && !filterPlayer && (
+                  <div className="absolute right-0 z-50 mt-1 w-56 max-h-52 overflow-y-auto rounded-md border border-border bg-background shadow-lg">
+                    {filteredMembers.length === 0 ? (
+                      <div className="px-3 py-2 text-xs text-muted-foreground">No members found</div>
+                    ) : (
+                      filteredMembers.map((m) => (
+                        <button
+                          key={m.tag}
+                          onClick={() => {
+                            setFilterPlayer(m.tag);
+                            setMemberSearch("");
+                            setShowMemberDropdown(false);
+                          }}
+                          className="w-full text-left px-3 py-1.5 text-sm hover:bg-accent/50 flex justify-between items-center"
+                        >
+                          <span>{m.name}</span>
+                          <span className="text-xs text-muted-foreground">{m.tag}</span>
+                        </button>
+                      ))
+                    )}
+                  </div>
+                )}
+              </div>
             </div>
+            {(filterMode || filterPlayer) && (
+              <Button variant="ghost" size="sm" className="h-9 px-2" onClick={() => { setFilterMode(""); setFilterPlayer(""); setMemberSearch(""); }}>
+                <X className="h-3.5 w-3.5" />
+              </Button>
+            )}
           </div>
-          {(filterMode || filterPlayer) && (
-            <Button variant="ghost" size="sm" onClick={() => { setFilterMode(""); setFilterPlayer(""); setMemberSearch(""); }}>
-              Clear
-            </Button>
-          )}
         </div>
 
         {/* Matches */}
