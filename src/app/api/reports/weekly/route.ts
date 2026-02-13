@@ -67,9 +67,8 @@ export async function GET() {
       .sort((a, b) => b.trophyChange - a.trophyChange)
       .slice(0, 5);
 
-    // Biggest losers (only players who actually lost trophies)
+    // Least progress (bottom 5 by trophy change — includes 0 and negative)
     const topLosers = Object.entries(playerTrophyChanges)
-      .filter(([, change]) => change < 0)
       .map(([tag, change]) => {
         const member = members.find((m) => m.player_tag === tag);
         return {

@@ -140,7 +140,7 @@ export function TrophyStatistics({ data, currentTrophies }: TrophyStatisticsProp
       </CardHeader>
       <CardContent>
         <ResponsiveContainer width="100%" height={300}>
-          <AreaChart data={chartData} margin={{ left: 10, bottom: 5 }}>
+          <AreaChart data={chartData} margin={{ left: 10, right: 10, bottom: 15 }}>
             <defs>
               <linearGradient id="trophyGradient" x1="0" y1="0" x2="0" y2="1">
                 <stop offset="5%" stopColor="#f59e0b" stopOpacity={0.3} />
@@ -153,13 +153,14 @@ export function TrophyStatistics({ data, currentTrophies }: TrophyStatisticsProp
               className="text-xs" 
               axisLine={false}
               tickLine={false}
-              tick={{ fill: 'hsl(var(--muted-foreground))' }}
+              tick={{ fill: 'hsl(var(--muted-foreground))', dy: 10 }}
             />
             <YAxis 
               className="text-xs" 
               axisLine={false}
               tickLine={false}
               tick={{ fill: 'hsl(var(--muted-foreground))' }}
+              width={55}
               tickFormatter={(value) => {
                 if (value >= 1000) {
                   const k = value / 1000;

@@ -246,7 +246,7 @@ export default function ReportsPage() {
                   <CardHeader>
                     <CardTitle className="flex items-center gap-2">
                       <TrendingDown className="h-5 w-5 text-red-500" />
-                      Most Trophies Lost
+                      Least Progress
                     </CardTitle>
                   </CardHeader>
                   <CardContent>
@@ -272,7 +272,7 @@ export default function ReportsPage() {
                       ))}
                       {report.topLosers.length === 0 && (
                         <p className="text-muted-foreground text-center py-4">
-                          No trophy losses this week
+                          No data available yet
                         </p>
                       )}
                     </div>

@@ -8,7 +8,6 @@ import { cn, formatDateTime } from "@/lib/utils";
 import {
   LayoutDashboard,
   Users,
-  Activity,
   FileText,
   History,
   Settings,
@@ -24,7 +23,7 @@ import { Card, CardContent } from "@/components/ui/card";
 const navigation = [
   { name: "Dashboard", href: "/", icon: LayoutDashboard },
   { name: "Members", href: "/members", icon: Users },
-  { name: "Activity", href: "/activity", icon: Activity },
+  { name: "Leaderboard", href: "/activity", icon: Trophy },
   { name: "Reports", href: "/reports", icon: FileText },
   { name: "History", href: "/history", icon: History },
   { name: "Notifications", href: "/notifications", icon: Bell },

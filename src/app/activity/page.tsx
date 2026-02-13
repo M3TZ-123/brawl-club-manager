@@ -1,8 +1,9 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import Link from "next/link";
 import { LayoutWrapper } from "@/components/layout-wrapper";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   Table,
@@ -12,176 +13,414 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { ClubEvent } from "@/types/database";
-import { formatDateTime } from "@/lib/utils";
+import { Badge } from "@/components/ui/badge";
+import {
+  Trophy,
+  Swords,
+  Target,
+  TrendingUp,
+  Star,
+  Flame,
+  Crown,
+  Medal,
+  Zap,
+} from "lucide-react";
 
-interface ActivityCounts {
-  active: number;
-  minimal: number;
-  inactive: number;
+interface LeaderboardMember {
+  tag: string;
+  name: string;
+  role: string;
+  trophies: number;
+  highestTrophies: number;
+  winRate: number | null;
+  totalVictories: number;
+  brawlersCount: number;
+  expLevel: number;
+  rankCurrent: string | null;
+  rankHighest: string | null;
+  allTime: {
+    battles: number;
+    wins: number;
+    losses: number;
+    starPlayer: number;
+    trophiesGained: number;
+    trophiesLost: number;
+    activeDays: number;
+    currentStreak: number;
+    bestStreak: number;
+    peakDayBattles: number;
+  };
+  weekly: {
+    battles: number;
+    wins: number;
+    losses: number;
+    starPlayer: number;
+    trophiesGained: number;
+    trophiesLost: number;
+    activeDays: number;
+    winRate: number;
+    netTrophies: number;
+  };
 }
 
-export default function ActivityPage() {
-  const [events, setEvents] = useState<ClubEvent[]>([]);
-  const [activityCounts, setActivityCounts] = useState<ActivityCounts>({ active: 0, minimal: 0, inactive: 0 });
+interface Leaderboards {
+  trophyLeaders: LeaderboardMember[];
+  weeklyBattlers: LeaderboardMember[];
+  weeklyWinRate: LeaderboardMember[];
+  weeklyTrophyGainers: LeaderboardMember[];
+  weeklyStarPlayers: LeaderboardMember[];
+  mostActive: LeaderboardMember[];
+  allTimeBattlers: LeaderboardMember[];
+}
+
+const PODIUM_COLORS = [
+  "from-yellow-500/20 to-yellow-600/5 border-yellow-500/40",
+  "from-slate-300/20 to-slate-400/5 border-slate-400/40",
+  "from-amber-700/20 to-amber-800/5 border-amber-700/40",
+];
+
+const PODIUM_ICONS = [
+  <Crown key="gold" className="h-6 w-6 text-yellow-500" />,
+  <Medal key="silver" className="h-6 w-6 text-slate-400" />,
+  <Medal key="bronze" className="h-6 w-6 text-amber-700" />,
+];
+
+const RANK_BADGES = [
+  "bg-yellow-500/20 text-yellow-500 border-yellow-500/30",
+  "bg-slate-400/20 text-slate-300 border-slate-400/30",
+  "bg-amber-700/20 text-amber-600 border-amber-700/30",
+];
+
+function RankBadge({ rank }: { rank: number }) {
+  if (rank <= 3) {
+    return (
+      <span className={`inline-flex items-center justify-center w-7 h-7 rounded-full text-xs font-bold border ${RANK_BADGES[rank - 1]}`}>
+        {rank}
+      </span>
+    );
+  }
+  return <span className="text-sm text-muted-foreground w-7 text-center inline-block">{rank}</span>;
+}
+
+function formatNumber(n: number): string {
+  if (n >= 1000) return `${(n / 1000).toFixed(1)}k`;
+  return n.toString();
+}
+
+function Podium({
+  members,
+  formatValue,
+  subtitle,
+}: {
+  members: LeaderboardMember[];
+  formatValue: (m: LeaderboardMember) => string;
+  subtitle?: (m: LeaderboardMember) => string;
+}) {
+  const top3 = members.slice(0, 3);
+  if (top3.length === 0) {
+    return (
+      <p className="text-center text-muted-foreground py-8">
+        No data available yet. Sync your club to start tracking!
+      </p>
+    );
+  }
+
+  return (
+    <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-6">
+      {top3.map((member, i) => (
+        <Link href={`/members/${encodeURIComponent(member.tag)}`} key={member.tag}>
+          <div
+            className={`relative p-4 rounded-xl bg-gradient-to-b border transition-colors hover:bg-accent/50 ${PODIUM_COLORS[i]}`}
+          >
+            <div className="flex items-center gap-3">
+              <div className="flex-shrink-0">{PODIUM_ICONS[i]}</div>
+              <div className="min-w-0 flex-1">
+                <p className="font-semibold text-sm truncate">{member.name}</p>
+                <p className="text-2xl font-bold">{formatValue(member)}</p>
+                {subtitle && (
+                  <p className="text-xs text-muted-foreground">{subtitle(member)}</p>
+                )}
+              </div>
+            </div>
+          </div>
+        </Link>
+      ))}
+    </div>
+  );
+}
+
+function LeaderboardTable({
+  members,
+  columns,
+}: {
+  members: LeaderboardMember[];
+  columns: {
+    header: string;
+    value: (m: LeaderboardMember) => React.ReactNode;
+    className?: string;
+  }[];
+}) {
+  const rest = members.slice(3);
+  if (rest.length === 0) return null;
+
+  return (
+    <div className="overflow-x-auto -mx-4 sm:mx-0 rounded-lg border border-border">
+      <Table>
+        <TableHeader>
+          <TableRow>
+            <TableHead className="w-12">#</TableHead>
+            <TableHead>Player</TableHead>
+            {columns.map((col) => (
+              <TableHead key={col.header} className={col.className}>
+                {col.header}
+              </TableHead>
+            ))}
+          </TableRow>
+        </TableHeader>
+        <TableBody>
+          {rest.map((member, i) => (
+            <TableRow key={member.tag} className="group">
+              <TableCell>
+                <RankBadge rank={i + 4} />
+              </TableCell>
+              <TableCell>
+                <Link
+                  href={`/members/${encodeURIComponent(member.tag)}`}
+                  className="hover:underline font-medium"
+                >
+                  {member.name}
+                </Link>
+              </TableCell>
+              {columns.map((col) => (
+                <TableCell key={col.header} className={col.className}>
+                  {col.value(member)}
+                </TableCell>
+              ))}
+            </TableRow>
+          ))}
+        </TableBody>
+      </Table>
+    </div>
+  );
+}
+
+const categories = [
+  {
+    key: "trophyLeaders" as const,
+    label: "Trophies",
+    icon: Trophy,
+    description: "Current trophy rankings",
+    formatValue: (m: LeaderboardMember) => formatNumber(m.trophies),
+    subtitle: (m: LeaderboardMember) => `Peak: ${formatNumber(m.highestTrophies)}`,
+    columns: [
+      { header: "Trophies", value: (m: LeaderboardMember) => formatNumber(m.trophies), className: "text-right" },
+      { header: "Peak", value: (m: LeaderboardMember) => formatNumber(m.highestTrophies), className: "text-right" },
+      { header: "Brawlers", value: (m: LeaderboardMember) => m.brawlersCount, className: "text-right" },
+    ],
+  },
+  {
+    key: "weeklyBattlers" as const,
+    label: "Battles",
+    icon: Swords,
+    description: "Most battles played this week",
+    formatValue: (m: LeaderboardMember) => m.weekly.battles.toString(),
+    subtitle: (m: LeaderboardMember) => `${m.weekly.wins}W / ${m.weekly.losses}L`,
+    columns: [
+      { header: "Battles", value: (m: LeaderboardMember) => m.weekly.battles, className: "text-right" },
+      { header: "Wins", value: (m: LeaderboardMember) => m.weekly.wins, className: "text-right" },
+      { header: "Win %", value: (m: LeaderboardMember) => `${m.weekly.winRate}%`, className: "text-right" },
+    ],
+  },
+  {
+    key: "weeklyWinRate" as const,
+    label: "Win Rate",
+    icon: Target,
+    description: "Highest win rate this week (min 10 battles)",
+    formatValue: (m: LeaderboardMember) => `${m.weekly.winRate}%`,
+    subtitle: (m: LeaderboardMember) => `${m.weekly.battles} battles`,
+    columns: [
+      { header: "Win %", value: (m: LeaderboardMember) => <span className="font-semibold">{m.weekly.winRate}%</span>, className: "text-right" },
+      { header: "W / L", value: (m: LeaderboardMember) => `${m.weekly.wins} / ${m.weekly.losses}`, className: "text-right" },
+      { header: "Battles", value: (m: LeaderboardMember) => m.weekly.battles, className: "text-right" },
+    ],
+  },
+  {
+    key: "weeklyTrophyGainers" as const,
+    label: "Progress",
+    icon: TrendingUp,
+    description: "Most trophies gained this week",
+    formatValue: (m: LeaderboardMember) => {
+      const n = m.weekly.netTrophies;
+      return n >= 0 ? `+${n}` : `${n}`;
+    },
+    subtitle: (m: LeaderboardMember) => `${formatNumber(m.trophies)} total`,
+    columns: [
+      {
+        header: "Net",
+        value: (m: LeaderboardMember) => {
+          const n = m.weekly.netTrophies;
+          const color = n > 0 ? "text-green-500" : n < 0 ? "text-red-500" : "";
+          return <span className={`font-semibold ${color}`}>{n >= 0 ? `+${n}` : n}</span>;
+        },
+        className: "text-right",
+      },
+      { header: "Gained", value: (m: LeaderboardMember) => `+${m.weekly.trophiesGained}`, className: "text-right" },
+      { header: "Lost", value: (m: LeaderboardMember) => `-${m.weekly.trophiesLost}`, className: "text-right" },
+    ],
+  },
+  {
+    key: "weeklyStarPlayers" as const,
+    label: "Stars",
+    icon: Star,
+    description: "Most Star Player awards this week",
+    formatValue: (m: LeaderboardMember) => `${m.weekly.starPlayer}`,
+    subtitle: (m: LeaderboardMember) => `${m.weekly.battles} battles`,
+    columns: [
+      { header: "Stars", value: (m: LeaderboardMember) => <span className="font-semibold text-yellow-500">{m.weekly.starPlayer}</span>, className: "text-right" },
+      { header: "Battles", value: (m: LeaderboardMember) => m.weekly.battles, className: "text-right" },
+      {
+        header: "Star %",
+        value: (m: LeaderboardMember) => {
+          const pct = m.weekly.battles > 0 ? Math.round((m.weekly.starPlayer / m.weekly.battles) * 100) : 0;
+          return `${pct}%`;
+        },
+        className: "text-right",
+      },
+    ],
+  },
+  {
+    key: "mostActive" as const,
+    label: "Activity",
+    icon: Flame,
+    description: "Most active members (tracked days)",
+    formatValue: (m: LeaderboardMember) => `${m.allTime.activeDays}d`,
+    subtitle: (m: LeaderboardMember) => m.allTime.currentStreak > 0 ? `${m.allTime.currentStreak}d streak` : "No streak",
+    columns: [
+      { header: "Days", value: (m: LeaderboardMember) => m.allTime.activeDays, className: "text-right" },
+      { header: "Streak", value: (m: LeaderboardMember) => m.allTime.currentStreak > 0 ? <span className="text-orange-500 font-semibold">{m.allTime.currentStreak}d</span> : <span className="text-muted-foreground">-</span>, className: "text-right" },
+      { header: "Best", value: (m: LeaderboardMember) => `${m.allTime.bestStreak}d`, className: "text-right" },
+    ],
+  },
+  {
+    key: "allTimeBattlers" as const,
+    label: "All-Time",
+    icon: Zap,
+    description: "All-time battle statistics",
+    formatValue: (m: LeaderboardMember) => formatNumber(m.allTime.battles),
+    subtitle: (m: LeaderboardMember) => {
+      const wr = m.allTime.battles > 0 ? Math.round((m.allTime.wins / m.allTime.battles) * 100) : 0;
+      return `${wr}% win rate`;
+    },
+    columns: [
+      { header: "Battles", value: (m: LeaderboardMember) => formatNumber(m.allTime.battles), className: "text-right" },
+      { header: "Wins", value: (m: LeaderboardMember) => formatNumber(m.allTime.wins), className: "text-right" },
+      { header: "Stars", value: (m: LeaderboardMember) => <span className="text-yellow-500">{m.allTime.starPlayer}</span>, className: "text-right" },
+    ],
+  },
+];
+
+export default function LeaderboardPage() {
+  const [leaderboards, setLeaderboards] = useState<Leaderboards | null>(null);
+  const [memberCount, setMemberCount] = useState(0);
   const [isLoading, setIsLoading] = useState(true);
+  const [activeTab, setActiveTab] = useState("trophyLeaders");
 
   useEffect(() => {
-    loadData();
+    const load = async () => {
+      try {
+        const res = await fetch("/api/leaderboard");
+        if (res.ok) {
+          const data = await res.json();
+          setLeaderboards(data.leaderboards);
+          setMemberCount(data.memberCount || 0);
+        }
+      } catch (err) {
+        console.error("Error loading leaderboard:", err);
+      } finally {
+        setIsLoading(false);
+      }
+    };
+    load();
   }, []);
-
-  const loadData = async () => {
-    try {
-      const [eventsRes, membersRes] = await Promise.all([
-        fetch("/api/events"),
-        fetch("/api/members"),
-      ]);
-
-      if (eventsRes.ok) {
-        const data = await eventsRes.json();
-        setEvents(data.events || []);
-      }
-
-      if (membersRes.ok) {
-        const data = await membersRes.json();
-        const members = data.members || [];
-        
-        // Calculate activity counts based on 24h trophy change
-        const counts: ActivityCounts = { active: 0, minimal: 0, inactive: 0 };
-        members.forEach((member: { trophies_24h?: number | null }) => {
-          const change = member.trophies_24h;
-          if (change === null || change === undefined || change === 0) {
-            counts.inactive++;
-          } else if (Math.abs(change) >= 20) {
-            counts.active++;
-          } else {
-            counts.minimal++;
-          }
-        });
-        setActivityCounts(counts);
-      }
-    } catch (error) {
-      console.error("Error loading data:", error);
-    } finally {
-      setIsLoading(false);
-    }
-  };
 
   return (
     <LayoutWrapper>
-      <Tabs defaultValue="events" className="space-y-4">
-        <TabsList className="w-full sm:w-auto">
-          <TabsTrigger value="events" className="flex-1 sm:flex-none">Club Events</TabsTrigger>
-          <TabsTrigger value="activity" className="flex-1 sm:flex-none">Activity Log</TabsTrigger>
-        </TabsList>
+      <div className="space-y-4">
+        <div className="flex items-center justify-between">
+          <div>
+            <h1 className="text-2xl font-bold flex items-center gap-2">
+              <Trophy className="h-6 w-6 text-yellow-500" />
+              Club Leaderboard
+            </h1>
+            <p className="text-sm text-muted-foreground">
+              {memberCount} members tracked
+            </p>
+          </div>
+        </div>
 
-            <TabsContent value="events">
-              <Card>
-                <CardHeader>
-                  <CardTitle>Club Events</CardTitle>
-                </CardHeader>
-                <CardContent>
-                  {isLoading ? (
-                    <div className="flex items-center justify-center py-8">
-                      <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
-                    </div>
-                  ) : events.length === 0 ? (
-                    <p className="text-center text-muted-foreground py-8">
-                      No club events recorded yet
-                    </p>
-                  ) : (
-                    <div className="overflow-x-auto -mx-4 sm:mx-0">
-                      <Table className="min-w-[400px] sm:min-w-full">
-                        <TableHeader>
-                          <TableRow>
-                            <TableHead>Player</TableHead>
-                            <TableHead>Event</TableHead>
-                            <TableHead>Time</TableHead>
-                          </TableRow>
-                        </TableHeader>
-                        <TableBody>
-                          {events.map((event) => (
-                            <TableRow key={event.id}>
-                              <TableCell>
-                                <div>
-                                  <p className="font-medium">{event.player_name}</p>
-                                  <p className="text-xs text-muted-foreground">
-                                    {event.player_tag}
-                                  </p>
-                                </div>
-                              </TableCell>
-                              <TableCell>
-                                <span
-                                  className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
-                                    event.event_type === "join"
-                                      ? "bg-green-500/20 text-green-500"
-                                      : "bg-red-500/20 text-red-500"
-                                  }`}
-                                >
-                                  {event.event_type === "join" ? "Joined" : "Left"}
-                                </span>
-                              </TableCell>
-                              <TableCell className="text-muted-foreground">
-                                {formatDateTime(event.event_time)}
-                              </TableCell>
-                            </TableRow>
-                          ))}
-                        </TableBody>
-                      </Table>
-                    </div>
-                  )}
-                </CardContent>
-              </Card>
-            </TabsContent>
-
-            <TabsContent value="activity">
-              <Card>
-                <CardHeader>
-                  <CardTitle>Daily Activity Summary</CardTitle>
-                </CardHeader>
-                <CardContent>
-                  <div className="space-y-4">
-                    {isLoading ? (
-                      <div className="flex items-center justify-center py-8">
-                        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
-                      </div>
-                    ) : (
-                      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 text-center">
-                        <div className="p-4 rounded-lg bg-green-500/10 border border-green-500/20">
-                          <div className="text-2xl mb-1">🟢</div>
-                          <p className="text-3xl font-bold text-green-500">{activityCounts.active}</p>
-                          <p className="font-medium text-green-500">Active</p>
-                          <p className="text-sm text-muted-foreground">
-                            ±20+ trophies
-                          </p>
-                        </div>
-                        <div className="p-4 rounded-lg bg-yellow-500/10 border border-yellow-500/20">
-                          <div className="text-2xl mb-1">🟡</div>
-                          <p className="text-3xl font-bold text-yellow-500">{activityCounts.minimal}</p>
-                          <p className="font-medium text-yellow-500">Minimal</p>
-                          <p className="text-sm text-muted-foreground">
-                            Small changes
-                          </p>
-                        </div>
-                        <div className="p-4 rounded-lg bg-red-500/10 border border-red-500/20">
-                          <div className="text-2xl mb-1">🔴</div>
-                          <p className="text-3xl font-bold text-red-500">{activityCounts.inactive}</p>
-                          <p className="font-medium text-red-500">Inactive</p>
-                          <p className="text-sm text-muted-foreground">
-                            No changes in 24h
-                          </p>
-                        </div>
-                      </div>
+        {isLoading ? (
+          <div className="flex items-center justify-center py-16">
+            <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary" />
+          </div>
+        ) : !leaderboards ? (
+          <Card>
+            <CardContent className="py-12 text-center text-muted-foreground">
+              Failed to load leaderboard data. Try syncing your club first.
+            </CardContent>
+          </Card>
+        ) : (
+          <Tabs value={activeTab} onValueChange={setActiveTab}>
+            <TabsList className="w-full flex flex-wrap h-auto gap-1 bg-transparent p-0">
+              {categories.map((cat) => {
+                const Icon = cat.icon;
+                const data = leaderboards[cat.key] || [];
+                return (
+                  <TabsTrigger
+                    key={cat.key}
+                    value={cat.key}
+                    className="flex items-center gap-1.5 px-3 py-2 data-[state=active]:bg-accent rounded-lg border border-transparent data-[state=active]:border-border text-xs sm:text-sm"
+                  >
+                    <Icon className="h-3.5 w-3.5" />
+                    <span className="hidden sm:inline">{cat.label}</span>
+                    {data.length > 0 && (
+                      <Badge variant="secondary" className="ml-1 text-[10px] px-1.5 h-4">
+                        {data.length}
+                      </Badge>
                     )}
+                  </TabsTrigger>
+                );
+              })}
+            </TabsList>
 
-                    <p className="text-sm text-muted-foreground text-center mt-4">
-                      Activity is tracked by monitoring trophy changes every sync cycle.
-                    </p>
-                  </div>
-                </CardContent>
-              </Card>
-            </TabsContent>
+            {categories.map((cat) => {
+              const data = leaderboards[cat.key] || [];
+              return (
+                <TabsContent key={cat.key} value={cat.key} className="space-y-4 mt-4">
+                  <Card>
+                    <CardHeader className="pb-3">
+                      <div className="flex items-center gap-2">
+                        <cat.icon className="h-5 w-5 text-muted-foreground" />
+                        <div>
+                          <CardTitle className="text-lg">{cat.label}</CardTitle>
+                          <CardDescription>{cat.description}</CardDescription>
+                        </div>
+                      </div>
+                    </CardHeader>
+                    <CardContent>
+                      <Podium
+                        members={data}
+                        formatValue={cat.formatValue}
+                        subtitle={cat.subtitle}
+                      />
+                      <LeaderboardTable members={data} columns={cat.columns} />
+                    </CardContent>
+                  </Card>
+                </TabsContent>
+              );
+            })}
           </Tabs>
+        )}
+      </div>
     </LayoutWrapper>
   );
 }
