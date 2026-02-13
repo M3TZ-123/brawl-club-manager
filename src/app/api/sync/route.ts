@@ -165,11 +165,12 @@ async function syncClubData(providedClubTag?: string, providedApiKey?: string, i
       gears_count: number;
     }[] = [];
 
-    // Process members in parallel batches of 3 to avoid rate limits
-    // Brawl Stars API: ~10 req/sec, RNT API: unknown
-    // 3 members × 3 calls = 9 simultaneous requests (safe margin)
-    const BATCH_SIZE = 3;
-    const BATCH_DELAY_MS = 500; // Delay between batches
+    // Process members in parallel batches of 4
+    // Brawl Stars API rate limit: ~10 req/sec per key
+    // 4 members × 2 BS API calls = 8 concurrent BS requests (safe under 10/sec)
+    // 4 members × 1 RNT API call = 4 concurrent RNT requests (separate limit)
+    const BATCH_SIZE = 4;
+    const BATCH_DELAY_MS = 300; // Delay between batches to stay under rate limit
     const memberBatches = [];
     for (let i = 0; i < club.members.length; i += BATCH_SIZE) {
       memberBatches.push(club.members.slice(i, i + BATCH_SIZE));
@@ -386,33 +387,56 @@ async function syncClubData(providedClubTag?: string, providedApiKey?: string, i
       }
     }
 
+    // Run independent DB writes in parallel for speed
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const dbWrites: any[] = [];
+
     // Upsert members
     if (memberUpdates.length > 0) {
-      await supabase.from("members").upsert(memberUpdates, {
+      dbWrites.push(supabase.from("members").upsert(memberUpdates, {
         onConflict: "player_tag",
-      });
+      }));
     }
 
     // Insert activity logs
     if (activityLogs.length > 0) {
-      await supabase.from("activity_log").insert(activityLogs);
+      dbWrites.push(supabase.from("activity_log").insert(activityLogs));
     }
 
-    // Store battle history (upsert to avoid duplicates)
+    // Upsert member history
+    if (historyUpdates.length > 0) {
+      dbWrites.push(supabase.from("member_history").upsert(historyUpdates, {
+        onConflict: "player_tag",
+      }));
+    }
+
+    // Insert events
+    if (events.length > 0) {
+      dbWrites.push(supabase.from("club_events").insert(events));
+    }
+
+    // Wait for core DB writes to finish
+    await Promise.all(dbWrites);
+
+    // Store battle history and daily stats (can run in parallel with snapshots)
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const secondaryDbWrites: any[] = [];
+
     if (allBattles.length > 0) {
       // Insert battles, ignore duplicates
-      const { error: battleError } = await supabase
-        .from("battle_history")
-        .upsert(allBattles, {
-          onConflict: "player_tag,battle_time",
-          ignoreDuplicates: true,
-        });
-      
-      if (battleError) {
-        console.error("Error storing battle history:", battleError);
-      }
+      secondaryDbWrites.push(
+        supabase
+          .from("battle_history")
+          .upsert(allBattles, {
+            onConflict: "player_tag,battle_time",
+            ignoreDuplicates: true,
+          })
+          .then(({ error }) => {
+            if (error) console.error("Error storing battle history:", error);
+          })
+      );
 
-      // Update daily stats from battles
+      // Build daily stats from battles
       const dailyStatsMap = new Map<string, {
         player_tag: string;
         date: string;
@@ -450,24 +474,21 @@ async function syncClubData(providedClubTag?: string, providedApiKey?: string, i
         if (battle.trophy_change < 0) stats.trophies_lost += Math.abs(battle.trophy_change);
       }
 
-      // Upsert daily stats
       const dailyStatsArray = Array.from(dailyStatsMap.values());
       if (dailyStatsArray.length > 0) {
-        const { error: dailyStatsError } = await supabase
-          .from("daily_stats")
-          .upsert(dailyStatsArray, {
-            onConflict: "player_tag,date",
-          });
-        
-        if (dailyStatsError) {
-          console.error("Error storing daily stats:", dailyStatsError);
-        }
+        secondaryDbWrites.push(
+          supabase
+            .from("daily_stats")
+            .upsert(dailyStatsArray, { onConflict: "player_tag,date" })
+            .then(({ error }) => {
+              if (error) console.error("Error storing daily stats:", error);
+            })
+        );
       }
     }
 
     // Store brawler snapshots (for tracking power ups/unlocks)
     if (brawlerSnapshots.length > 0) {
-      // Get previous snapshots to detect changes — batch query for ALL players at once
       const playerTags = [...new Set(brawlerSnapshots.map(s => s.player_tag))];
       const yesterday = new Date();
       yesterday.setDate(yesterday.getDate() - 1);
@@ -479,7 +500,6 @@ async function syncClubData(providedClubTag?: string, providedApiKey?: string, i
         .in("player_tag", playerTags)
         .gte("recorded_at", yesterdayStr);
 
-      // Group previous snapshots by player_tag
       const prevByPlayer = new Map<string, Map<number, number>>();
       const playersWithPrevData = new Set<string>();
       for (const snap of allPrevSnapshots || []) {
@@ -490,7 +510,6 @@ async function syncClubData(providedClubTag?: string, providedApiKey?: string, i
         prevByPlayer.get(snap.player_tag)!.set(snap.brawler_id, snap.power_level);
       }
 
-      // Track updates to batch upsert
       const trackingUpdates: Array<{ player_tag: string; power_ups: number; unlocks: number; last_updated: string }> = [];
 
       for (const playerTag of playerTags) {
@@ -498,7 +517,6 @@ async function syncClubData(providedClubTag?: string, providedApiKey?: string, i
         const prevMap = prevByPlayer.get(playerTag) || new Map();
         const hadPrevData = playersWithPrevData.has(playerTag);
         
-        // Calculate power ups and unlocks
         let powerUps = 0;
         let unlocks = 0;
         
@@ -521,40 +539,29 @@ async function syncClubData(providedClubTag?: string, providedApiKey?: string, i
         }
       }
 
-      // Batch upsert player tracking
       if (trackingUpdates.length > 0) {
-        await supabase
-          .from("player_tracking")
-          .upsert(trackingUpdates, { onConflict: "player_tag" });
+        secondaryDbWrites.push(
+          supabase.from("player_tracking").upsert(trackingUpdates, { onConflict: "player_tag" })
+        );
       }
       
-      // Store today's brawler snapshot
-      const { error: snapshotError } = await supabase
-        .from("brawler_snapshots")
-        .upsert(brawlerSnapshots, {
-          onConflict: "player_tag,brawler_id,recorded_at",
-          ignoreDuplicates: true,
-        });
-      
-      if (snapshotError) {
-        console.error("Error storing brawler snapshots:", snapshotError);
-      }
+      secondaryDbWrites.push(
+        supabase
+          .from("brawler_snapshots")
+          .upsert(brawlerSnapshots, {
+            onConflict: "player_tag,brawler_id,recorded_at",
+            ignoreDuplicates: true,
+          })
+          .then(({ error }) => {
+            if (error) console.error("Error storing brawler snapshots:", error);
+          })
+      );
     }
 
-    // Upsert member history
-    if (historyUpdates.length > 0) {
-      await supabase.from("member_history").upsert(historyUpdates, {
-        onConflict: "player_tag",
-      });
-    }
-
-    // Insert events
-    if (events.length > 0) {
-      await supabase.from("club_events").insert(events);
-    }
+    // Wait for all secondary DB writes
+    await Promise.all(secondaryDbWrites);
 
     // Insert DB notifications for the notification panel
-    {
       const notifRows: Array<{ type: string; title: string; message: string; player_tag: string | null; player_name: string | null }> = [];
 
       for (const evt of events) {
@@ -605,7 +612,6 @@ async function syncClubData(providedClubTag?: string, providedApiKey?: string, i
         if (notifError) console.error("Error inserting notifications:", notifError);
         else console.log(`Inserted ${notifRows.length} notification(s) into DB`);
       }
-    }
 
     // Send Discord webhook notifications for joins/leaves/inactivity
     if (notificationsEnabled && discordWebhook && discordWebhook.startsWith("https://discord.com/api/webhooks/")) {

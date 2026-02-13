@@ -143,11 +143,31 @@ function handleApiError(error: unknown, endpoint: string): never {
   throw error;
 }
 
+// Wrapper that auto-retries on 429 rate limit
+async function apiCallWithRetry<T>(fn: () => Promise<T>, label: string, maxRetries = 2): Promise<T> {
+  for (let attempt = 0; attempt <= maxRetries; attempt++) {
+    try {
+      return await fn();
+    } catch (error) {
+      if (axios.isAxiosError(error) && error.response?.status === 429 && attempt < maxRetries) {
+        const waitMs = 1000 * (attempt + 1); // 1s, then 2s
+        console.warn(`Rate limited on ${label}, retrying in ${waitMs}ms (attempt ${attempt + 1}/${maxRetries})`);
+        await new Promise((resolve) => setTimeout(resolve, waitMs));
+        continue;
+      }
+      throw error;
+    }
+  }
+  throw new Error(`Unreachable`);
+}
+
 // API Functions
 export async function getClub(clubTag: string): Promise<BrawlStarsClub> {
   try {
-    const response = await brawlApi.get(`/clubs/${encodeTag(clubTag)}`);
-    return response.data;
+    return await apiCallWithRetry(
+      () => brawlApi.get(`/clubs/${encodeTag(clubTag)}`).then(r => r.data),
+      `getClub(${clubTag})`
+    );
   } catch (error) {
     handleApiError(error, `getClub(${clubTag})`);
   }
@@ -155,8 +175,10 @@ export async function getClub(clubTag: string): Promise<BrawlStarsClub> {
 
 export async function getPlayer(playerTag: string): Promise<BrawlStarsPlayer> {
   try {
-    const response = await brawlApi.get(`/players/${encodeTag(playerTag)}`);
-    return response.data;
+    return await apiCallWithRetry(
+      () => brawlApi.get(`/players/${encodeTag(playerTag)}`).then(r => r.data),
+      `getPlayer(${playerTag})`
+    );
   } catch (error) {
     handleApiError(error, `getPlayer(${playerTag})`);
   }
@@ -164,8 +186,10 @@ export async function getPlayer(playerTag: string): Promise<BrawlStarsPlayer> {
 
 export async function getPlayerBattleLog(playerTag: string): Promise<BrawlStarsBattleLog> {
   try {
-    const response = await brawlApi.get(`/players/${encodeTag(playerTag)}/battlelog`);
-    return response.data;
+    return await apiCallWithRetry(
+      () => brawlApi.get(`/players/${encodeTag(playerTag)}/battlelog`).then(r => r.data),
+      `getPlayerBattleLog(${playerTag})`
+    );
   } catch (error) {
     handleApiError(error, `getPlayerBattleLog(${playerTag})`);
   }
@@ -231,13 +255,13 @@ export async function getPlayerRankedData(playerTag: string): Promise<{
   currentPoints: number;
   highestPoints: number;
 }> {
-  const MAX_RETRIES = 2;
+  const MAX_RETRIES = 1;
   const cleanTag = playerTag.replace('#', '');
 
   for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
     try {
       const response = await axios.get(`${RNT_API_URL}/profile?tag=${cleanTag}`, {
-        timeout: 8000,
+        timeout: 4000,
       });
       
       if (!response.data?.ok || !response.data?.result?.stats) {
@@ -265,8 +289,8 @@ export async function getPlayerRankedData(playerTag: string): Promise<{
       };
     } catch (error) {
       if (attempt < MAX_RETRIES) {
-        // Wait before retrying (500ms, then 1000ms)
-        await new Promise((resolve) => setTimeout(resolve, 500 * (attempt + 1)));
+        // Wait briefly before retrying
+        await new Promise((resolve) => setTimeout(resolve, 300));
         continue;
       }
       console.error(`Error fetching ranked data for ${playerTag} after ${MAX_RETRIES + 1} attempts:`, error);
