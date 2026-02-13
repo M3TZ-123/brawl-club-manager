@@ -8,6 +8,9 @@ const inter = Inter({ subsets: ["latin"] });
 export const metadata: Metadata = {
   title: "Brawl Stars Club Manager",
   description: "Track your club members, activity, and performance",
+  icons: {
+    icon: "/icon.gif",
+  },
 };
 
 // Script to prevent theme flash - runs before React hydrates

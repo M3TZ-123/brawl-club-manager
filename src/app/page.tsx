@@ -12,13 +12,12 @@ import { ActivityPieChart, MemberBarChart } from "@/components/charts";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Progress } from "@/components/ui/progress";
 import { Member, ClubEvent } from "@/types/database";
-import { Trophy, UserX, TrendingUp, TrendingDown, Minus, Crown, Swords } from "lucide-react";
+import { Trophy, UserX, TrendingUp, TrendingDown, Minus, Crown, Swords, Target } from "lucide-react";
 
 interface ClubInsights {
-  eventLabel: string;
-  eventStatus: "good" | "warning" | "bad";
-  totalEventBattles: number;
-  eventRate: number;
+  winRate: number;
+  totalWins: number;
+  totalBattlesThisWeek: number;
   kickList: { tag: string; name: string }[];
   kickCount: number;
   thisWeekTotal: number;
@@ -135,18 +134,20 @@ export default function DashboardPage() {
           {/* Club Insights */}
           {insights && (
             <div className="grid gap-4 grid-cols-2 lg:grid-cols-4">
-              {/* Event Status */}
+              {/* Win Rate */}
               <Card>
                 <CardContent className="pt-4 pb-3">
                   <div className="flex items-center gap-2 mb-2">
-                    <Swords className="h-4 w-4 text-purple-500" />
-                    <span className="text-xs font-medium text-muted-foreground">Event Status</span>
+                    <Target className="h-4 w-4 text-blue-500" />
+                    <span className="text-xs font-medium text-muted-foreground">Win Rate</span>
                   </div>
-                  <p className="text-2xl font-bold">{insights.totalEventBattles}</p>
-                  <p className={`text-xs mt-1 font-medium ${
-                    insights.eventStatus === "good" ? "text-green-500" :
-                    insights.eventStatus === "warning" ? "text-yellow-500" : "text-red-500"
-                  }`}>{insights.eventLabel}</p>
+                  <p className={`text-2xl font-bold ${
+                    insights.winRate >= 55 ? "text-green-500" :
+                    insights.winRate >= 45 ? "text-foreground" : "text-red-500"
+                  }`}>{insights.winRate}%</p>
+                  <p className="text-xs text-muted-foreground mt-1">
+                    {insights.totalWins}W this week
+                  </p>
                 </CardContent>
               </Card>
 

@@ -12,43 +12,33 @@ export async function GET() {
     const fortyEightHoursAgo = new Date(now.getTime() - 48 * 60 * 60 * 1000).toISOString();
 
     // Parallel data fetches
-    const [membersRes, thisWeekStatsRes, prevWeekStatsRes, recentBattlesRes, eventBattlesRes] = await Promise.all([
+    const [membersRes, thisWeekStatsRes, prevWeekStatsRes, recentBattlesRes] = await Promise.all([
       supabase.from("members").select("player_tag, player_name, trophies, is_active, last_seen"),
       supabase.from("daily_stats").select("player_tag, date, battles, wins, trophies_gained, trophies_lost").gte("date", weekAgoStr),
       supabase.from("daily_stats").select("player_tag, battles").gte("date", prevWeekStr).lt("date", weekAgoStr),
       supabase.from("battle_history").select("player_tag, battle_time").gte("battle_time", fortyEightHoursAgo),
-      supabase.from("battle_history").select("mode, battle_time").gte("battle_time", sevenDaysAgo.toISOString()).not("mode", "is", null),
     ]);
 
     const members = membersRes.data || [];
+    // Build name lookup — normalize tags to handle any format differences
+    const nameMap = new Map<string, string>();
+    for (const m of members) {
+      nameMap.set(m.player_tag, m.player_name);
+      nameMap.set(m.player_tag.replace("#", ""), m.player_name);
+      if (!m.player_tag.startsWith("#")) nameMap.set(`#${m.player_tag}`, m.player_name);
+    }
     const thisWeekStats = thisWeekStatsRes.data || [];
     const prevWeekStats = prevWeekStatsRes.data || [];
     const recentBattles = recentBattlesRes.data || [];
-    const eventBattles = eventBattlesRes.data || [];
 
     // ============================
-    // 1. EVENT STATUS — Club League / ranked modes activity
+    // 1. WIN RATE — Club win percentage this week
     // ============================
-    const rankedModes = ["clubLeague", "soloRanked", "teamRanked", "duels", "ranked"];
-    const eventModeBattles = eventBattles.filter((b) =>
-      rankedModes.some((rm) => (b.mode || "").toLowerCase().includes(rm.toLowerCase()))
-    );
-    const totalEventBattles = eventModeBattles.length;
-    const eventPlayers = new Set(eventModeBattles.map((b) => b.mode)).size; // unique modes played
-    const totalBattlesThisWeek = eventBattles.length;
-    const eventRate = totalBattlesThisWeek > 0
-      ? Math.round((totalEventBattles / totalBattlesThisWeek) * 100)
+    const totalWins = thisWeekStats.reduce((sum, s) => sum + (s.wins || 0), 0);
+    const totalBattlesThisWeek = thisWeekStats.reduce((sum, s) => sum + (s.battles || 0), 0);
+    const winRate = totalBattlesThisWeek > 0
+      ? Math.round((totalWins / totalBattlesThisWeek) * 100)
       : 0;
-
-    let eventLabel: string;
-    let eventStatus: "good" | "warning" | "bad";
-    if (totalEventBattles > 0) {
-      eventLabel = `${totalEventBattles} competitive`;
-      eventStatus = totalEventBattles >= 20 ? "good" : "warning";
-    } else {
-      eventLabel = "No ranked games";
-      eventStatus = "bad";
-    }
 
     // ============================
     // 2. KICK LIST — Members with 0 battles in last 48h
@@ -89,16 +79,14 @@ export async function GET() {
       }
     }
 
-    const mvpMember = members.find((m) => m.player_tag === mvpTag);
-    const mvpName = mvpMember?.player_name || mvpTag || null;
+    const mvpName = nameMap.get(mvpTag) || (mvpTag ? mvpTag : null);
 
     return NextResponse.json({
       insights: {
-        // Event Status
-        eventLabel,
-        eventStatus,
-        totalEventBattles,
-        eventRate,
+        // Win Rate
+        winRate,
+        totalWins,
+        totalBattlesThisWeek,
         // Kick List
         kickList: kickCandidates,
         kickCount: kickCandidates.length,
