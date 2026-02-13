@@ -10,7 +10,22 @@ import { MembersTable } from "@/components/members-table";
 import { ActivityTimeline } from "@/components/activity-timeline";
 import { ActivityPieChart, MemberBarChart } from "@/components/charts";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Progress } from "@/components/ui/progress";
 import { Member, ClubEvent } from "@/types/database";
+import { HeartPulse, ShieldCheck, Swords, Clock } from "lucide-react";
+
+interface ClubInsights {
+  retentionRate: number;
+  recentJoins: number;
+  totalLeaves: number;
+  avgBattlesPerMember: number;
+  totalWeeklyBattles: number;
+  weeklyActivePlayers: number;
+  weeklyActivityRate: number;
+  peakHour: string | null;
+  healthScore: number;
+  healthLabel: string;
+}
 
 export default function DashboardPage() {
   const { clubTag, apiKey, isLoadingSettings, hasLoadedSettings, loadSettingsFromDB } = useAppStore();
@@ -20,6 +35,7 @@ export default function DashboardPage() {
   const [isLoading, setIsLoading] = useState(true);
   const [mounted, setMounted] = useState(false);
   const [dataLoaded, setDataLoaded] = useState(false);
+  const [insights, setInsights] = useState<ClubInsights | null>(null);
 
   useEffect(() => {
     setMounted(true);
@@ -44,9 +60,10 @@ export default function DashboardPage() {
 
   const loadData = async () => {
     try {
-      const [membersRes, eventsRes] = await Promise.all([
+      const [membersRes, eventsRes, insightsRes] = await Promise.all([
         fetch("/api/members"),
         fetch("/api/events"),
+        fetch("/api/insights"),
       ]);
 
       if (membersRes.ok) {
@@ -57,6 +74,11 @@ export default function DashboardPage() {
       if (eventsRes.ok) {
         const data = await eventsRes.json();
         setEvents(data.events || []);
+      }
+
+      if (insightsRes.ok) {
+        const data = await insightsRes.json();
+        setInsights(data.insights || null);
       }
     } catch (error) {
       console.error("Error loading data:", error);
@@ -107,6 +129,63 @@ export default function DashboardPage() {
             activeMembers={activeMembers}
             avgTrophies={avgTrophies}
           />
+
+          {/* Club Insights */}
+          {insights && (
+            <div className="grid gap-4 grid-cols-2 lg:grid-cols-4">
+              <Card className="relative overflow-hidden">
+                <CardContent className="pt-4 pb-3">
+                  <div className="flex items-center gap-2 mb-2">
+                    <HeartPulse className="h-4 w-4 text-rose-500" />
+                    <span className="text-xs font-medium text-muted-foreground">Club Health</span>
+                  </div>
+                  <p className="text-2xl font-bold">{insights.healthScore}</p>
+                  <Progress value={insights.healthScore} className="h-1.5 mt-2" />
+                  <p className={`text-xs mt-1 font-medium ${
+                    insights.healthScore >= 80 ? "text-green-500" :
+                    insights.healthScore >= 60 ? "text-blue-500" :
+                    insights.healthScore >= 40 ? "text-yellow-500" : "text-red-500"
+                  }`}>{insights.healthLabel}</p>
+                </CardContent>
+              </Card>
+              <Card>
+                <CardContent className="pt-4 pb-3">
+                  <div className="flex items-center gap-2 mb-2">
+                    <ShieldCheck className="h-4 w-4 text-emerald-500" />
+                    <span className="text-xs font-medium text-muted-foreground">Retention</span>
+                  </div>
+                  <p className="text-2xl font-bold">{insights.retentionRate}%</p>
+                  <p className="text-xs text-muted-foreground mt-1">
+                    {insights.recentJoins} joined last 30d
+                  </p>
+                </CardContent>
+              </Card>
+              <Card>
+                <CardContent className="pt-4 pb-3">
+                  <div className="flex items-center gap-2 mb-2">
+                    <Swords className="h-4 w-4 text-blue-500" />
+                    <span className="text-xs font-medium text-muted-foreground">Avg Battles/Week</span>
+                  </div>
+                  <p className="text-2xl font-bold">{insights.avgBattlesPerMember}</p>
+                  <p className="text-xs text-muted-foreground mt-1">
+                    {insights.totalWeeklyBattles.toLocaleString()} total this week
+                  </p>
+                </CardContent>
+              </Card>
+              <Card>
+                <CardContent className="pt-4 pb-3">
+                  <div className="flex items-center gap-2 mb-2">
+                    <Clock className="h-4 w-4 text-purple-500" />
+                    <span className="text-xs font-medium text-muted-foreground">Peak Activity</span>
+                  </div>
+                  <p className="text-2xl font-bold">{insights.peakHour || "---"}</p>
+                  <p className="text-xs text-muted-foreground mt-1">
+                    {insights.weeklyActivityRate}% active this week
+                  </p>
+                </CardContent>
+              </Card>
+            </div>
+          )}
 
           {/* Charts Row */}
           <div className="grid gap-6 md:grid-cols-2">
