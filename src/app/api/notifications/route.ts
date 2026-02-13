@@ -8,6 +8,33 @@ export async function GET(request: NextRequest) {
     const unreadOnly = searchParams.get("unreadOnly") === "true";
     const limit = Math.min(parseInt(searchParams.get("limit") || "50"), 100);
 
+    // One-time backfill: if notifications table is empty, import from club_events
+    const { count: existingCount } = await supabase
+      .from("notifications")
+      .select("*", { count: "exact", head: true });
+
+    if (existingCount === 0) {
+      const { data: events } = await supabase
+        .from("club_events")
+        .select("*")
+        .order("event_time", { ascending: false })
+        .limit(100);
+
+      if (events && events.length > 0) {
+        const backfill = events.map((e: { event_type: string; player_name: string; player_tag: string; event_time: string }) => ({
+          type: e.event_type,
+          title: e.event_type === "join" ? "Member Joined" : "Member Left",
+          message: `${e.player_name} (${e.player_tag}) ${e.event_type === "join" ? "joined" : "left"} the club.`,
+          player_tag: e.player_tag,
+          player_name: e.player_name,
+          is_read: true, // mark old events as already read
+          created_at: e.event_time,
+        }));
+        await supabase.from("notifications").insert(backfill);
+        console.log(`Backfilled ${backfill.length} notifications from club_events`);
+      }
+    }
+
     let query = supabase
       .from("notifications")
       .select("*")
