@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getClub, getPlayer, setApiKey, getPlayerRankedData, getPlayerBattleLog, processBattleLog, calculateWinRateFromBattleLog, BrawlStarsBrawler } from "@/lib/brawl-api";
+import { getClub, getPlayer, setApiKey, getPlayerRankedData, getPlayerBattleLog, processBattleLog, calculateWinRateFromBattleLog, BrawlStarsBrawler, BrawlStarsBattleLog } from "@/lib/brawl-api";
 import { supabase } from "@/lib/supabase";
 
 // GET handler for Vercel Cron Jobs and GitHub Actions
@@ -190,10 +190,14 @@ async function syncClubData(providedClubTag?: string, providedApiKey?: string, i
             // Run 3 API calls in parallel (battleLog is used for both win rate and history)
             // Brawl Stars API: getPlayer, getPlayerBattleLog
             // RNT API: getPlayerRankedData
+            // battleLog can 404 for new/private accounts — catch gracefully
             const [player, rankedData, battleLog] = await Promise.all([
               getPlayer(member.tag),
               getPlayerRankedData(member.tag),
-              getPlayerBattleLog(member.tag),
+              getPlayerBattleLog(member.tag).catch((err) => {
+                console.warn(`Battle log unavailable for ${member.tag}: ${err.message}`);
+                return { items: [] } as BrawlStarsBattleLog;
+              }),
             ]);
 
             // Calculate win rate from the already-fetched battle log (no extra API call)
@@ -545,13 +549,22 @@ async function syncClubData(providedClubTag?: string, providedApiKey?: string, i
         );
       }
       
+      // Delete today's existing snapshots for these players, then insert fresh ones
+      // (avoids the functional unique constraint issue with recorded_at::date)
+      const snapshotPlayerTags = [...new Set(brawlerSnapshots.map(s => s.player_tag))];
+      const todayStr = new Date().toISOString().slice(0, 10);
       secondaryDbWrites.push(
         supabase
           .from("brawler_snapshots")
-          .upsert(brawlerSnapshots, {
-            onConflict: "player_tag,brawler_id,recorded_at",
-            ignoreDuplicates: true,
-          })
+          .delete()
+          .in("player_tag", snapshotPlayerTags)
+          .gte("recorded_at", todayStr)
+          .lt("recorded_at", todayStr + "T23:59:59.999Z")
+          .then(() => 
+            supabase
+              .from("brawler_snapshots")
+              .insert(brawlerSnapshots)
+          )
           .then(({ error }) => {
             if (error) console.error("Error storing brawler snapshots:", error);
           })
