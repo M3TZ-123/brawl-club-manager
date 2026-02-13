@@ -132,12 +132,12 @@ export default function MemberDetailPage({ params }: PageProps) {
   const getMemberBadge = () => {
     if (!memberHistory) return null;
     
-    if (memberHistory.times_joined === 1 && memberHistory.times_left === 0) {
+    if (memberHistory.times_joined <= 1 && memberHistory.times_left === 0) {
       return <Badge variant="success">⭐ Original Member</Badge>;
     } else if (memberHistory.times_joined > 1) {
-      return <Badge variant="warning">🔄 Returning Member ({memberHistory.times_joined}x)</Badge>;
+      return <Badge variant="warning">🔄 Returned ({memberHistory.times_joined}x)</Badge>;
     }
-    return <Badge>🆕 New Member</Badge>;
+    return <Badge variant="success">⭐ Original Member</Badge>;
   };
 
   const trophyChartData = activityHistory
@@ -397,7 +397,9 @@ export default function MemberDetailPage({ params }: PageProps) {
                       <div>
                         <p className="text-sm font-medium">First Joined</p>
                         <p className="text-sm text-muted-foreground">
-                          {formatDate(memberHistory.first_seen)}
+                          {memberHistory.first_seen && new Date(memberHistory.first_seen).getFullYear() > 1970
+                            ? formatDate(memberHistory.first_seen)
+                            : "Since before tracking"}
                         </p>
                       </div>
                     </div>
@@ -406,7 +408,7 @@ export default function MemberDetailPage({ params }: PageProps) {
                       <div>
                         <p className="text-sm font-medium">Times Joined</p>
                         <p className="text-sm text-muted-foreground">
-                          {memberHistory.times_joined} time(s)
+                          {memberHistory.times_joined ?? 0} time(s)
                         </p>
                       </div>
                     </div>
@@ -415,7 +417,7 @@ export default function MemberDetailPage({ params }: PageProps) {
                       <div>
                         <p className="text-sm font-medium">Times Left</p>
                         <p className="text-sm text-muted-foreground">
-                          {memberHistory.times_left} time(s)
+                          {memberHistory.times_left ?? 0} time(s)
                         </p>
                       </div>
                     </div>
