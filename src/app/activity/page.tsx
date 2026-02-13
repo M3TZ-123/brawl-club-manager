@@ -256,7 +256,10 @@ const categories = [
     icon: Swords,
     description: "Most battles played this week",
     formatValue: (m: LeaderboardMember) => m.weekly.battles.toString(),
-    subtitle: (m: LeaderboardMember) => `${m.weekly.wins}W / ${m.weekly.losses}L`,
+    subtitle: (m: LeaderboardMember) => {
+      const draws = m.weekly.battles - m.weekly.wins - m.weekly.losses;
+      return draws > 0 ? `${m.weekly.wins}W / ${m.weekly.losses}L / ${draws}D` : `${m.weekly.wins}W / ${m.weekly.losses}L`;
+    },
     columns: [
       { header: "Battles", value: (m: LeaderboardMember) => m.weekly.battles, className: "text-right" },
       { header: "Wins", value: (m: LeaderboardMember) => m.weekly.wins, className: "text-right" },
@@ -340,8 +343,9 @@ const categories = [
     description: "All-time battle statistics",
     formatValue: (m: LeaderboardMember) => formatNumber(m.allTime.battles),
     subtitle: (m: LeaderboardMember) => {
-      const wr = m.allTime.battles > 0 ? Math.round((m.allTime.wins / m.allTime.battles) * 100) : 0;
-      return `${wr}% win rate`;
+      const draws = m.allTime.battles - m.allTime.wins - m.allTime.losses;
+      const wl = draws > 0 ? `${m.allTime.wins}W / ${m.allTime.losses}L / ${draws}D` : `${m.allTime.wins}W / ${m.allTime.losses}L`;
+      return wl;
     },
     columns: [
       { header: "Battles", value: (m: LeaderboardMember) => formatNumber(m.allTime.battles), className: "text-right" },
