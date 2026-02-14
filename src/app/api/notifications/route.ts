@@ -1,6 +1,15 @@
 import { NextRequest, NextResponse } from "next/server";
 import { supabase } from "@/lib/supabase";
 
+function isMissingNotificationsTable(error: unknown): boolean {
+  if (!error || typeof error !== "object") return false;
+  const maybeError = error as { code?: string; message?: string };
+  return (
+    maybeError.code === "PGRST205" ||
+    maybeError.message?.includes("public.notifications") === true
+  );
+}
+
 // GET — Fetch notifications (with optional ?unreadOnly=true and ?limit=50)
 export async function GET(request: NextRequest) {
   try {
@@ -9,9 +18,16 @@ export async function GET(request: NextRequest) {
     const limit = Math.min(parseInt(searchParams.get("limit") || "50"), 100);
 
     // One-time backfill: if notifications table is empty, import from club_events
-    const { count: existingCount } = await supabase
+    const { count: existingCount, error: existingCountError } = await supabase
       .from("notifications")
       .select("*", { count: "exact", head: true });
+
+    if (existingCountError) {
+      if (isMissingNotificationsTable(existingCountError)) {
+        return NextResponse.json({ notifications: [], unreadCount: 0, tableMissing: true });
+      }
+      throw existingCountError;
+    }
 
     if (existingCount === 0) {
       const { data: events } = await supabase
@@ -30,7 +46,10 @@ export async function GET(request: NextRequest) {
           is_read: true, // mark old events as already read
           created_at: e.event_time,
         }));
-        await supabase.from("notifications").insert(backfill);
+        const { error: insertError } = await supabase.from("notifications").insert(backfill);
+        if (insertError && !isMissingNotificationsTable(insertError)) {
+          throw insertError;
+        }
         console.log(`Backfilled ${backfill.length} notifications from club_events`);
       }
     }
@@ -46,7 +65,12 @@ export async function GET(request: NextRequest) {
     }
 
     const { data: notifications, error } = await query;
-    if (error) throw error;
+    if (error) {
+      if (isMissingNotificationsTable(error)) {
+        return NextResponse.json({ notifications: [], unreadCount: 0, tableMissing: true });
+      }
+      throw error;
+    }
 
     // Also get unread count
     const { count, error: countError } = await supabase
@@ -54,7 +78,12 @@ export async function GET(request: NextRequest) {
       .select("*", { count: "exact", head: true })
       .eq("is_read", false);
 
-    if (countError) throw countError;
+    if (countError) {
+      if (isMissingNotificationsTable(countError)) {
+        return NextResponse.json({ notifications: notifications || [], unreadCount: 0, tableMissing: true });
+      }
+      throw countError;
+    }
 
     return NextResponse.json({
       notifications: notifications || [],
@@ -80,13 +109,23 @@ export async function PATCH(request: NextRequest) {
         .from("notifications")
         .update({ is_read: true })
         .eq("is_read", false);
-      if (error) throw error;
+      if (error) {
+        if (isMissingNotificationsTable(error)) {
+          return NextResponse.json({ success: true, tableMissing: true });
+        }
+        throw error;
+      }
     } else if (Array.isArray(body.ids) && body.ids.length > 0) {
       const { error } = await supabase
         .from("notifications")
         .update({ is_read: true })
         .in("id", body.ids);
-      if (error) throw error;
+      if (error) {
+        if (isMissingNotificationsTable(error)) {
+          return NextResponse.json({ success: true, tableMissing: true });
+        }
+        throw error;
+      }
     } else {
       return NextResponse.json(
         { error: "Provide { all: true } or { ids: [1,2,3] }" },
@@ -113,7 +152,12 @@ export async function DELETE() {
       .eq("is_read", true)
       .lt("created_at", new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString());
 
-    if (error) throw error;
+    if (error) {
+      if (isMissingNotificationsTable(error)) {
+        return NextResponse.json({ success: true, tableMissing: true });
+      }
+      throw error;
+    }
     return NextResponse.json({ success: true });
   } catch (error) {
     console.error("Error deleting notifications:", error);

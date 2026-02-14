@@ -119,7 +119,7 @@ export async function GET(request: Request) {
     // For each match, identify which team is "ours" and which is "theirs"
     const enrichedMatches = matches.map((match) => {
       let ourTeam: { tag: string; name: string; brawler: string | null; power: number | null }[] = [];
-      let theirTeam: { tag: string; name: string; brawler: string | null; power: number | null }[] = [];
+      const theirTeam: { tag: string; name: string; brawler: string | null; power: number | null }[] = [];
       const isShowdown = isShowdownMode(match.mode);
 
       if (match.teams && match.teams.length >= 2) {

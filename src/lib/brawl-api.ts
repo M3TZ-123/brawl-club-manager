@@ -746,7 +746,7 @@ export function calculateEnhancedStats(
   
   if (activeDates.has(today)) {
     currentStreak = 1;
-    let checkDate = new Date(now);
+    const checkDate = new Date(now);
     checkDate.setDate(checkDate.getDate() - 1);
     
     while (activeDates.has(checkDate.toISOString().slice(0, 10))) {
@@ -756,7 +756,7 @@ export function calculateEnhancedStats(
   } else if (activeDates.has(yesterday)) {
     // If not played today but played yesterday, count from yesterday
     currentStreak = 1;
-    let checkDate = new Date(now);
+    const checkDate = new Date(now);
     checkDate.setDate(checkDate.getDate() - 2);
     
     while (activeDates.has(checkDate.toISOString().slice(0, 10))) {

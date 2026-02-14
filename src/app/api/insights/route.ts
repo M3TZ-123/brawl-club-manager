@@ -8,17 +8,16 @@ export async function GET() {
     const prevWeekStart = new Date(now.getTime() - 14 * 24 * 60 * 60 * 1000);
     const weekAgoStr = sevenDaysAgo.toISOString().split("T")[0];
     const prevWeekStr = prevWeekStart.toISOString().split("T")[0];
-    const fortyEightHoursAgo = new Date(now.getTime() - 48 * 60 * 60 * 1000).toISOString();
-
     // Parallel data fetches
-    const [membersRes, thisWeekStatsRes, prevWeekStatsRes, recentBattlesRes] = await Promise.all([
+    const [currentMembersRes, membersRes, thisWeekStatsRes, prevWeekStatsRes] = await Promise.all([
+      supabase.from("member_history").select("player_tag").eq("is_current_member", true),
       supabase.from("members").select("player_tag, player_name, trophies, is_active, last_updated"),
       supabase.from("daily_stats").select("player_tag, date, battles, wins, trophies_gained, trophies_lost").gte("date", weekAgoStr),
       supabase.from("daily_stats").select("player_tag, battles").gte("date", prevWeekStr).lt("date", weekAgoStr),
-      supabase.from("battle_history").select("player_tag, battle_time").gte("battle_time", fortyEightHoursAgo),
     ]);
 
-    const members = membersRes.data || [];
+    const currentTags = new Set((currentMembersRes.data || []).map(h => h.player_tag));
+    const members = (membersRes.data || []).filter(m => currentTags.has(m.player_tag));
     // Build name lookup — normalize tags to handle any format differences
     const nameMap = new Map<string, string>();
     for (const m of members) {
@@ -28,7 +27,6 @@ export async function GET() {
     }
     const thisWeekStats = thisWeekStatsRes.data || [];
     const prevWeekStats = prevWeekStatsRes.data || [];
-    const recentBattles = recentBattlesRes.data || [];
 
     // ============================
     // 1. WIN RATE — Club win percentage this week
@@ -40,13 +38,40 @@ export async function GET() {
       : 0;
 
     // ============================
-    // 2. KICK LIST — Members with 0 battles in last 48h
+    // 2. KICK LIST — Inactive members (is_active = false, consistent with Active Players stat)
     // ============================
-    const recentActiveTags = new Set(recentBattles.map((b) => b.player_tag));
+    const inactiveTags = members.filter((m) => !m.is_active).map((m) => m.player_tag);
+
+    // Get last battle date from daily_stats (actual activity, not sync timestamp)
+    const lastBattleDateMap = new Map<string, string>();
+    if (inactiveTags.length > 0) {
+      const { data: lastBattles } = await supabase
+        .from("daily_stats")
+        .select("player_tag, date")
+        .in("player_tag", inactiveTags)
+        .gt("battles", 0)
+        .order("date", { ascending: false });
+
+      for (const row of lastBattles || []) {
+        if (!lastBattleDateMap.has(row.player_tag)) {
+          lastBattleDateMap.set(row.player_tag, row.date);
+        }
+      }
+    }
+
     const kickCandidates = members
-      .filter((m) => !recentActiveTags.has(m.player_tag))
-      .map((m) => ({ tag: m.player_tag, name: m.player_name }))
-      .sort((a, b) => a.name.localeCompare(b.name));
+      .filter((m) => !m.is_active)
+      .map((m) => ({
+        tag: m.player_tag,
+        name: m.player_name,
+        lastActive: lastBattleDateMap.get(m.player_tag) || null,
+      }))
+      .sort((a, b) => {
+        // Sort by longest inactive first (null = never played = first)
+        const aTime = a.lastActive ? new Date(a.lastActive).getTime() : 0;
+        const bTime = b.lastActive ? new Date(b.lastActive).getTime() : 0;
+        return aTime - bTime;
+      });
 
     // ============================
     // 3. ACTIVITY TREND — This week vs last week total battles

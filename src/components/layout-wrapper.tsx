@@ -254,12 +254,31 @@ function SimpleHeader() {
   const [unreadCount, setUnreadCount] = useState(0);
   const panelRef = useRef<HTMLDivElement>(null);
 
+  const loadNotifications = useCallback(async () => {
+    try {
+      const response = await fetch("/api/notifications?limit=5");
+      if (response.ok) {
+        const data = await response.json();
+        setNotifications(data.notifications || []);
+        setUnreadCount(data.unreadCount || 0);
+      }
+    } catch (error) {
+      console.error("Error loading notifications:", error);
+    }
+  }, []);
+
   useEffect(() => {
-    loadNotifications();
     const handleUpdate = () => loadNotifications();
     window.addEventListener("club-data-updated", handleUpdate);
     return () => window.removeEventListener("club-data-updated", handleUpdate);
-  }, []);
+  }, [loadNotifications]);
+
+  useEffect(() => {
+    const timer = window.setTimeout(() => {
+      loadNotifications();
+    }, 0);
+    return () => window.clearTimeout(timer);
+  }, [loadNotifications]);
 
   // Close panel on click outside
   useEffect(() => {
@@ -273,19 +292,6 @@ function SimpleHeader() {
       return () => document.removeEventListener("mousedown", handleClickOutside);
     }
   }, [showNotifications]);
-
-  const loadNotifications = async () => {
-    try {
-      const response = await fetch("/api/notifications?limit=5");
-      if (response.ok) {
-        const data = await response.json();
-        setNotifications(data.notifications || []);
-        setUnreadCount(data.unreadCount || 0);
-      }
-    } catch (error) {
-      console.error("Error loading notifications:", error);
-    }
-  };
 
   const markAsRead = async (id: number) => {
     try {

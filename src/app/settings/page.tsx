@@ -7,7 +7,6 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/com
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
-import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { 
   Save, 
@@ -43,11 +42,11 @@ export default function SettingsPage() {
     hasLoadedSettings,
   } = useAppStore();
 
-  const [localClubTag, setLocalClubTag] = useState(clubTag);
-  const [localApiKey, setLocalApiKey] = useState(apiKey);
-  const [localDiscordWebhook, setLocalDiscordWebhook] = useState(discordWebhook);
-  const [localInactivityThreshold, setLocalInactivityThreshold] = useState(inactivityThreshold);
-  const [localRefreshInterval, setLocalRefreshInterval] = useState(refreshInterval);
+  const [localClubTag, setLocalClubTag] = useState<string | null>(null);
+  const [localApiKey, setLocalApiKey] = useState<string | null>(null);
+  const [localDiscordWebhook, setLocalDiscordWebhook] = useState<string | null>(null);
+  const [localInactivityThreshold, setLocalInactivityThreshold] = useState<number | null>(null);
+  const [localRefreshInterval, setLocalRefreshInterval] = useState<number | null>(null);
   const [generalStatus, setGeneralStatus] = useState<"idle" | "saving" | "saved">("idle");
   const [activityStatus, setActivityStatus] = useState<"idle" | "saving" | "saved">("idle");
   const [notifStatus, setNotifStatus] = useState<"idle" | "saving" | "saved">("idle");
@@ -58,18 +57,16 @@ export default function SettingsPage() {
     }
   }, [hasLoadedSettings, loadSettingsFromDB]);
 
-  useEffect(() => {
-    setLocalClubTag(clubTag);
-    setLocalApiKey(apiKey);
-    setLocalDiscordWebhook(discordWebhook);
-    setLocalInactivityThreshold(inactivityThreshold);
-    setLocalRefreshInterval(refreshInterval);
-  }, [clubTag, apiKey, discordWebhook, inactivityThreshold, refreshInterval]);
+  const effectiveClubTag = localClubTag ?? clubTag;
+  const effectiveApiKey = localApiKey ?? apiKey;
+  const effectiveDiscordWebhook = localDiscordWebhook ?? discordWebhook;
+  const effectiveInactivityThreshold = localInactivityThreshold ?? inactivityThreshold;
+  const effectiveRefreshInterval = localRefreshInterval ?? refreshInterval;
 
   const handleSaveGeneral = async () => {
     setGeneralStatus("saving");
-    setClubTag(localClubTag);
-    setApiKey(localApiKey);
+    setClubTag(effectiveClubTag);
+    setApiKey(effectiveApiKey);
     await saveSettingsToDB();
     setGeneralStatus("saved");
     setTimeout(() => setGeneralStatus("idle"), 2000);
@@ -77,7 +74,7 @@ export default function SettingsPage() {
 
   const handleSaveNotifications = async () => {
     setNotifStatus("saving");
-    setDiscordWebhook(localDiscordWebhook);
+    setDiscordWebhook(effectiveDiscordWebhook);
     await saveSettingsToDB();
     setNotifStatus("saved");
     setTimeout(() => setNotifStatus("idle"), 2000);
@@ -85,8 +82,8 @@ export default function SettingsPage() {
 
   const handleSaveActivity = async () => {
     setActivityStatus("saving");
-    setInactivityThreshold(localInactivityThreshold);
-    setRefreshInterval(localRefreshInterval);
+    setInactivityThreshold(effectiveInactivityThreshold);
+    setRefreshInterval(effectiveRefreshInterval);
     await saveSettingsToDB();
     setActivityStatus("saved");
     setTimeout(() => setActivityStatus("idle"), 2000);
@@ -157,7 +154,7 @@ export default function SettingsPage() {
                       <label className="text-sm font-medium">Club Tag</label>
                       <Input
                         placeholder="#ABC123"
-                        value={localClubTag}
+                        value={effectiveClubTag}
                         onChange={(e) => setLocalClubTag(e.target.value.toUpperCase())}
                       />
                       <p className="text-xs text-muted-foreground">
@@ -170,7 +167,7 @@ export default function SettingsPage() {
                       <Input
                         type="password"
                         placeholder="Enter your API key"
-                        value={localApiKey}
+                        value={effectiveApiKey}
                         onChange={(e) => setLocalApiKey(e.target.value)}
                       />
                       <p className="text-xs text-muted-foreground">
@@ -227,7 +224,7 @@ export default function SettingsPage() {
                         type="number"
                         min="1"
                         max="168"
-                        value={localInactivityThreshold}
+                        value={effectiveInactivityThreshold}
                         onChange={(e) =>
                           setLocalInactivityThreshold(parseInt(e.target.value) || 24)
                         }
@@ -246,7 +243,7 @@ export default function SettingsPage() {
                         min="60"
                         max="1440"
                         step="60"
-                        value={localRefreshInterval}
+                        value={effectiveRefreshInterval}
                         onChange={(e) =>
                           setLocalRefreshInterval(parseInt(e.target.value) || 240)
                         }
@@ -315,7 +312,7 @@ export default function SettingsPage() {
                       <Input
                         type="url"
                         placeholder="https://discord.com/api/webhooks/..."
-                        value={localDiscordWebhook}
+                        value={effectiveDiscordWebhook}
                         onChange={(e) => setLocalDiscordWebhook(e.target.value)}
                       />
                       <p className="text-xs text-muted-foreground">

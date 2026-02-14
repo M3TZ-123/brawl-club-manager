@@ -10,7 +10,6 @@ import { MembersTable } from "@/components/members-table";
 import { ActivityTimeline } from "@/components/activity-timeline";
 import { ActivityPieChart, MemberBarChart } from "@/components/charts";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Progress } from "@/components/ui/progress";
 import { Member, ClubEvent } from "@/types/database";
 import { Trophy, UserX, TrendingUp, TrendingDown, Minus, Crown, Target } from "lucide-react";
 
@@ -18,7 +17,7 @@ interface ClubInsights {
   winRate: number;
   totalWins: number;
   totalBattlesThisWeek: number;
-  kickList: { tag: string; name: string }[];
+  kickList: { tag: string; name: string; lastActive: string | null }[];
   kickCount: number;
   thisWeekTotal: number;
   prevWeekTotal: number;
@@ -133,83 +132,134 @@ export default function DashboardPage() {
 
           {/* Club Insights */}
           {insights && (
-            <div className="grid gap-4 grid-cols-2 lg:grid-cols-4">
-              {/* Win Rate */}
-              <Card>
-                <CardContent className="pt-4 pb-3">
-                  <div className="flex items-center gap-2 mb-2">
-                    <Target className="h-4 w-4 text-blue-500" />
-                    <span className="text-xs font-medium text-muted-foreground">Win Rate</span>
-                  </div>
-                  <p className={`text-2xl font-bold ${
-                    insights.winRate >= 55 ? "text-green-500" :
-                    insights.winRate >= 45 ? "text-foreground" : "text-red-500"
-                  }`}>{insights.winRate}%</p>
-                  <p className="text-xs text-muted-foreground mt-1">
-                    {insights.totalWins}W this week
-                  </p>
-                </CardContent>
-              </Card>
-
-              {/* Kick List */}
-              <Card>
-                <CardContent className="pt-4 pb-3">
-                  <div className="flex items-center gap-2 mb-2">
-                    <UserX className="h-4 w-4 text-red-500" />
-                    <span className="text-xs font-medium text-muted-foreground">Kick List</span>
-                  </div>
-                  <p className="text-2xl font-bold">{insights.kickCount}</p>
-                  {insights.kickCount > 0 ? (
-                    <p className="text-xs text-muted-foreground mt-1 truncate" title={insights.kickList.map(k => k.name).join(", ")}>
-                      {insights.kickList.slice(0, 3).map(k => k.name).join(", ")}{insights.kickCount > 3 ? ` +${insights.kickCount - 3}` : ""}
+            <>
+              <div className="grid gap-4 grid-cols-2 lg:grid-cols-4">
+                {/* Win Rate */}
+                <Card>
+                  <CardContent className="pt-4 pb-3">
+                    <div className="flex items-center gap-2 mb-2">
+                      <Target className="h-4 w-4 text-blue-500" />
+                      <span className="text-xs font-medium text-muted-foreground">Win Rate</span>
+                    </div>
+                    <p className={`text-2xl font-bold ${
+                      insights.winRate >= 55 ? "text-green-500" :
+                      insights.winRate >= 45 ? "text-foreground" : "text-red-500"
+                    }`}>{insights.winRate}%</p>
+                    <p className="text-xs text-muted-foreground mt-1">
+                      {insights.totalWins}W this week
                     </p>
-                  ) : (
-                    <p className="text-xs text-green-500 mt-1 font-medium">All members active</p>
-                  )}
-                </CardContent>
-              </Card>
+                  </CardContent>
+                </Card>
 
-              {/* Activity Trend */}
-              <Card>
-                <CardContent className="pt-4 pb-3">
-                  <div className="flex items-center gap-2 mb-2">
-                    {insights.trendDirection === "up" ? (
-                      <TrendingUp className="h-4 w-4 text-green-500" />
-                    ) : insights.trendDirection === "down" ? (
-                      <TrendingDown className="h-4 w-4 text-red-500" />
+                {/* Kick List */}
+                <Card>
+                  <CardContent className="pt-4 pb-3">
+                    <div className="flex items-center gap-2 mb-2">
+                      <UserX className="h-4 w-4 text-red-500" />
+                      <span className="text-xs font-medium text-muted-foreground">Kick List</span>
+                    </div>
+                    <p className="text-2xl font-bold">{insights.kickCount}</p>
+                    {insights.kickCount > 0 ? (
+                      <p className="text-xs text-muted-foreground mt-1">
+                        Inactive members
+                      </p>
                     ) : (
-                      <Minus className="h-4 w-4 text-yellow-500" />
+                      <p className="text-xs text-green-500 mt-1 font-medium">All members active</p>
                     )}
-                    <span className="text-xs font-medium text-muted-foreground">Activity Trend</span>
-                  </div>
-                  <p className={`text-2xl font-bold ${
-                    insights.trendDirection === "up" ? "text-green-500" :
-                    insights.trendDirection === "down" ? "text-red-500" : ""
-                  }`}>
-                    {insights.trendDiff > 0 ? "+" : ""}{insights.trendDiff}%
-                  </p>
-                  <p className="text-xs text-muted-foreground mt-1">
-                    {insights.thisWeekTotal} vs {insights.prevWeekTotal} last week
-                  </p>
-                </CardContent>
-              </Card>
+                  </CardContent>
+                </Card>
 
-              {/* MVP of the Week */}
-              <Card>
-                <CardContent className="pt-4 pb-3">
-                  <div className="flex items-center gap-2 mb-2">
-                    <Crown className="h-4 w-4 text-yellow-500" />
-                    <span className="text-xs font-medium text-muted-foreground">MVP of the Week</span>
-                  </div>
-                  <p className="text-lg font-bold truncate">{insights.mvpName || "---"}</p>
-                  {insights.mvpTrophies > 0 && (
-                    <p className="text-xs text-green-500 mt-1 font-medium flex items-center gap-1">
-                      <Trophy className="h-3 w-3" /> +{insights.mvpTrophies.toLocaleString()} trophies
+                {/* Activity Trend */}
+                <Card>
+                  <CardContent className="pt-4 pb-3">
+                    <div className="flex items-center gap-2 mb-2">
+                      {insights.trendDirection === "up" ? (
+                        <TrendingUp className="h-4 w-4 text-green-500" />
+                      ) : insights.trendDirection === "down" ? (
+                        <TrendingDown className="h-4 w-4 text-red-500" />
+                      ) : (
+                        <Minus className="h-4 w-4 text-yellow-500" />
+                      )}
+                      <span className="text-xs font-medium text-muted-foreground">Activity Trend</span>
+                    </div>
+                    <p className={`text-2xl font-bold ${
+                      insights.trendDirection === "up" ? "text-green-500" :
+                      insights.trendDirection === "down" ? "text-red-500" : ""
+                    }`}>
+                      {insights.trendDiff > 0 ? "+" : ""}{insights.trendDiff}%
                     </p>
-                  )}
-                </CardContent>
-              </Card>
-            </div>
+                    <p className="text-xs text-muted-foreground mt-1">
+                      {insights.thisWeekTotal} vs {insights.prevWeekTotal} last week
+                    </p>
+                  </CardContent>
+                </Card>
+
+                {/* MVP of the Week */}
+                <Card>
+                  <CardContent className="pt-4 pb-3">
+                    <div className="flex items-center gap-2 mb-2">
+                      <Crown className="h-4 w-4 text-yellow-500" />
+                      <span className="text-xs font-medium text-muted-foreground">MVP of the Week</span>
+                    </div>
+                    <p className="text-lg font-bold truncate">{insights.mvpName || "---"}</p>
+                    {insights.mvpTrophies > 0 && (
+                      <p className="text-xs text-green-500 mt-1 font-medium flex items-center gap-1">
+                        <Trophy className="h-3 w-3" /> +{insights.mvpTrophies.toLocaleString()} trophies
+                      </p>
+                    )}
+                  </CardContent>
+                </Card>
+              </div>
+
+              {/* Kick List Details */}
+              {insights.kickCount > 0 && (
+                <Card>
+                  <CardContent className="pt-4 pb-4">
+                    <div className="flex items-center gap-2 mb-4">
+                      <UserX className="h-4 w-4 text-red-500" />
+                      <span className="text-sm font-medium">Inactive Members</span>
+                      <span className="text-xs text-muted-foreground ml-auto">Last Active</span>
+                    </div>
+                    <div className="space-y-0 divide-y divide-border/50">
+                      {insights.kickList.map((k) => {
+                        let inactiveLabel = "No records";
+                        let severity: "high" | "medium" | "low" = "low";
+                        if (k.lastActive) {
+                          const diff = Date.now() - new Date(k.lastActive).getTime();
+                          const days = Math.floor(diff / (1000 * 60 * 60 * 24));
+                          if (days === 0) inactiveLabel = "Today";
+                          else if (days === 1) inactiveLabel = "1 day ago";
+                          else if (days < 7) inactiveLabel = `${days} days ago`;
+                          else if (days < 14) inactiveLabel = "1 week ago";
+                          else if (days < 30) inactiveLabel = `${Math.floor(days / 7)} weeks ago`;
+                          else inactiveLabel = `${Math.floor(days / 30)}+ months ago`;
+                          
+                          if (days >= 14) severity = "high";
+                          else if (days >= 7) severity = "medium";
+                        } else {
+                          severity = "high";
+                        }
+                        return (
+                          <div key={k.tag} className="flex items-center justify-between py-2.5 first:pt-0 last:pb-0">
+                            <div className="flex items-center gap-2.5 min-w-0">
+                              <div className={`h-2 w-2 rounded-full shrink-0 ${
+                                severity === "high" ? "bg-red-500" :
+                                severity === "medium" ? "bg-orange-500" : "bg-yellow-500"
+                              }`} />
+                              <span className="text-sm font-medium truncate">{k.name}</span>
+                            </div>
+                            <span className={`text-xs whitespace-nowrap ml-3 ${
+                              severity === "high" ? "text-red-400" :
+                              severity === "medium" ? "text-orange-400" : "text-muted-foreground"
+                            }`}>{inactiveLabel}</span>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </CardContent>
+                </Card>
+              )}
+            </>
           )}
 
           {/* Charts Row */}
