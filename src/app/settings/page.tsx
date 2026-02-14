@@ -48,7 +48,9 @@ export default function SettingsPage() {
   const [localDiscordWebhook, setLocalDiscordWebhook] = useState(discordWebhook);
   const [localInactivityThreshold, setLocalInactivityThreshold] = useState(inactivityThreshold);
   const [localRefreshInterval, setLocalRefreshInterval] = useState(refreshInterval);
-  const [saveStatus, setSaveStatus] = useState<"idle" | "saving" | "saved">("idle");
+  const [generalStatus, setGeneralStatus] = useState<"idle" | "saving" | "saved">("idle");
+  const [activityStatus, setActivityStatus] = useState<"idle" | "saving" | "saved">("idle");
+  const [notifStatus, setNotifStatus] = useState<"idle" | "saving" | "saved">("idle");
 
   useEffect(() => {
     if (!hasLoadedSettings) {
@@ -65,29 +67,29 @@ export default function SettingsPage() {
   }, [clubTag, apiKey, discordWebhook, inactivityThreshold, refreshInterval]);
 
   const handleSaveGeneral = async () => {
-    setSaveStatus("saving");
+    setGeneralStatus("saving");
     setClubTag(localClubTag);
     setApiKey(localApiKey);
     await saveSettingsToDB();
-    setSaveStatus("saved");
-    setTimeout(() => setSaveStatus("idle"), 2000);
+    setGeneralStatus("saved");
+    setTimeout(() => setGeneralStatus("idle"), 2000);
   };
 
   const handleSaveNotifications = async () => {
-    setSaveStatus("saving");
+    setNotifStatus("saving");
     setDiscordWebhook(localDiscordWebhook);
     await saveSettingsToDB();
-    setSaveStatus("saved");
-    setTimeout(() => setSaveStatus("idle"), 2000);
+    setNotifStatus("saved");
+    setTimeout(() => setNotifStatus("idle"), 2000);
   };
 
   const handleSaveActivity = async () => {
-    setSaveStatus("saving");
+    setActivityStatus("saving");
     setInactivityThreshold(localInactivityThreshold);
     setRefreshInterval(localRefreshInterval);
     await saveSettingsToDB();
-    setSaveStatus("saved");
-    setTimeout(() => setSaveStatus("idle"), 2000);
+    setActivityStatus("saved");
+    setTimeout(() => setActivityStatus("idle"), 2000);
   };
 
   const handleClearData = () => {
@@ -185,10 +187,10 @@ export default function SettingsPage() {
                       </p>
                     </div>
 
-                    <Button onClick={handleSaveGeneral} disabled={saveStatus === "saving"}>
-                      {saveStatus === "saving" ? (
+                    <Button onClick={handleSaveGeneral} disabled={generalStatus === "saving"}>
+                      {generalStatus === "saving" ? (
                         "Saving..."
-                      ) : saveStatus === "saved" ? (
+                      ) : generalStatus === "saved" ? (
                         <>
                           <CheckCircle className="h-4 w-4 mr-2" />
                           Saved!
@@ -263,10 +265,10 @@ export default function SettingsPage() {
                       </ul>
                     </div>
 
-                    <Button onClick={handleSaveActivity} disabled={saveStatus === "saving"}>
-                      {saveStatus === "saving" ? (
+                    <Button onClick={handleSaveActivity} disabled={activityStatus === "saving"}>
+                      {activityStatus === "saving" ? (
                         "Saving..."
-                      ) : saveStatus === "saved" ? (
+                      ) : activityStatus === "saved" ? (
                         <>
                           <CheckCircle className="h-4 w-4 mr-2" />
                           Saved!
@@ -330,10 +332,10 @@ export default function SettingsPage() {
                       </ul>
                     </div>
 
-                    <Button onClick={handleSaveNotifications} disabled={saveStatus === "saving"}>
-                      {saveStatus === "saving" ? (
+                    <Button onClick={handleSaveNotifications} disabled={notifStatus === "saving"}>
+                      {notifStatus === "saving" ? (
                         "Saving..."
-                      ) : saveStatus === "saved" ? (
+                      ) : notifStatus === "saved" ? (
                         <>
                           <CheckCircle className="h-4 w-4 mr-2" />
                           Saved!

@@ -18,7 +18,6 @@ import {
   Search,
   Radio,
   X,
-  CalendarDays,
 } from "lucide-react";
 
 interface TeamPlayer {
@@ -515,15 +514,30 @@ export default function BattleFeedPage() {
                 )}
               </div>
             </div>
-            <div className="relative">
-              <CalendarDays className="absolute left-2 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground pointer-events-none" />
-              <input
-                type="date"
-                value={filterDate}
-                onChange={(e) => setFilterDate(e.target.value)}
-                className="h-9 w-36 rounded-md border border-border bg-background pl-7 pr-2 text-sm"
-              />
-            </div>
+            <select
+              value={filterDate}
+              onChange={(e) => setFilterDate(e.target.value)}
+              className="h-9 rounded-md border border-border bg-background px-2 text-sm"
+            >
+              <option value="">All Days</option>
+              {(() => {
+                const days: { label: string; value: string }[] = [];
+                const now = new Date();
+                for (let i = 0; i < 14; i++) {
+                  const d = new Date(now);
+                  d.setDate(d.getDate() - i);
+                  const value = d.toISOString().slice(0, 10);
+                  let label: string;
+                  if (i === 0) label = "Today";
+                  else if (i === 1) label = "Yesterday";
+                  else label = d.toLocaleDateString("en-US", { month: "short", day: "numeric" });
+                  days.push({ label, value });
+                }
+                return days.map((d) => (
+                  <option key={d.value} value={d.value}>{d.label}</option>
+                ));
+              })()}
+            </select>
             {(filterMode || filterPlayer || filterDate) && (
               <Button variant="ghost" size="sm" className="h-9 px-2" onClick={() => { setFilterMode(""); setFilterPlayer(""); setFilterDate(""); setMemberSearch(""); }}>
                 <X className="h-3.5 w-3.5" />
