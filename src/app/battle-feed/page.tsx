@@ -299,7 +299,7 @@ function MatchCard({ match, clubTags, clockDelta }: { match: Match; clubTags: Se
                 ))
               ) : (
                 <p className="text-xs text-muted-foreground italic py-2">
-                  Opponent data available after next sync
+                  No opponent data available
                 </p>
               )}
             </div>

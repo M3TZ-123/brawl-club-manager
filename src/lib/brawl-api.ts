@@ -112,12 +112,18 @@ export interface BrawlStarsBattle {
     players?: {
       tag: string;
       name: string;
-      brawler: {
+      brawler?: {
         id: number;
         name: string;
         power: number;
         trophies: number;
       };
+      brawlers?: {
+        id: number;
+        name: string;
+        power: number;
+        trophies: number;
+      }[];
     }[];
   };
 }
@@ -607,12 +613,14 @@ export function processBattleLog(playerTag: string, battleLog: BrawlStarsBattleL
         }
       }
     } else if (battleData.players) {
-      // Showdown: players is a flat array (solo) or array of arrays (duo)
+      // Showdown / Duels: players is a flat array
+      // Duels uses brawlers[] (plural), Showdown uses brawler (singular)
       for (const player of battleData.players) {
         if (player.tag === playerTag || player.tag === playerTag.replace('#', '%23')) {
-          brawlerName = player.brawler?.name || null;
-          brawlerPower = player.brawler?.power || null;
-          brawlerTrophies = player.brawler?.trophies || null;
+          const b = player.brawler || player.brawlers?.[0];
+          brawlerName = b?.name || null;
+          brawlerPower = b?.power || null;
+          brawlerTrophies = b?.trophies || null;
           break;
         }
       }
@@ -634,13 +642,14 @@ export function processBattleLog(playerTag: string, battleLog: BrawlStarsBattleL
       } catch { /* ignore serialization errors */ }
     } else if (battleData.players) {
       // Showdown: serialize each player as a single-member team
+      // Duels: uses brawlers[] (plural), fall back to first brawler
       try {
         teamsJson = JSON.stringify(battleData.players.map(p => [{
           tag: p.tag,
           name: p.name,
-          brawler: p.brawler?.name || null,
-          power: p.brawler?.power || null,
-          trophies: p.brawler?.trophies || null,
+          brawler: p.brawler?.name || p.brawlers?.[0]?.name || null,
+          power: p.brawler?.power || p.brawlers?.[0]?.power || null,
+          trophies: p.brawler?.trophies || p.brawlers?.[0]?.trophies || null,
         }]));
       } catch { /* ignore serialization errors */ }
     }
