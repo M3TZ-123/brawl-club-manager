@@ -64,7 +64,11 @@ export function formatRelativeTime(date: Date | string): string {
   const now = new Date();
   const then = new Date(date);
   const diffMs = now.getTime() - then.getTime();
-  const diffSec = Math.floor(diffMs / 1000);
+
+  // Handle future timestamps (likely Brawl Stars API timezone offset)
+  // Use absolute diff so times slightly in the future still show as relative
+  const absDiffMs = Math.abs(diffMs);
+  const diffSec = Math.floor(absDiffMs / 1000);
   const diffMin = Math.floor(diffSec / 60);
   const diffHour = Math.floor(diffMin / 60);
   const diffDay = Math.floor(diffHour / 24);

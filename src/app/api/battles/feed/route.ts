@@ -153,6 +153,20 @@ export async function GET(request: Request) {
       };
     });
 
+    // Fix timezone offset for existing data: if battles appear in the future, adjust them
+    const serverNow = Date.now();
+    const matchBattleTimes = enrichedMatches.map(m => new Date(m.battle_time).getTime());
+    const maxMatchTime = matchBattleTimes.length > 0 ? Math.max(...matchBattleTimes) : 0;
+    
+    if (maxMatchTime > serverNow + 60000) { // More than 1 minute in the future
+      const rawOffsetMs = maxMatchTime - serverNow;
+      const offsetHours = Math.ceil(rawOffsetMs / 3600000);
+      const offsetMs = offsetHours * 3600000;
+      for (const match of enrichedMatches) {
+        match.battle_time = new Date(new Date(match.battle_time).getTime() - offsetMs).toISOString();
+      }
+    }
+
     // Get distinct modes for filter
     const { data: modes } = await supabase
       .from("battle_history")
@@ -172,6 +186,7 @@ export async function GET(request: Request) {
       total: count || 0,
       modes: uniqueModes,
       members: memberList,
+      serverTime: new Date().toISOString(),
     });
   } catch (error) {
     console.error("Error fetching battle feed:", error);

@@ -87,19 +87,32 @@ function getModeIcon(mode: string | null): string {
   return MODE_ICONS[mode] || "\u2694\uFE0F";
 }
 
-function timeAgo(dateStr: string): string {
-  const now = new Date();
-  const date = new Date(dateStr);
-  const seconds = Math.floor((now.getTime() - date.getTime()) / 1000);
-  if (seconds < 0) return "just now";
-  if (seconds < 60) return `${seconds}s ago`;
+// Compute time-ago using a server-relative clock to avoid client timezone/clock issues.
+// clockDelta = clientNow - serverNow at the moment the API responded.
+// adjustedNow = Date.now() - clockDelta ≈ current server time.
+function timeAgo(dateStr: string, clockDelta = 0): string {
+  const now = Date.now() - clockDelta;
+  const date = new Date(dateStr).getTime();
+  const seconds = Math.floor((now - date) / 1000);
+  // Handle small future values (clock skew / remaining offset)
+  if (seconds < 0) {
+    if (seconds > -120) return "just now";
+    // Larger future gap: show absolute value as approximate relative time
+    const absSec = Math.abs(seconds);
+    const m = Math.floor(absSec / 60);
+    if (m < 60) return `${m}m ago`;
+    const h = Math.floor(m / 60);
+    if (h < 24) return `${h}h ago`;
+    return new Date(dateStr).toLocaleDateString();
+  }
+  if (seconds < 60) return "just now";
   const minutes = Math.floor(seconds / 60);
   if (minutes < 60) return `${minutes}m ago`;
   const hours = Math.floor(minutes / 60);
   if (hours < 24) return `${hours}h ago`;
   const days = Math.floor(hours / 24);
   if (days < 7) return `${days}d ago`;
-  return date.toLocaleDateString();
+  return new Date(dateStr).toLocaleDateString();
 }
 
 function PlayerRow({ tag, name, brawler, power, isClub, trophyChange, isStar, result }: {
@@ -146,7 +159,7 @@ function PlayerRow({ tag, name, brawler, power, isClub, trophyChange, isStar, re
   return <div className="px-1 -mx-1">{inner}</div>;
 }
 
-function MatchCard({ match, clubTags }: { match: Match; clubTags: Set<string> }) {
+function MatchCard({ match, clubTags, clockDelta }: { match: Match; clubTags: Set<string>; clockDelta: number }) {
   const mainResult = match.clubPlayers[0]?.result || "unknown";
   const style = RESULT_STYLES[mainResult] || RESULT_STYLES.draw;
   const totalTrophyChange = match.clubPlayers.reduce((s, p) => s + p.trophy_change, 0);
@@ -171,7 +184,7 @@ function MatchCard({ match, clubTags }: { match: Match; clubTags: Set<string> })
               {totalTrophyChange > 0 ? `+${totalTrophyChange}` : totalTrophyChange}
             </span>
           )}
-          <span className="text-xs text-muted-foreground">{timeAgo(match.battle_time)}</span>
+          <span className="text-xs text-muted-foreground">{timeAgo(match.battle_time, clockDelta)}</span>
         </div>
       </div>
 
@@ -262,6 +275,7 @@ export default function BattleFeedPage() {
   const [showMemberDropdown, setShowMemberDropdown] = useState(false);
   const [rawOffset, setRawOffset] = useState(0);
   const [isLive, setIsLive] = useState(false);
+  const [clockDelta, setClockDelta] = useState(0);
   const memberDropdownRef = useRef<HTMLDivElement>(null);
 
   const PAGE_SIZE = 50;
@@ -286,6 +300,12 @@ export default function BattleFeedPage() {
 
         if (feedRes.ok) {
           const data = await feedRes.json();
+          // Compute clock delta: difference between client clock and server clock.
+          // This corrects any timezone or clock discrepancy.
+          if (data.serverTime) {
+            const delta = Date.now() - new Date(data.serverTime).getTime();
+            setClockDelta(delta);
+          }
           if (append) {
             setMatches((prev) => [...prev, ...(data.matches || [])]);
           } else {
@@ -471,6 +491,7 @@ export default function BattleFeedPage() {
                 key={`${match.battle_time}-${match.mode}-${i}`}
                 match={match}
                 clubTags={clubTags}
+                clockDelta={clockDelta}
               />
             ))}
 

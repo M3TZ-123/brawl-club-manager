@@ -299,6 +299,7 @@ async function syncClubData(providedClubTag?: string, providedApiKey?: string, i
           allBattles.push(...processedBattles);
         }
 
+
         // Collect brawler snapshots
         for (const brawler of player.brawlers) {
           brawlerSnapshots.push({
@@ -425,6 +426,24 @@ async function syncClubData(providedClubTag?: string, providedApiKey?: string, i
     // Store battle history and daily stats (can run in parallel with snapshots)
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const secondaryDbWrites: any[] = [];
+
+    // Fix timezone offset: Brawl Stars API battleTime may not be UTC despite Z suffix.
+    // If the most recent battle appears to be in the future, detect and correct the offset.
+    if (allBattles.length > 0) {
+      const serverNow = Date.now();
+      const battleTimestamps = allBattles.map(b => new Date(b.battle_time).getTime());
+      const maxBattleTime = Math.max(...battleTimestamps);
+      
+      if (maxBattleTime > serverNow + 60000) { // More than 1 minute in the future
+        const rawOffsetMs = maxBattleTime - serverNow;
+        const offsetHours = Math.ceil(rawOffsetMs / 3600000);
+        const offsetMs = offsetHours * 3600000;
+        console.log(`Detected battle time timezone offset: +${offsetHours}h, adjusting ${allBattles.length} battles`);
+        for (const battle of allBattles) {
+          battle.battle_time = new Date(new Date(battle.battle_time).getTime() - offsetMs).toISOString();
+        }
+      }
+    }
 
     if (allBattles.length > 0) {
       // Insert battles, ignore duplicates
