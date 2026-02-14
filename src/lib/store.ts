@@ -116,6 +116,7 @@ export const useAppStore = create<AppState>()(
               refresh_interval: String(state.refreshInterval),
               notifications_enabled: String(state.notificationsEnabled),
               discord_webhook: state.discordWebhook,
+              last_sync_time: state.lastSyncTime || "",
             }),
           });
         } catch (error) {
@@ -128,6 +129,7 @@ export const useAppStore = create<AppState>()(
       partialize: (state) => ({
         theme: state.theme,
         sidebarOpen: state.sidebarOpen,
+        lastSyncTime: state.lastSyncTime,
       }),
     }
   )

@@ -55,6 +55,11 @@ function SimpleSidebar() {
   const { isOpen, close } = useSidebarContext();
   const autoSyncIntervalRef = useRef<NodeJS.Timeout | null>(null);
 
+  // Ensure settings (including lastSyncTime) are loaded from DB on any page
+  useEffect(() => {
+    useAppStore.getState().loadSettingsFromDB();
+  }, []);
+
   const handleSync = async (isAutoSync = false) => {
     if (!clubTag || !apiKey) return;
     
@@ -72,7 +77,14 @@ function SimpleSidebar() {
           alert(`Sync failed: ${data.error}`);
         }
       } else {
-        useAppStore.getState().setLastSyncTime(new Date().toISOString());
+        const syncTime = new Date().toISOString();
+        useAppStore.getState().setLastSyncTime(syncTime);
+        // Persist last_sync_time to DB immediately (before potential reload)
+        fetch("/api/settings", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ last_sync_time: syncTime }),
+        }).catch(() => {});
         // Check if there were any member changes (joins/leaves)
         const hasChanges = data.changes?.joins?.length > 0 || data.changes?.leaves?.length > 0;
         if (hasChanges) {
