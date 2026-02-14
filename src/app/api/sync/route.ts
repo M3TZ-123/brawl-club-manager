@@ -452,7 +452,7 @@ async function syncClubData(providedClubTag?: string, providedApiKey?: string, i
           .from("battle_history")
           .upsert(allBattles, {
             onConflict: "player_tag,battle_time",
-            ignoreDuplicates: true,
+            ignoreDuplicates: false,
           })
           .then(({ error }) => {
             if (error) console.error("Error storing battle history:", error);

@@ -632,7 +632,7 @@ export function processBattleLog(playerTag: string, battleLog: BrawlStarsBattleL
       try {
         teamsJson = JSON.stringify(battleData.teams.map(team =>
           team.map(p => ({
-            tag: p.tag,
+            tag: p.tag.startsWith("%23") ? "#" + p.tag.slice(3) : p.tag,
             name: p.name,
             brawler: p.brawler?.name || null,
             power: p.brawler?.power || null,
@@ -645,7 +645,7 @@ export function processBattleLog(playerTag: string, battleLog: BrawlStarsBattleL
       // Duels: uses brawlers[] (plural), fall back to first brawler
       try {
         teamsJson = JSON.stringify(battleData.players.map(p => [{
-          tag: p.tag,
+          tag: p.tag.startsWith("%23") ? "#" + p.tag.slice(3) : p.tag,
           name: p.name,
           brawler: p.brawler?.name || p.brawlers?.[0]?.name || null,
           power: p.brawler?.power || p.brawlers?.[0]?.power || null,
