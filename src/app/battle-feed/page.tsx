@@ -88,6 +88,14 @@ function getModeIcon(mode: string | null): string {
   return MODE_ICONS[mode] || "\u2694\uFE0F";
 }
 
+function normalizeTag(tag: string | null | undefined): string {
+  if (!tag) return "";
+  const trimmed = tag.trim();
+  const decoded = /^%23/i.test(trimmed) ? `#${trimmed.slice(3)}` : trimmed;
+  const withHash = decoded.startsWith("#") ? decoded : `#${decoded}`;
+  return withHash.toUpperCase();
+}
+
 // Compute time-ago using a server-relative clock to avoid client timezone/clock issues.
 // clockDelta = clientNow - serverNow at the moment the API responded.
 // adjustedNow = Date.now() - clockDelta ≈ current server time.
@@ -164,6 +172,7 @@ function MatchCard({ match, clubTags, clockDelta }: { match: Match; clubTags: Se
   const mainResult = match.clubPlayers[0]?.result || "unknown";
   const style = RESULT_STYLES[mainResult] || RESULT_STYLES.draw;
   const totalTrophyChange = match.clubPlayers.reduce((s, p) => s + p.trophy_change, 0);
+  const normalizedClubTags = new Set([...clubTags].map((tag) => normalizeTag(tag)));
 
   return (
     <div className={`rounded-xl border ${style.border} ${style.bg} overflow-hidden`}>
@@ -199,8 +208,9 @@ function MatchCard({ match, clubTags, clockDelta }: { match: Match; clubTags: Se
           </div>
           <div className="space-y-0.5">
             {(match.ourTeam || match.clubPlayers).map((p) => {
-              const clubPlayer = match.clubPlayers.find((cp) => cp.tag === p.tag);
-              const isClub = clubTags.has(p.tag) || !!clubPlayer;
+              const playerTag = normalizeTag(p.tag);
+              const clubPlayer = match.clubPlayers.find((cp) => normalizeTag(cp.tag) === playerTag);
+              const isClub = normalizedClubTags.has(playerTag) || !!clubPlayer;
               return (
                 <PlayerRow
                   key={p.tag}
@@ -229,7 +239,7 @@ function MatchCard({ match, clubTags, clockDelta }: { match: Match; clubTags: Se
                     name={p.name}
                     brawler={p.brawler}
                     power={p.power}
-                    isClub={clubTags.has(p.tag)}
+                    isClub={normalizedClubTags.has(normalizeTag(p.tag))}
                   />
                 ))}
               </div>
@@ -247,8 +257,9 @@ function MatchCard({ match, clubTags, clockDelta }: { match: Match; clubTags: Se
             <div className="space-y-0.5">
               {match.ourTeam ? (
                 match.ourTeam.map((p) => {
-                  const clubPlayer = match.clubPlayers.find((cp) => cp.tag === p.tag);
-                  const isClub = clubTags.has(p.tag) || !!clubPlayer;
+                  const playerTag = normalizeTag(p.tag);
+                  const clubPlayer = match.clubPlayers.find((cp) => normalizeTag(cp.tag) === playerTag);
+                  const isClub = normalizedClubTags.has(playerTag) || !!clubPlayer;
                   return (
                     <PlayerRow
                       key={p.tag}
@@ -294,7 +305,7 @@ function MatchCard({ match, clubTags, clockDelta }: { match: Match; clubTags: Se
                     name={p.name}
                     brawler={p.brawler}
                     power={p.power}
-                    isClub={clubTags.has(p.tag)}
+                    isClub={normalizedClubTags.has(normalizeTag(p.tag))}
                   />
                 ))
               ) : (
@@ -370,7 +381,7 @@ export default function BattleFeedPage() {
 
         if (membersRes && (membersRes as Response).ok) {
           const data = await (membersRes as Response).json();
-          const tags = new Set<string>((data.members || []).map((m: { player_tag: string }) => m.player_tag));
+          const tags = new Set<string>((data.members || []).map((m: { player_tag: string }) => normalizeTag(m.player_tag)));
           setClubTags(tags);
         }
       } catch (err) {
