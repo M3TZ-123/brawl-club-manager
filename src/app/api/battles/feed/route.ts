@@ -116,19 +116,77 @@ export async function GET(request: Request) {
     // Normalize tag format: Brawl Stars API may use %23 instead of #
     const normalizeTag = (tag: string) => tag.startsWith("%23") ? "#" + tag.slice(3) : tag;
 
+    type RawPlayer = {
+      tag?: string;
+      name?: string;
+      brawler?: string | null;
+      power?: number | null;
+      trophies?: number | null;
+    };
+
+    type TeamPlayer = { tag: string; name: string; brawler: string | null; power: number | null; trophies: number | null };
+
+    const toTeamPlayer = (p: RawPlayer): TeamPlayer | null => {
+      if (!p?.tag) return null;
+      const tag = normalizeTag(p.tag);
+      return {
+        tag,
+        name: nameMap.get(tag) || p.name || tag,
+        brawler: p.brawler ?? null,
+        power: p.power ?? null,
+        trophies: p.trophies ?? null,
+      };
+    };
+
+    const normalizeTeams = (raw: unknown): TeamPlayer[][] => {
+      if (!raw) return [];
+
+      const value = raw as unknown;
+      const asObject = typeof value === "object" && value !== null ? value as Record<string, unknown> : null;
+
+      const source =
+        Array.isArray(value) ? value :
+        Array.isArray(asObject?.teams) ? asObject.teams :
+        Array.isArray(asObject?.players) ? asObject.players :
+        [];
+
+      if (!Array.isArray(source) || source.length === 0) return [];
+
+      const first = source[0];
+
+      // Flat players array => showdown-style one player per team
+      if (!Array.isArray(first)) {
+        return source
+          .map((player) => toTeamPlayer(player as RawPlayer))
+          .filter((player): player is TeamPlayer => !!player)
+          .map((player) => [player]);
+      }
+
+      // teams[][] shape
+      return source
+        .map((team) =>
+          (team as unknown[])
+            .map((player) => toTeamPlayer(player as RawPlayer))
+            .filter((player): player is TeamPlayer => !!player)
+        )
+        .filter((team) => team.length > 0);
+    };
+
     // For each match, identify which team is "ours" and which is "theirs"
     const enrichedMatches = matches.map((match) => {
       let ourTeam: { tag: string; name: string; brawler: string | null; power: number | null }[] = [];
       const theirTeam: { tag: string; name: string; brawler: string | null; power: number | null }[] = [];
       const isShowdown = isShowdownMode(match.mode);
 
-      if (match.teams && match.teams.length >= 2) {
+      const normalizedTeams = normalizeTeams(match.teams);
+
+      if (normalizedTeams.length > 0) {
         const clubPlayerTags = new Set(match.clubPlayers.map((p) => p.tag));
 
         if (isShowdown) {
           // Showdown: each "team" is a single player (solo) or a duo
           // Club player(s) go into ourTeam, everyone else into theirTeam
-          for (const team of match.teams) {
+          for (const team of normalizedTeams) {
             const hasClubPlayer = team.some((p: { tag: string }) => {
               const nt = normalizeTag(p.tag);
               return clubPlayerTags.has(nt) || clubTags.has(nt);
@@ -149,8 +207,8 @@ export async function GET(request: Request) {
           // Standard team modes: find which team contains a club member
           let ourTeamIndex = -1;
 
-          for (let i = 0; i < match.teams.length; i++) {
-            const team = match.teams[i];
+          for (let i = 0; i < normalizedTeams.length; i++) {
+            const team = normalizedTeams[i];
             if (team.some((p: { tag: string }) => {
               const nt = normalizeTag(p.tag);
               return clubPlayerTags.has(nt) || clubTags.has(nt);
@@ -161,7 +219,7 @@ export async function GET(request: Request) {
           }
 
           if (ourTeamIndex >= 0) {
-            ourTeam = match.teams[ourTeamIndex].map((p: { tag: string; name: string; brawler: string | null; power: number | null }) => ({
+            ourTeam = normalizedTeams[ourTeamIndex].map((p: { tag: string; name: string; brawler: string | null; power: number | null }) => ({
               tag: normalizeTag(p.tag),
               name: nameMap.get(normalizeTag(p.tag)) || p.name,
               brawler: p.brawler,
@@ -169,12 +227,12 @@ export async function GET(request: Request) {
             }));
 
             // All other teams are opponents
-            for (let i = 0; i < match.teams.length; i++) {
+            for (let i = 0; i < normalizedTeams.length; i++) {
               if (i !== ourTeamIndex) {
                 theirTeam.push(
-                  ...match.teams[i].map((p: { tag: string; name: string; brawler: string | null; power: number | null }) => ({
-                    tag: p.tag,
-                    name: p.name,
+                  ...normalizedTeams[i].map((p: { tag: string; name: string; brawler: string | null; power: number | null }) => ({
+                    tag: normalizeTag(p.tag),
+                    name: nameMap.get(normalizeTag(p.tag)) || p.name,
                     brawler: p.brawler,
                     power: p.power,
                   }))
