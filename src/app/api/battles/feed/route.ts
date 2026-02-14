@@ -10,10 +10,19 @@ export async function GET(request: Request) {
     const player = searchParams.get("player") || null;
     const date = searchParams.get("date") || null; // YYYY-MM-DD
 
-    // Get current member tags and names
+    // Get only current club member tags from member_history
+    const { data: currentMemberHistory } = await supabase
+      .from("member_history")
+      .select("player_tag")
+      .eq("is_current_member", true);
+
+    const currentMemberTags = currentMemberHistory?.map((m) => m.player_tag) || [];
+
+    // Get current member names from members table
     const { data: members } = await supabase
       .from("members")
-      .select("player_tag, player_name");
+      .select("player_tag, player_name")
+      .in("player_tag", currentMemberTags.length > 0 ? currentMemberTags : [""]);
 
     const nameMap = new Map((members || []).map((m) => [m.player_tag, m.player_name]));
     const clubTags = new Set(nameMap.keys());
