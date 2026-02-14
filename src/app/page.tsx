@@ -12,7 +12,7 @@ import { ActivityPieChart, MemberBarChart } from "@/components/charts";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Progress } from "@/components/ui/progress";
 import { Member, ClubEvent } from "@/types/database";
-import { Trophy, UserX, TrendingUp, TrendingDown, Minus, Crown, Swords, Target } from "lucide-react";
+import { Trophy, UserX, TrendingUp, TrendingDown, Minus, Crown, Target } from "lucide-react";
 
 interface ClubInsights {
   winRate: number;

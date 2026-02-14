@@ -6,14 +6,13 @@ export async function GET() {
     const now = new Date();
     const sevenDaysAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
     const prevWeekStart = new Date(now.getTime() - 14 * 24 * 60 * 60 * 1000);
-    const todayStr = now.toISOString().split("T")[0];
     const weekAgoStr = sevenDaysAgo.toISOString().split("T")[0];
     const prevWeekStr = prevWeekStart.toISOString().split("T")[0];
     const fortyEightHoursAgo = new Date(now.getTime() - 48 * 60 * 60 * 1000).toISOString();
 
     // Parallel data fetches
     const [membersRes, thisWeekStatsRes, prevWeekStatsRes, recentBattlesRes] = await Promise.all([
-      supabase.from("members").select("player_tag, player_name, trophies, is_active, last_seen"),
+      supabase.from("members").select("player_tag, player_name, trophies, is_active, last_updated"),
       supabase.from("daily_stats").select("player_tag, date, battles, wins, trophies_gained, trophies_lost").gte("date", weekAgoStr),
       supabase.from("daily_stats").select("player_tag, battles").gte("date", prevWeekStr).lt("date", weekAgoStr),
       supabase.from("battle_history").select("player_tag, battle_time").gte("battle_time", fortyEightHoursAgo),

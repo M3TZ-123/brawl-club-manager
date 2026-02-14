@@ -16,7 +16,7 @@ import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { MemberHistory } from "@/types/database";
 import { formatDate, formatDateTime } from "@/lib/utils";
-import { Search, UserPlus, UserMinus, Star, RefreshCw, Pencil, Check, X, Trash2 } from "lucide-react";
+import { Search, UserPlus, UserMinus, Pencil, Check, X, Trash2 } from "lucide-react";
 
 export default function HistoryPage() {
   const [history, setHistory] = useState<MemberHistory[]>([]);

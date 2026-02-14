@@ -73,17 +73,24 @@ export default function MembersPage() {
   const handleExport = () => {
     const csv = [
       ["Tag", "Name", "Role", "Trophies", "Highest", "3v3 Wins", "Active"].join(","),
-      ...members.map((m) =>
-        [
-          m.player_tag,
-          m.player_name,
-          m.role,
+      ...members.map((m) => {
+        const sanitize = (v: string | number | boolean) => {
+          const s = String(v);
+          if (s.includes(',') || s.includes('"') || s.includes('\n')) {
+            return `"${s.replace(/"/g, '""')}"`;
+          }
+          return s;
+        };
+        return [
+          sanitize(m.player_tag),
+          sanitize(m.player_name),
+          sanitize(m.role),
           m.trophies,
           m.highest_trophies,
           m.trio_victories,
           m.is_active ? "Yes" : "No",
-        ].join(",")
-      ),
+        ].join(",");
+      }),
     ].join("\n");
 
     const blob = new Blob([csv], { type: "text/csv" });

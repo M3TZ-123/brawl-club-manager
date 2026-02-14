@@ -51,7 +51,7 @@ export default function ReportsPage() {
     }
   };
 
-  const handleExportPDF = () => {
+  const handleExportReport = () => {
     // For simplicity, we'll export as text/html that can be printed to PDF
     if (!report) return;
 
@@ -136,7 +136,7 @@ export default function ReportsPage() {
                 <RefreshCw className="h-4 w-4 sm:mr-2" />
                 <span className="hidden sm:inline">Refresh</span>
               </Button>
-              <Button onClick={handleExportPDF} size="sm" className="sm:size-default">
+              <Button onClick={handleExportReport} size="sm" className="sm:size-default">
                 <Download className="h-4 w-4 sm:mr-2" />
                 <span className="hidden sm:inline">Export</span>
               </Button>

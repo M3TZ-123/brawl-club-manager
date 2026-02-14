@@ -199,7 +199,7 @@ export async function GET(request: Request) {
     // Fix timezone offset for existing data: if battles appear in the future, adjust them
     const serverNow = Date.now();
     const matchBattleTimes = enrichedMatches.map(m => new Date(m.battle_time).getTime());
-    const maxMatchTime = matchBattleTimes.length > 0 ? Math.max(...matchBattleTimes) : 0;
+    const maxMatchTime = matchBattleTimes.length > 0 ? matchBattleTimes.reduce((max, t) => t > max ? t : max, 0) : 0;
     
     if (maxMatchTime > serverNow + 60000) { // More than 1 minute in the future
       const rawOffsetMs = maxMatchTime - serverNow;

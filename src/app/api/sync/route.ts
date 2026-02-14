@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getClub, getPlayer, setApiKey, getPlayerRankedData, getPlayerBattleLog, processBattleLog, calculateWinRateFromBattleLog, BrawlStarsBrawler, BrawlStarsBattleLog } from "@/lib/brawl-api";
+import { getClub, getPlayer, setApiKey, getPlayerRankedData, getPlayerBattleLog, processBattleLog, calculateWinRateFromBattleLog, BrawlStarsBattleLog } from "@/lib/brawl-api";
 import { supabase } from "@/lib/supabase";
 
 // GET handler for Vercel Cron Jobs and GitHub Actions
@@ -107,7 +107,7 @@ async function syncClubData(providedClubTag?: string, providedApiKey?: string, i
 
     // Debug: Log what we're using (mask API key for security)
     console.log("Using clubTag:", clubTag);
-    console.log("API key length:", apiKey.length, "starts with:", apiKey.substring(0, 10) + "...");
+    console.log("API key configured: yes, length:", apiKey.length);
     
     setApiKey(apiKey);
     console.log("API key set, fetching club data...");
@@ -432,7 +432,7 @@ async function syncClubData(providedClubTag?: string, providedApiKey?: string, i
     if (allBattles.length > 0) {
       const serverNow = Date.now();
       const battleTimestamps = allBattles.map(b => new Date(b.battle_time).getTime());
-      const maxBattleTime = Math.max(...battleTimestamps);
+      const maxBattleTime = battleTimestamps.reduce((max, t) => t > max ? t : max, 0);
       
       if (maxBattleTime > serverNow + 60000) { // More than 1 minute in the future
         const rawOffsetMs = maxBattleTime - serverNow;
