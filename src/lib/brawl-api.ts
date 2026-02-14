@@ -109,6 +109,16 @@ export interface BrawlStarsBattle {
         trophies: number;
       };
     }[][];
+    players?: {
+      tag: string;
+      name: string;
+      brawler: {
+        id: number;
+        name: string;
+        power: number;
+        trophies: number;
+      };
+    }[];
   };
 }
 
@@ -596,9 +606,19 @@ export function processBattleLog(playerTag: string, battleLog: BrawlStarsBattleL
           }
         }
       }
+    } else if (battleData.players) {
+      // Showdown: players is a flat array (solo) or array of arrays (duo)
+      for (const player of battleData.players) {
+        if (player.tag === playerTag || player.tag === playerTag.replace('#', '%23')) {
+          brawlerName = player.brawler?.name || null;
+          brawlerPower = player.brawler?.power || null;
+          brawlerTrophies = player.brawler?.trophies || null;
+          break;
+        }
+      }
     }
 
-    // Serialize full teams data for match context
+    // Serialize full teams/players data for match context
     let teamsJson: string | null = null;
     if (battleData.teams) {
       try {
@@ -611,6 +631,17 @@ export function processBattleLog(playerTag: string, battleLog: BrawlStarsBattleL
             trophies: p.brawler?.trophies || null,
           }))
         ));
+      } catch { /* ignore serialization errors */ }
+    } else if (battleData.players) {
+      // Showdown: serialize each player as a single-member team
+      try {
+        teamsJson = JSON.stringify(battleData.players.map(p => [{
+          tag: p.tag,
+          name: p.name,
+          brawler: p.brawler?.name || null,
+          power: p.brawler?.power || null,
+          trophies: p.brawler?.trophies || null,
+        }]));
       } catch { /* ignore serialization errors */ }
     }
 

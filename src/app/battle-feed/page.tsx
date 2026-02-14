@@ -44,6 +44,7 @@ interface Match {
   clubPlayers: ClubPlayer[];
   ourTeam: TeamPlayer[] | null;
   theirTeam: TeamPlayer[] | null;
+  isShowdown?: boolean;
 }
 
 const RESULT_STYLES: Record<string, { bg: string; text: string; border: string; label: string }> = {
@@ -189,74 +190,122 @@ function MatchCard({ match, clubTags, clockDelta }: { match: Match; clubTags: Se
       </div>
 
       {/* Teams */}
-      <div className="grid grid-cols-1 md:grid-cols-2 divide-y md:divide-y-0 md:divide-x divide-border/50">
-        {/* Our team */}
+      {match.isShowdown ? (
+        /* Showdown layout: single column with club player(s) */
         <div className="px-4 py-3">
           <div className="flex items-center gap-1.5 mb-2">
             <Shield className="h-3.5 w-3.5 text-blue-500" />
-            <span className="text-xs font-semibold text-blue-500 uppercase tracking-wide">Your Team</span>
+            <span className="text-xs font-semibold text-blue-500 uppercase tracking-wide">Players</span>
           </div>
           <div className="space-y-0.5">
-            {match.ourTeam ? (
-              match.ourTeam.map((p) => {
-                const clubPlayer = match.clubPlayers.find((cp) => cp.tag === p.tag);
-                const isClub = clubTags.has(p.tag) || !!clubPlayer;
-                return (
+            {(match.ourTeam || match.clubPlayers).map((p) => {
+              const clubPlayer = match.clubPlayers.find((cp) => cp.tag === p.tag);
+              const isClub = clubTags.has(p.tag) || !!clubPlayer;
+              return (
+                <PlayerRow
+                  key={p.tag}
+                  tag={p.tag}
+                  name={isClub ? (clubPlayer?.name || p.name) : p.name}
+                  brawler={clubPlayer?.brawler || p.brawler}
+                  power={clubPlayer?.power || p.power}
+                  isClub={isClub}
+                  trophyChange={clubPlayer?.trophy_change}
+                  isStar={clubPlayer?.is_star_player}
+                />
+              );
+            })}
+          </div>
+          {match.theirTeam && match.theirTeam.length > 0 && (
+            <>
+              <div className="flex items-center gap-1.5 mb-2 mt-3">
+                <ShieldAlert className="h-3.5 w-3.5 text-red-500" />
+                <span className="text-xs font-semibold text-red-500 uppercase tracking-wide">Other Players</span>
+              </div>
+              <div className="space-y-0.5">
+                {match.theirTeam.map((p) => (
                   <PlayerRow
                     key={p.tag}
                     tag={p.tag}
-                    name={isClub ? (clubPlayer?.name || p.name) : p.name}
-                    brawler={clubPlayer?.brawler || p.brawler}
-                    power={clubPlayer?.power || p.power}
-                    isClub={isClub}
-                    trophyChange={clubPlayer?.trophy_change}
-                    isStar={clubPlayer?.is_star_player}
+                    name={p.name}
+                    brawler={p.brawler}
+                    power={p.power}
+                    isClub={clubTags.has(p.tag)}
                   />
-                );
-              })
-            ) : (
-              match.clubPlayers.map((p) => (
-                <PlayerRow
-                  key={p.tag}
-                  tag={p.tag}
-                  name={p.name}
-                  brawler={p.brawler}
-                  power={p.power}
-                  isClub={true}
-                  trophyChange={p.trophy_change}
-                  isStar={p.is_star_player}
-                />
-              ))
-            )}
-          </div>
+                ))}
+              </div>
+            </>
+          )}
         </div>
+      ) : (
+        <div className="grid grid-cols-1 md:grid-cols-2 divide-y md:divide-y-0 md:divide-x divide-border/50">
+          {/* Our team */}
+          <div className="px-4 py-3">
+            <div className="flex items-center gap-1.5 mb-2">
+              <Shield className="h-3.5 w-3.5 text-blue-500" />
+              <span className="text-xs font-semibold text-blue-500 uppercase tracking-wide">Your Team</span>
+            </div>
+            <div className="space-y-0.5">
+              {match.ourTeam ? (
+                match.ourTeam.map((p) => {
+                  const clubPlayer = match.clubPlayers.find((cp) => cp.tag === p.tag);
+                  const isClub = clubTags.has(p.tag) || !!clubPlayer;
+                  return (
+                    <PlayerRow
+                      key={p.tag}
+                      tag={p.tag}
+                      name={isClub ? (clubPlayer?.name || p.name) : p.name}
+                      brawler={clubPlayer?.brawler || p.brawler}
+                      power={clubPlayer?.power || p.power}
+                      isClub={isClub}
+                      trophyChange={clubPlayer?.trophy_change}
+                      isStar={clubPlayer?.is_star_player}
+                    />
+                  );
+                })
+              ) : (
+                match.clubPlayers.map((p) => (
+                  <PlayerRow
+                    key={p.tag}
+                    tag={p.tag}
+                    name={p.name}
+                    brawler={p.brawler}
+                    power={p.power}
+                    isClub={true}
+                    trophyChange={p.trophy_change}
+                    isStar={p.is_star_player}
+                  />
+                ))
+              )}
+            </div>
+          </div>
 
-        {/* Opponent team */}
-        <div className="px-4 py-3">
-          <div className="flex items-center gap-1.5 mb-2">
-            <ShieldAlert className="h-3.5 w-3.5 text-red-500" />
-            <span className="text-xs font-semibold text-red-500 uppercase tracking-wide">Opponents</span>
-          </div>
-          <div className="space-y-0.5">
-            {match.theirTeam ? (
-              match.theirTeam.map((p) => (
-                <PlayerRow
-                  key={p.tag}
-                  tag={p.tag}
-                  name={p.name}
-                  brawler={p.brawler}
-                  power={p.power}
-                  isClub={clubTags.has(p.tag)}
-                />
-              ))
-            ) : (
-              <p className="text-xs text-muted-foreground italic py-2">
-                Opponent data available after next sync
-              </p>
-            )}
+          {/* Opponent team */}
+          <div className="px-4 py-3">
+            <div className="flex items-center gap-1.5 mb-2">
+              <ShieldAlert className="h-3.5 w-3.5 text-red-500" />
+              <span className="text-xs font-semibold text-red-500 uppercase tracking-wide">Opponents</span>
+            </div>
+            <div className="space-y-0.5">
+              {match.theirTeam ? (
+                match.theirTeam.map((p) => (
+                  <PlayerRow
+                    key={p.tag}
+                    tag={p.tag}
+                    name={p.name}
+                    brawler={p.brawler}
+                    power={p.power}
+                    isClub={clubTags.has(p.tag)}
+                  />
+                ))
+              ) : (
+                <p className="text-xs text-muted-foreground italic py-2">
+                  Opponent data available after next sync
+                </p>
+              )}
+            </div>
           </div>
         </div>
-      </div>
+      )}
     </div>
   );
 }

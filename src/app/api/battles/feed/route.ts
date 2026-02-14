@@ -101,43 +101,68 @@ export async function GET(request: Request) {
       (a, b) => new Date(b.battle_time).getTime() - new Date(a.battle_time).getTime()
     );
 
+    // Detect Showdown modes
+    const isShowdownMode = (mode: string) =>
+      mode === "soloShowdown" || mode === "duoShowdown" || mode === "showdown";
+
     // For each match, identify which team is "ours" and which is "theirs"
     const enrichedMatches = matches.map((match) => {
       let ourTeam: { tag: string; name: string; brawler: string | null; power: number | null }[] = [];
       let theirTeam: { tag: string; name: string; brawler: string | null; power: number | null }[] = [];
+      const isShowdown = isShowdownMode(match.mode);
 
       if (match.teams && match.teams.length >= 2) {
-        // Find which team contains a club member
         const clubPlayerTags = new Set(match.clubPlayers.map((p) => p.tag));
-        let ourTeamIndex = -1;
 
-        for (let i = 0; i < match.teams.length; i++) {
-          const team = match.teams[i];
-          if (team.some((p: { tag: string }) => clubPlayerTags.has(p.tag) || clubTags.has(p.tag))) {
-            ourTeamIndex = i;
-            break;
+        if (isShowdown) {
+          // Showdown: each "team" is a single player (solo) or a duo
+          // Club player(s) go into ourTeam, everyone else into theirTeam
+          for (const team of match.teams) {
+            const hasClubPlayer = team.some((p: { tag: string }) => clubPlayerTags.has(p.tag) || clubTags.has(p.tag));
+            const mapped = team.map((p: { tag: string; name: string; brawler: string | null; power: number | null }) => ({
+              tag: p.tag,
+              name: nameMap.get(p.tag) || p.name,
+              brawler: p.brawler,
+              power: p.power,
+            }));
+            if (hasClubPlayer) {
+              ourTeam.push(...mapped);
+            } else {
+              theirTeam.push(...mapped);
+            }
           }
-        }
+        } else {
+          // Standard team modes: find which team contains a club member
+          let ourTeamIndex = -1;
 
-        if (ourTeamIndex >= 0) {
-          ourTeam = match.teams[ourTeamIndex].map((p: { tag: string; name: string; brawler: string | null; power: number | null }) => ({
-            tag: p.tag,
-            name: nameMap.get(p.tag) || p.name,
-            brawler: p.brawler,
-            power: p.power,
-          }));
-
-          // All other teams are opponents
           for (let i = 0; i < match.teams.length; i++) {
-            if (i !== ourTeamIndex) {
-              theirTeam.push(
-                ...match.teams[i].map((p: { tag: string; name: string; brawler: string | null; power: number | null }) => ({
-                  tag: p.tag,
-                  name: p.name,
-                  brawler: p.brawler,
-                  power: p.power,
-                }))
-              );
+            const team = match.teams[i];
+            if (team.some((p: { tag: string }) => clubPlayerTags.has(p.tag) || clubTags.has(p.tag))) {
+              ourTeamIndex = i;
+              break;
+            }
+          }
+
+          if (ourTeamIndex >= 0) {
+            ourTeam = match.teams[ourTeamIndex].map((p: { tag: string; name: string; brawler: string | null; power: number | null }) => ({
+              tag: p.tag,
+              name: nameMap.get(p.tag) || p.name,
+              brawler: p.brawler,
+              power: p.power,
+            }));
+
+            // All other teams are opponents
+            for (let i = 0; i < match.teams.length; i++) {
+              if (i !== ourTeamIndex) {
+                theirTeam.push(
+                  ...match.teams[i].map((p: { tag: string; name: string; brawler: string | null; power: number | null }) => ({
+                    tag: p.tag,
+                    name: p.name,
+                    brawler: p.brawler,
+                    power: p.power,
+                  }))
+                );
+              }
             }
           }
         }
@@ -150,6 +175,7 @@ export async function GET(request: Request) {
         clubPlayers: match.clubPlayers,
         ourTeam: ourTeam.length > 0 ? ourTeam : null,
         theirTeam: theirTeam.length > 0 ? theirTeam : null,
+        isShowdown,
       };
     });
 
