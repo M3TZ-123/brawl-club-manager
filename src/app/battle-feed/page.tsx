@@ -18,6 +18,7 @@ import {
   Search,
   Radio,
   X,
+  CalendarDays,
 } from "lucide-react";
 
 interface TeamPlayer {
@@ -320,6 +321,7 @@ export default function BattleFeedPage() {
   const [isLoadingMore, setIsLoadingMore] = useState(false);
   const [filterMode, setFilterMode] = useState<string>("");
   const [filterPlayer, setFilterPlayer] = useState<string>("");
+  const [filterDate, setFilterDate] = useState<string>("");
   const [memberSearch, setMemberSearch] = useState<string>("");
   const [showMemberDropdown, setShowMemberDropdown] = useState(false);
   const [rawOffset, setRawOffset] = useState(0);
@@ -341,6 +343,7 @@ export default function BattleFeedPage() {
         });
         if (filterMode) params.set("mode", filterMode);
         if (filterPlayer) params.set("player", filterPlayer);
+        if (filterDate) params.set("date", filterDate);
 
         const [feedRes, membersRes] = await Promise.all([
           fetch(`/api/battles/feed?${params}`),
@@ -378,7 +381,7 @@ export default function BattleFeedPage() {
         setIsLoadingMore(false);
       }
     },
-    [filterMode, filterPlayer]
+    [filterMode, filterPlayer, filterDate]
   );
 
   useEffect(() => {
@@ -512,8 +515,17 @@ export default function BattleFeedPage() {
                 )}
               </div>
             </div>
-            {(filterMode || filterPlayer) && (
-              <Button variant="ghost" size="sm" className="h-9 px-2" onClick={() => { setFilterMode(""); setFilterPlayer(""); setMemberSearch(""); }}>
+            <div className="relative">
+              <CalendarDays className="absolute left-2 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground pointer-events-none" />
+              <input
+                type="date"
+                value={filterDate}
+                onChange={(e) => setFilterDate(e.target.value)}
+                className="h-9 w-36 rounded-md border border-border bg-background pl-7 pr-2 text-sm"
+              />
+            </div>
+            {(filterMode || filterPlayer || filterDate) && (
+              <Button variant="ghost" size="sm" className="h-9 px-2" onClick={() => { setFilterMode(""); setFilterPlayer(""); setFilterDate(""); setMemberSearch(""); }}>
                 <X className="h-3.5 w-3.5" />
               </Button>
             )}

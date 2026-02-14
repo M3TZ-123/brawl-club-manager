@@ -8,6 +8,7 @@ export async function GET(request: Request) {
     const offset = parseInt(searchParams.get("offset") || "0");
     const mode = searchParams.get("mode") || null;
     const player = searchParams.get("player") || null;
+    const date = searchParams.get("date") || null; // YYYY-MM-DD
 
     // Get current member tags and names
     const { data: members } = await supabase
@@ -30,6 +31,13 @@ export async function GET(request: Request) {
 
     if (player) {
       query = query.eq("player_tag", player);
+    }
+
+    if (date) {
+      // Filter battles for a specific day (YYYY-MM-DD)
+      const dayStart = `${date}T00:00:00.000Z`;
+      const dayEnd = `${date}T23:59:59.999Z`;
+      query = query.gte("battle_time", dayStart).lte("battle_time", dayEnd);
     }
 
     const { data: battles, error, count } = await query;
