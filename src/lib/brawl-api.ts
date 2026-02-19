@@ -9,6 +9,7 @@ const BRAWL_API_BASE = "https://bsproxy.royaleapi.dev/v1";
 // Create axios instance with default config
 const brawlApi = axios.create({
   baseURL: BRAWL_API_BASE,
+  proxy: false,
   headers: {
     Accept: "application/json",
   },
@@ -278,6 +279,7 @@ export async function getPlayerRankedData(playerTag: string): Promise<{
     try {
       const response = await axios.get(`${RNT_API_URL}/profile?tag=${cleanTag}`, {
         timeout: 4000,
+        proxy: false,
       });
       
       if (!response.data?.ok || !response.data?.result?.stats) {
