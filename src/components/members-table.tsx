@@ -2,7 +2,8 @@
 
 import { useState } from "react";
 import { Member } from "@/types/database";
-import { formatNumber, getActivityEmoji, getRankColor } from "@/lib/utils";
+import { formatDateTime, formatNumber, formatRelativeTime, getActivityEmoji, getRankColor } from "@/lib/utils";
+import { getFallbackInitial, getProfileIconUrl, getRankIconUrl } from "@/lib/brawl-assets";
 import Link from "next/link";
 import {
   Table,
@@ -14,17 +15,76 @@ import {
 } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Copy, Check, ChevronLeft, ChevronRight } from "lucide-react";
+import { Copy, Check, ChevronLeft, ChevronRight, Trophy, Crown, Gem, Medal, Shield } from "lucide-react";
 
 interface MemberWithGains extends Member {
   trophies_24h?: number | null;
   trophies_7d?: number | null;
+  activity_status?: "active" | "minimal" | "inactive";
+  last_battle_at?: string | null;
 }
 
 interface MembersTableProps {
   members: MemberWithGains[];
   pageSize?: number;
   showPagination?: boolean;
+}
+
+function ProfileAvatar({ playerName, iconId }: { playerName: string; iconId: number | null }) {
+  const [imageError, setImageError] = useState(false);
+  const iconUrl = !imageError ? getProfileIconUrl(iconId) : null;
+
+  if (!iconUrl) {
+    return (
+      <div className="h-7 w-7 rounded-md border border-border/70 bg-muted/30 shadow-sm flex items-center justify-center text-[10px] font-semibold text-muted-foreground">
+        {getFallbackInitial(playerName)}
+      </div>
+    );
+  }
+
+  return (
+    <img
+      src={iconUrl}
+      alt={`${playerName} icon`}
+      className="h-7 w-7 rounded-md border border-border/70 bg-muted/30 shadow-sm"
+      loading="lazy"
+      onError={() => setImageError(true)}
+    />
+  );
+}
+
+function getRankTier(rank: string | null) {
+  const value = (rank || "Unranked").toLowerCase();
+  if (value.includes("masters") || value.includes("pro")) return "masters";
+  if (value.includes("legendary")) return "legendary";
+  if (value.includes("mythic") || value.includes("diamond")) return "gem";
+  if (value.includes("gold") || value.includes("silver") || value.includes("bronze")) return "medal";
+  return "default";
+}
+
+function RankIcon({ rank }: { rank: string | null }) {
+  const [imageError, setImageError] = useState(false);
+  const rankIconUrl = !imageError ? getRankIconUrl(rank) : null;
+
+  if (rankIconUrl) {
+    return (
+      <img
+        src={rankIconUrl}
+        alt={rank || "Rank"}
+        className="h-5 w-5 object-contain"
+        loading="lazy"
+        onError={() => setImageError(true)}
+      />
+    );
+  }
+
+  const tier = getRankTier(rank);
+
+  if (tier === "masters") return <Trophy className="h-5 w-5" />;
+  if (tier === "legendary") return <Crown className="h-5 w-5" />;
+  if (tier === "gem") return <Gem className="h-5 w-5" />;
+  if (tier === "medal") return <Medal className="h-5 w-5" />;
+  return <Shield className="h-5 w-5" />;
 }
 
 export function MembersTable({ members, pageSize = 10, showPagination = true }: MembersTableProps) {
@@ -82,7 +142,8 @@ export function MembersTable({ members, pageSize = 10, showPagination = true }: 
           <TableRow key={member.player_tag}>
             <TableCell className="font-medium">{startIndex + index + 1}</TableCell>
             <TableCell>
-              <div className="flex items-center gap-1 sm:gap-2">
+              <div className="flex items-center gap-2 sm:gap-2">
+                <ProfileAvatar playerName={member.player_name} iconId={member.icon_id} />
                 <Link
                   href={`/members/${encodeURIComponent(member.player_tag)}`}
                   className="flex flex-col hover:underline min-w-0"
@@ -130,12 +191,14 @@ export function MembersTable({ members, pageSize = 10, showPagination = true }: 
               </span>
             </TableCell>
             <TableCell className="hidden xl:table-cell">
-              <span className={getRankColor(member.rank_current || "Unranked")}>
+              <span className={`inline-flex items-center gap-1 ${getRankColor(member.rank_current || "Unranked")}`}>
+                <RankIcon rank={member.rank_current} />
                 {member.rank_current || "Unranked"}
               </span>
             </TableCell>
             <TableCell className="hidden xl:table-cell">
-              <span className={getRankColor(member.rank_highest || "Unranked")}>
+              <span className={`inline-flex items-center gap-1 ${getRankColor(member.rank_highest || "Unranked")}`}>
+                <RankIcon rank={member.rank_highest} />
                 {member.rank_highest || "Unranked"}
               </span>
             </TableCell>
@@ -149,7 +212,7 @@ export function MembersTable({ members, pageSize = 10, showPagination = true }: 
               }>
                 {member.trophies_24h != null 
                   ? (member.trophies_24h > 0 ? "+" : "") + formatNumber(member.trophies_24h) 
-                  : "-"}
+                  : "N/A"}
               </span>
             </TableCell>
             <TableCell className="hidden sm:table-cell text-right">
@@ -162,11 +225,11 @@ export function MembersTable({ members, pageSize = 10, showPagination = true }: 
               }>
                 {member.trophies_7d != null 
                   ? (member.trophies_7d > 0 ? "+" : "") + formatNumber(member.trophies_7d) 
-                  : "-"}
+                  : "N/A"}
               </span>
             </TableCell>
-            <TableCell className="text-center text-lg">
-              {getActivityEmoji(member.is_active ? "active" : "inactive")}
+            <TableCell className="text-center text-lg" title={`Last update: ${formatRelativeTime(member.last_updated)} (${formatDateTime(member.last_updated)})${member.last_battle_at ? ` • Last battle: ${formatRelativeTime(member.last_battle_at)} (${formatDateTime(member.last_battle_at)})` : ""}`}>
+              {getActivityEmoji(member.activity_status || (member.is_active ? "minimal" : "inactive"))}
             </TableCell>
           </TableRow>
         ))}

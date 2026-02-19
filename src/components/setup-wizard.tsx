@@ -18,7 +18,13 @@ export function SetupWizard({ onComplete }: SetupWizardProps) {
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState("");
 
-  const { setClubTag: saveClubTag, setApiKey: saveApiKey, setClubName, saveSettingsToDB } = useAppStore();
+  const {
+    setClubTag: saveClubTag,
+    setApiKey: saveApiKey,
+    setClubName,
+    setRequiredTrophies,
+    saveSettingsToDB,
+  } = useAppStore();
 
   const handleVerifyClub = async () => {
     setIsLoading(true);
@@ -40,6 +46,7 @@ export function SetupWizard({ onComplete }: SetupWizardProps) {
       saveClubTag(clubTag);
       saveApiKey(apiKey);
       setClubName(data.clubName);
+      setRequiredTrophies(typeof data.requiredTrophies === "number" ? data.requiredTrophies : null);
       
       // Save to database
       await saveSettingsToDB();

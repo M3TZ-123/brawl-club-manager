@@ -22,6 +22,7 @@ export async function POST(request: NextRequest) {
       success: true,
       clubName: club.name,
       memberCount: club.members.length,
+      requiredTrophies: club.requiredTrophies,
     });
   } catch (error: unknown) {
     console.error("Club verification error:", error);

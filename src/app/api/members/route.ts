@@ -47,51 +47,129 @@ export async function GET() {
       logsByPlayer.get(log.player_tag)!.push(log);
     }
 
-    // Calculate gains for each member
+    // Build battle recency map from real battles (captures activity even when trophy change is 0)
+    const { data: recentBattles } = await supabase
+      .from("battle_history")
+      .select("player_tag, battle_time, trophy_change")
+      .in("player_tag", currentMemberTags.length > 0 ? currentMemberTags : [''])
+      .gte("battle_time", sevenDaysAgo.toISOString())
+      .order("battle_time", { ascending: false });
+
+    const latestBattleByPlayer = new Map<string, Date>();
+    const battleDelta24hByPlayer = new Map<string, number>();
+    const battleDelta7dByPlayer = new Map<string, number>();
+    for (const battle of recentBattles || []) {
+      if (!latestBattleByPlayer.has(battle.player_tag)) {
+        latestBattleByPlayer.set(battle.player_tag, new Date(battle.battle_time));
+      }
+
+      const battleTime = new Date(battle.battle_time);
+      if (battleTime >= twentyFourHoursAgo) {
+        battleDelta24hByPlayer.set(
+          battle.player_tag,
+          (battleDelta24hByPlayer.get(battle.player_tag) || 0) + (battle.trophy_change || 0)
+        );
+      }
+
+      if (battleTime >= sevenDaysAgo) {
+        battleDelta7dByPlayer.set(
+          battle.player_tag,
+          (battleDelta7dByPlayer.get(battle.player_tag) || 0) + (battle.trophy_change || 0)
+        );
+      }
+    }
+
+    const findNearestBaseline = (
+      playerLogs: Array<{ player_tag: string; trophies: number; recorded_at: string }>,
+      targetTime: Date,
+      maxDistanceMs: number
+    ) => {
+      let nearest: { player_tag: string; trophies: number; recorded_at: string } | null = null;
+      let nearestDistance = Number.POSITIVE_INFINITY;
+
+      for (const log of playerLogs) {
+        const distance = Math.abs(new Date(log.recorded_at).getTime() - targetTime.getTime());
+        if (distance <= maxDistanceMs && distance < nearestDistance) {
+          nearest = log;
+          nearestDistance = distance;
+        }
+      }
+
+      return nearest;
+    };
+
+    // Calculate gains and activity for each member
     const membersWithGains = (members || []).map((member) => {
       const playerLogs = logsByPlayer.get(member.player_tag) || [];
 
-      // If no activity logs exist, we have no historical data yet
+      // If no activity logs exist, we still compute activity_status from battles and fallback flags
       if (playerLogs.length === 0) {
+        const lastBattleAt = latestBattleByPlayer.get(member.player_tag);
+        const fallback24h = battleDelta24hByPlayer.has(member.player_tag)
+          ? battleDelta24hByPlayer.get(member.player_tag) || 0
+          : null;
+        const fallback7d = battleDelta7dByPlayer.has(member.player_tag)
+          ? battleDelta7dByPlayer.get(member.player_tag) || 0
+          : null;
+        const activityStatus = lastBattleAt
+          ? (lastBattleAt >= twentyFourHoursAgo ? "active" : "minimal")
+          : (fallback24h != null && fallback24h !== 0)
+            ? "active"
+            : (fallback7d != null && fallback7d !== 0)
+              ? "minimal"
+              : "inactive";
+
         return {
           ...member,
-          trophies_24h: null,
-          trophies_7d: null,
+          trophies_24h: fallback24h,
+          trophies_7d: fallback7d,
+          activity_status: activityStatus,
+          last_battle_at: lastBattleAt ? lastBattleAt.toISOString() : null,
         };
       }
 
-      // For 24h: Find the log closest to (but before) 24 hours ago
-      const logsBefore24h = playerLogs.filter(
-        (log) => new Date(log.recorded_at) <= twentyFourHoursAgo
-      );
-      // Use the most recent log that is at least 24h old
-      const baseline24h = logsBefore24h.length > 0 
-        ? logsBefore24h[logsBefore24h.length - 1]
-        : null;
-      
-      // For 7 days: Find the log closest to (but before) 7 days ago
-      const logsBefore7d = playerLogs.filter(
-        (log) => new Date(log.recorded_at) <= sevenDaysAgo
-      );
-      // Use the most recent log that is at least 7d old
-      const baseline7d = logsBefore7d.length > 0 
-        ? logsBefore7d[logsBefore7d.length - 1]
-        : null;
+      // Use nearest baseline around target window to avoid stale snapshots inflating deltas.
+      // 24h baseline must be within ±12h of the 24h target.
+      const baseline24h = findNearestBaseline(playerLogs, twentyFourHoursAgo, 12 * 60 * 60 * 1000);
+      // 7d baseline must be within ±24h of the 7d target.
+      const baseline7d = findNearestBaseline(playerLogs, sevenDaysAgo, 24 * 60 * 60 * 1000);
 
       // Calculate 24h gain: current trophies minus trophies ~24h ago
-      const trophies24h = baseline24h != null
+      const snapshot24h = baseline24h != null
         ? member.trophies - baseline24h.trophies
         : null;
 
       // Calculate 7-day gain: current trophies minus trophies ~7d ago
-      const trophies7d = baseline7d != null
+      const snapshot7d = baseline7d != null
         ? member.trophies - baseline7d.trophies
         : null;
+
+      // Fallback to battle deltas when snapshot baseline is unavailable
+      const fallback24h = battleDelta24hByPlayer.has(member.player_tag)
+        ? battleDelta24hByPlayer.get(member.player_tag) || 0
+        : null;
+      const fallback7d = battleDelta7dByPlayer.has(member.player_tag)
+        ? battleDelta7dByPlayer.get(member.player_tag) || 0
+        : null;
+
+      const trophies24h = snapshot24h != null ? snapshot24h : fallback24h;
+      const trophies7d = snapshot7d != null ? snapshot7d : fallback7d;
+
+      const lastBattleAt = latestBattleByPlayer.get(member.player_tag);
+      const activityStatus = lastBattleAt
+        ? (lastBattleAt >= twentyFourHoursAgo ? "active" : "minimal")
+        : (trophies24h != null && trophies24h !== 0)
+          ? "active"
+          : (trophies7d != null && trophies7d !== 0)
+            ? "minimal"
+            : "inactive";
 
       return {
         ...member,
         trophies_24h: trophies24h,
         trophies_7d: trophies7d,
+        activity_status: activityStatus,
+        last_battle_at: lastBattleAt ? lastBattleAt.toISOString() : null,
       };
     });
 

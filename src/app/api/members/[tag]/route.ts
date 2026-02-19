@@ -2,6 +2,17 @@ import { NextRequest, NextResponse } from "next/server";
 import { supabase } from "@/lib/supabase";
 import { getPlayer, setApiKey, getPlayerRankedData, getLastBattleTime, getPlayerBattleStats, getBrawlerPowerDistribution, calculateEnhancedStats, calculateWinRateFromBattleLog, getPlayerBattleLog } from "@/lib/brawl-api";
 
+type RecentMatch = {
+  battle_time: string;
+  mode: string | null;
+  map: string | null;
+  result: string | null;
+  trophy_change: number;
+  is_star_player: boolean;
+  brawler_name: string | null;
+  brawler_power: number | null;
+};
+
 export async function GET(
   request: NextRequest,
   { params }: { params: Promise<{ tag: string }> }
@@ -40,6 +51,14 @@ export async function GET(
       .order("recorded_at", { ascending: false })
       .limit(30);
 
+    // Get recent matches for this player (mini battle feed)
+    const { data: recentMatches } = await supabase
+      .from("battle_history")
+      .select("battle_time, mode, map, result, trophy_change, is_star_player, brawler_name, brawler_power")
+      .eq("player_tag", playerTag)
+      .order("battle_time", { ascending: false })
+      .limit(25);
+
     // Get member history
     const { data: memberHistory } = await supabase
       .from("member_history")
@@ -76,6 +95,16 @@ export async function GET(
     let battleStats = null;
     let powerDistribution = null;
     let brawlers = null;
+    let topBrawlers: Array<{
+      id: number;
+      name: string;
+      trophies: number;
+      highestTrophies: number;
+      power: number;
+      rank: number;
+      icon_url: string;
+    }> = [];
+    let playerTags: string[] = [];
 
     if (apiKey) {
       try {
@@ -102,6 +131,34 @@ export async function GET(
 
         brawlers = playerData.brawlers;
         powerDistribution = getBrawlerPowerDistribution(playerData.brawlers);
+
+        // Top brawlers by trophies
+        topBrawlers = [...playerData.brawlers]
+          .sort((a, b) => b.trophies - a.trophies)
+          .slice(0, 5)
+          .map((brawler) => ({
+            id: brawler.id,
+            name: brawler.name,
+            trophies: brawler.trophies,
+            highestTrophies: brawler.highestTrophies,
+            power: brawler.power,
+            rank: brawler.rank,
+            icon_url: `https://cdn.brawlify.com/brawlers/borders/${brawler.id}.png`,
+          }));
+
+        // Optional player tags (bonus metadata if available)
+        const playerProfile = playerData as unknown as {
+          title?: string | null;
+          nameColor?: string | null;
+        };
+        const tags: string[] = [];
+        if (playerProfile.title && playerProfile.title.trim().length > 0) {
+          tags.push(playerProfile.title.trim());
+        }
+        if (playerProfile.nameColor && playerProfile.nameColor !== "0xffffffff") {
+          tags.push("Custom Name Color");
+        }
+        playerTags = tags;
       } catch (apiError) {
         console.error("Error fetching API data:", apiError);
       }
@@ -130,6 +187,55 @@ export async function GET(
       enhancedStats.trackedDays = trackedDays;
     }
 
+    // Fallback: if API top brawlers unavailable, derive from latest brawler snapshots
+    if (topBrawlers.length === 0) {
+      const { data: snapshotRows } = await supabase
+        .from("brawler_snapshots")
+        .select("brawler_id, brawler_name, power_level, trophies, rank, recorded_at")
+        .eq("player_tag", playerTag)
+        .order("recorded_at", { ascending: false })
+        .limit(500);
+
+      const latestByBrawler = new Map<number, {
+        brawler_id: number;
+        brawler_name: string;
+        power_level: number;
+        trophies: number;
+        rank: number;
+        max_trophies: number;
+      }>();
+
+      for (const row of snapshotRows || []) {
+        const existing = latestByBrawler.get(row.brawler_id);
+        if (!existing) {
+          latestByBrawler.set(row.brawler_id, {
+            brawler_id: row.brawler_id,
+            brawler_name: row.brawler_name,
+            power_level: row.power_level,
+            trophies: row.trophies,
+            rank: row.rank,
+            max_trophies: row.trophies,
+          });
+        } else if (row.trophies > existing.max_trophies) {
+          existing.max_trophies = row.trophies;
+          latestByBrawler.set(row.brawler_id, existing);
+        }
+      }
+
+      topBrawlers = Array.from(latestByBrawler.values())
+        .sort((a, b) => b.trophies - a.trophies)
+        .slice(0, 5)
+        .map((brawler) => ({
+          id: brawler.brawler_id,
+          name: brawler.brawler_name,
+          trophies: brawler.trophies,
+          highestTrophies: brawler.max_trophies,
+          power: brawler.power_level,
+          rank: brawler.rank,
+          icon_url: `https://cdn.brawlify.com/brawlers/borders/${brawler.brawler_id}.png`,
+        }));
+    }
+
     return NextResponse.json({
       member,
       activityHistory: activityHistory || [],
@@ -139,6 +245,9 @@ export async function GET(
       enhancedStats,
       powerDistribution,
       brawlers,
+      topBrawlers,
+      recentMatches: (recentMatches || []) as RecentMatch[],
+      playerTags,
       calendarBattlesByDay,
     });
   } catch (error) {

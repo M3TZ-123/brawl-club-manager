@@ -13,6 +13,7 @@ export interface Database {
         Row: {
           player_tag: string;
           player_name: string;
+          icon_id: number | null;
           role: string;
           trophies: number;
           highest_trophies: number;
@@ -30,6 +31,7 @@ export interface Database {
         Insert: {
           player_tag: string;
           player_name: string;
+          icon_id?: number | null;
           role?: string;
           trophies?: number;
           highest_trophies?: number;
@@ -47,6 +49,7 @@ export interface Database {
         Update: {
           player_tag?: string;
           player_name?: string;
+          icon_id?: number | null;
           role?: string;
           trophies?: number;
           highest_trophies?: number;
@@ -117,9 +120,12 @@ export interface Database {
           player_name: string;
           first_seen: string;
           last_seen: string;
+          last_left_at: string | null;
           times_joined: number;
           times_left: number;
           is_current_member: boolean;
+          role_at_leave: string | null;
+          trophies_at_leave: number | null;
           notes: string | null;
         };
         Insert: {
@@ -127,9 +133,12 @@ export interface Database {
           player_name: string;
           first_seen?: string;
           last_seen?: string;
+          last_left_at?: string | null;
           times_joined?: number;
           times_left?: number;
           is_current_member?: boolean;
+          role_at_leave?: string | null;
+          trophies_at_leave?: number | null;
           notes?: string | null;
         };
         Update: {
@@ -137,9 +146,12 @@ export interface Database {
           player_name?: string;
           first_seen?: string;
           last_seen?: string;
+          last_left_at?: string | null;
           times_joined?: number;
           times_left?: number;
           is_current_member?: boolean;
+          role_at_leave?: string | null;
+          trophies_at_leave?: number | null;
           notes?: string | null;
         };
       };

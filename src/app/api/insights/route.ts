@@ -29,6 +29,37 @@ export async function GET() {
     const prevWeekStats = prevWeekStatsRes.data || [];
 
     // ============================
+    // 0. MEGA PIG STATUS — derived from tracked battle_history
+    // Note: Official API does not currently expose a direct club Mega Pig rank field.
+    // ============================
+    const { data: recentBattles } = await supabase
+      .from("battle_history")
+      .select("battle_time, mode, result")
+      .in("player_tag", members.map((m) => m.player_tag))
+      .gte("battle_time", weekAgoStr);
+
+    const megaPigBattles = (recentBattles || []).filter((battle) => {
+      const mode = (battle.mode || "").toLowerCase();
+      return mode.includes("mega") || mode.includes("pig");
+    });
+
+    const megaPigWins = megaPigBattles.reduce((sum, battle) => {
+      return sum + (battle.result === "victory" ? 1 : 0);
+    }, 0);
+
+    const megaPigStatus = {
+      isTracked: megaPigBattles.length > 0,
+      totalWins: megaPigWins,
+      totalBattles: megaPigBattles.length,
+      rankReached: null as string | null,
+      lastBattleAt: megaPigBattles.length > 0
+        ? megaPigBattles
+            .map((battle) => new Date(battle.battle_time).getTime())
+            .sort((a, b) => b - a)[0]
+        : null,
+    };
+
+    // ============================
     // 1. WIN RATE — Club win percentage this week
     // ============================
     const totalWins = thisWeekStats.reduce((sum, s) => sum + (s.wins || 0), 0);
@@ -125,6 +156,13 @@ export async function GET() {
 
     return NextResponse.json({
       insights: {
+        // Mega Pig
+        megaPig: {
+          ...megaPigStatus,
+          lastBattleAt: megaPigStatus.lastBattleAt
+            ? new Date(megaPigStatus.lastBattleAt).toISOString()
+            : null,
+        },
         // Win Rate
         winRate,
         totalWins,

@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import { LayoutWrapper } from "@/components/layout-wrapper";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { TrophyChart, ActivityPieChart, MemberBarChart } from "@/components/charts";
+import { TrophyChart, ActivityPieChart } from "@/components/charts";
 import { formatNumber, formatDate } from "@/lib/utils";
 import { Download, RefreshCw, TrendingUp, TrendingDown, Users, Trophy } from "lucide-react";
 
@@ -20,9 +20,13 @@ interface WeeklyReport {
     avgTrophies: number;
     activeMembers: number;
     activityRate: number;
+    weeklyWins: number;
+    weeklyBattles: number;
+    weeklyWinRate: number;
   };
   topGainers: { playerTag: string; playerName: string; trophyChange: number }[];
   topLosers: { playerTag: string; playerName: string; trophyChange: number }[];
+  topLosersMode?: "losses" | "lowest_progress";
   activityDistribution: { active: number; minimal: number; inactive: number };
   recentEvents: { event_type: string; player_name: string; event_time: string }[];
   trophyTrend: { date: string; trophies: number }[];
@@ -146,7 +150,7 @@ export default function ReportsPage() {
           {report && (
             <div className="space-y-6">
               {/* Summary Cards */}
-              <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
+              <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-5">
                 <Card>
                   <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
                     <CardTitle className="text-sm font-medium">Total Members</CardTitle>
@@ -171,8 +175,21 @@ export default function ReportsPage() {
 
                 <Card>
                   <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                    <CardTitle className="text-sm font-medium">Activity Rate</CardTitle>
+                    <CardTitle className="text-sm font-medium">Weekly Win Rate</CardTitle>
                     <TrendingUp className="h-4 w-4 text-green-500" />
+                  </CardHeader>
+                  <CardContent>
+                    <div className="text-2xl font-bold">{report.summary.weeklyWinRate}%</div>
+                    <p className="text-xs text-muted-foreground">
+                      {formatNumber(report.summary.weeklyWins)}W / {formatNumber(report.summary.weeklyBattles)} battles
+                    </p>
+                  </CardContent>
+                </Card>
+
+                <Card>
+                  <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                    <CardTitle className="text-sm font-medium">Activity Rate</CardTitle>
+                    <Users className="h-4 w-4 text-green-500" />
                   </CardHeader>
                   <CardContent>
                     <div className="text-2xl font-bold">{report.summary.activityRate}%</div>
@@ -246,7 +263,9 @@ export default function ReportsPage() {
                   <CardHeader>
                     <CardTitle className="flex items-center gap-2">
                       <TrendingDown className="h-5 w-5 text-red-500" />
-                      Least Progress
+                      {report.topLosersMode === "lowest_progress"
+                        ? "Lowest Trophy Progress"
+                        : "Worst Trophy Drops"}
                     </CardTitle>
                   </CardHeader>
                   <CardContent>
@@ -265,14 +284,14 @@ export default function ReportsPage() {
                               </p>
                             </div>
                           </div>
-                          <span className="font-bold text-red-500">
-                            {formatNumber(player.trophyChange)}
+                          <span className={`font-bold ${player.trophyChange < 0 ? "text-red-500" : "text-yellow-400"}`}>
+                            {player.trophyChange > 0 ? `+${formatNumber(player.trophyChange)}` : formatNumber(player.trophyChange)}
                           </span>
                         </div>
                       ))}
                       {report.topLosers.length === 0 && (
                         <p className="text-muted-foreground text-center py-4">
-                          No data available yet
+                          No trophy data available this week
                         </p>
                       )}
                     </div>

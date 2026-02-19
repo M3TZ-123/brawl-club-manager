@@ -1,8 +1,22 @@
 import { NextRequest, NextResponse } from "next/server";
 import { supabase } from "@/lib/supabase";
 
-export async function GET() {
+function parseDate(value: string | null | undefined): Date | null {
+  if (!value) return null;
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) return null;
+  return parsed;
+}
+
+export async function GET(request: NextRequest) {
   try {
+    const { searchParams } = new URL(request.url);
+    const daysParam = searchParams.get("days");
+    const days = daysParam && daysParam !== "all" ? Number(daysParam) : null;
+    const cutoffDate = days && Number.isFinite(days)
+      ? new Date(Date.now() - days * 24 * 60 * 60 * 1000)
+      : null;
+
     const { data: history, error } = await supabase
       .from("member_history")
       .select("*")
@@ -10,7 +24,22 @@ export async function GET() {
 
     if (error) throw error;
 
-    return NextResponse.json({ history: history || [] });
+    let filteredHistory = history || [];
+
+    if (cutoffDate) {
+      filteredHistory = filteredHistory.filter((record) => {
+        const joinedAt = parseDate(record.first_seen);
+        const leftAt = parseDate(record.last_left_at)
+          || (!record.is_current_member ? parseDate(record.last_seen) : null);
+
+        const joinedInRange = !!joinedAt && joinedAt >= cutoffDate;
+        const leftInRange = !!leftAt && leftAt >= cutoffDate;
+
+        return joinedInRange || leftInRange;
+      });
+    }
+
+    return NextResponse.json({ history: filteredHistory });
   } catch (error) {
     console.error("Error fetching history:", error);
     return NextResponse.json(

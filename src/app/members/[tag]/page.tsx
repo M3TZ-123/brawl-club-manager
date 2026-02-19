@@ -6,7 +6,6 @@ import { LayoutWrapper } from "@/components/layout-wrapper";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Progress } from "@/components/ui/progress";
 import { TrophyStatistics, ActivityCalendar, PowerLevelChart, TrackingStats, EnhancedTrackingStats } from "@/components/charts";
 import { Member, ActivityLog, MemberHistory } from "@/types/database";
 import {
@@ -16,6 +15,7 @@ import {
   getActivityEmoji,
   getRankColor,
 } from "@/lib/utils";
+import { getProfileIconUrl } from "@/lib/brawl-assets";
 import {
   Trophy,
   Star,
@@ -26,6 +26,7 @@ import {
   RefreshCw,
   ArrowLeft,
   TrendingUp,
+  Clock3,
 } from "lucide-react";
 import Link from "next/link";
 
@@ -65,6 +66,27 @@ interface EnhancedStats {
   trackedDays: number;
 }
 
+interface TopBrawler {
+  id: number;
+  name: string;
+  trophies: number;
+  highestTrophies: number;
+  power: number;
+  rank: number;
+  icon_url: string;
+}
+
+interface RecentMatch {
+  battle_time: string;
+  mode: string | null;
+  map: string | null;
+  result: string | null;
+  trophy_change: number;
+  is_star_player: boolean;
+  brawler_name: string | null;
+  brawler_power: number | null;
+}
+
 interface PageProps {
   params: Promise<{ tag: string }>;
 }
@@ -80,6 +102,10 @@ export default function MemberDetailPage({ params }: PageProps) {
   const [powerDistribution, setPowerDistribution] = useState<PowerDistribution | null>(null);
   const [enhancedStats, setEnhancedStats] = useState<EnhancedStats | null>(null);
   const [calendarBattlesByDay, setCalendarBattlesByDay] = useState<Record<string, number>>({});
+  const [topBrawlers, setTopBrawlers] = useState<TopBrawler[]>([]);
+  const [recentMatches, setRecentMatches] = useState<RecentMatch[]>([]);
+  const [playerTags, setPlayerTags] = useState<string[]>([]);
+  const [avatarError, setAvatarError] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
   const [isRefreshing, setIsRefreshing] = useState(false);
 
@@ -103,6 +129,9 @@ export default function MemberDetailPage({ params }: PageProps) {
         setPowerDistribution(data.powerDistribution || null);
         setEnhancedStats(data.enhancedStats || null);
         setCalendarBattlesByDay(data.calendarBattlesByDay || {});
+        setTopBrawlers(data.topBrawlers || []);
+        setRecentMatches(data.recentMatches || []);
+        setPlayerTags(data.playerTags || []);
       }
     } catch (error) {
       console.error("Error loading member:", error);
@@ -154,6 +183,24 @@ export default function MemberDetailPage({ params }: PageProps) {
       recorded_at: log.recorded_at,
     }));
 
+  const totalPowerTracked = powerDistribution
+    ? powerDistribution.distribution.reduce((sum, count) => sum + count, 0)
+    : 0;
+  const dominantPower = powerDistribution
+    ? powerDistribution.distribution.reduce(
+        (best, count, index) => (count > best.count ? { level: index + 1, count } : best),
+        { level: 1, count: 0 }
+      )
+    : { level: 1, count: 0 };
+  const hasDominantPower = totalPowerTracked > 0 && dominantPower.count / totalPowerTracked >= 0.8;
+
+  const formatBattleResult = (result: string | null) => {
+    if (!result) return { label: "Unknown", className: "text-muted-foreground" };
+    if (result === "victory") return { label: "Victory", className: "text-green-500" };
+    if (result === "defeat") return { label: "Defeat", className: "text-red-500" };
+    return { label: result, className: "text-muted-foreground" };
+  };
+
   if (isLoading) {
     return (
       <LayoutWrapper>
@@ -198,9 +245,18 @@ export default function MemberDetailPage({ params }: PageProps) {
           <CardContent className="pt-6">
             <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
               <div className="flex items-center gap-4">
-                <div className="h-16 w-16 rounded-full bg-gradient-to-br from-yellow-400 to-orange-500 flex items-center justify-center text-2xl font-bold text-white">
-                  {member.player_name.charAt(0)}
-                </div>
+                {getProfileIconUrl(member.icon_id) && !avatarError ? (
+                  <img
+                    src={getProfileIconUrl(member.icon_id) || undefined}
+                    alt={`${member.player_name} icon`}
+                    className="h-16 w-16 rounded-md border border-border/70 bg-muted/30 shadow-sm"
+                    onError={() => setAvatarError(true)}
+                  />
+                ) : (
+                  <div className="h-16 w-16 rounded-md bg-gradient-to-br from-yellow-400 to-orange-500 flex items-center justify-center text-2xl font-bold text-white shadow-sm">
+                    {member.player_name.charAt(0)}
+                  </div>
+                )}
                 <div>
                       <div className="flex items-center gap-2">
                         <h1 className="text-2xl font-bold">{member.player_name}</h1>
@@ -213,6 +269,13 @@ export default function MemberDetailPage({ params }: PageProps) {
                         <Badge>{member.role}</Badge>
                         {getMemberBadge()}
                       </div>
+                      {playerTags.length > 0 && (
+                        <div className="flex flex-wrap items-center gap-2 mt-2">
+                          {playerTags.map((tag) => (
+                            <Badge key={tag} variant="outline">{tag}</Badge>
+                          ))}
+                        </div>
+                      )}
                     </div>
                   </div>
                   <Button onClick={handleRefresh} disabled={isRefreshing}>
@@ -279,62 +342,78 @@ export default function MemberDetailPage({ params }: PageProps) {
             </div>
 
             {/* Victories Breakdown */}
-            <Card>
-              <CardHeader>
-                <CardTitle>Battle Statistics</CardTitle>
-              </CardHeader>
-              <CardContent>
-                <div className="space-y-4">
-                  <div>
-                    <div className="flex justify-between text-sm mb-1">
-                      <span>3v3 Victories</span>
-                      <span>{formatNumber(member.trio_victories)}</span>
+            <div className="grid gap-4 md:grid-cols-3">
+              <Card>
+                <CardContent className="pt-6">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <p className="text-sm text-muted-foreground">3v3 Victories</p>
+                      <p className="text-2xl font-bold">{formatNumber(member.trio_victories)}</p>
                     </div>
-                    <Progress
-                      value={
-                        (member.trio_victories /
-                          ((member.trio_victories + member.solo_victories + member.duo_victories) || 1)) *
-                        100
-                      }
-                      className="h-2"
-                    />
+                    <Users className="h-6 w-6 text-blue-500" />
                   </div>
-                  <div>
-                    <div className="flex justify-between text-sm mb-1">
-                      <span>Solo Victories</span>
-                      <span>{formatNumber(member.solo_victories)}</span>
+                </CardContent>
+              </Card>
+              <Card>
+                <CardContent className="pt-6">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <p className="text-sm text-muted-foreground">Solo Victories</p>
+                      <p className="text-2xl font-bold">{formatNumber(member.solo_victories)}</p>
                     </div>
-                    <Progress
-                      value={
-                        (member.solo_victories /
-                          ((member.trio_victories + member.solo_victories + member.duo_victories) || 1)) *
-                        100
-                      }
-                      className="h-2"
-                    />
+                    <Target className="h-6 w-6 text-orange-500" />
                   </div>
-                  <div>
-                    <div className="flex justify-between text-sm mb-1">
-                      <span>Duo Victories</span>
-                      <span>{formatNumber(member.duo_victories)}</span>
+                </CardContent>
+              </Card>
+              <Card>
+                <CardContent className="pt-6">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <p className="text-sm text-muted-foreground">Duo Victories</p>
+                      <p className="text-2xl font-bold">{formatNumber(member.duo_victories)}</p>
                     </div>
-                    <Progress
-                      value={
-                        (member.duo_victories /
-                          ((member.trio_victories + member.solo_victories + member.duo_victories) || 1)) *
-                        100
-                      }
-                      className="h-2"
-                    />
+                    <Users className="h-6 w-6 text-green-500" />
                   </div>
-                </div>
-              </CardContent>
-            </Card>
+                </CardContent>
+              </Card>
+            </div>
+
+            {/* Top Brawlers */}
+            {topBrawlers.length > 0 && (
+              <Card>
+                <CardHeader>
+                  <CardTitle>Top Brawlers</CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
+                    {topBrawlers.map((brawler) => (
+                      <div key={brawler.id} className="rounded-md border border-border/70 bg-card/50 p-3">
+                        <div className="flex items-center gap-2 mb-2">
+                          <img
+                            src={brawler.icon_url}
+                            alt={brawler.name}
+                            className="h-9 w-9 rounded-md border border-border/70 bg-muted/30"
+                            loading="lazy"
+                          />
+                          <div className="min-w-0">
+                            <p className="text-sm font-semibold truncate">{brawler.name}</p>
+                            <p className="text-xs text-muted-foreground">Rank {brawler.rank}</p>
+                          </div>
+                        </div>
+                        <div className="text-sm space-y-1">
+                          <div className="flex justify-between"><span className="text-muted-foreground">Trophies</span><span className="font-medium">{formatNumber(brawler.trophies)}</span></div>
+                          <div className="flex justify-between"><span className="text-muted-foreground">Highest</span><span className="font-medium">{formatNumber(brawler.highestTrophies)}</span></div>
+                          <div className="flex justify-between"><span className="text-muted-foreground">Power</span><span className="font-medium">{brawler.power}</span></div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </CardContent>
+              </Card>
+            )}
 
             {/* Trophy Statistics Chart */}
-            {trophyChartData.length > 0 && (
-              <TrophyStatistics data={trophyChartData} currentTrophies={member.trophies} />
-            )}
+            <TrophyStatistics data={trophyChartData} currentTrophies={member.trophies} />
 
             {/* Battle Stats Row */}
             {(battleStats || powerDistribution || enhancedStats || Object.keys(calendarBattlesByDay).length > 0) && (
@@ -350,11 +429,30 @@ export default function MemberDetailPage({ params }: PageProps) {
                 
                 {/* Power Level Distribution */}
                 {powerDistribution && (
-                  <PowerLevelChart 
-                    distribution={powerDistribution.distribution}
-                    avgPower={powerDistribution.avgPower}
-                    maxedCount={powerDistribution.maxedCount}
-                  />
+                  hasDominantPower ? (
+                    <Card>
+                      <CardHeader className="pb-2">
+                        <CardTitle className="text-sm font-medium">BY POWER LEVEL</CardTitle>
+                      </CardHeader>
+                      <CardContent>
+                        <div className="rounded-md border border-border/70 bg-card/50 p-4 text-center">
+                          <p className="text-lg font-semibold">Maxed Account</p>
+                          <p className="text-sm text-muted-foreground mt-1">
+                            {dominantPower.count}/{totalPowerTracked} at Power {dominantPower.level}
+                          </p>
+                          <p className="text-xs text-muted-foreground mt-2">
+                            Average Power: {powerDistribution.avgPower.toFixed(1)}
+                          </p>
+                        </div>
+                      </CardContent>
+                    </Card>
+                  ) : (
+                    <PowerLevelChart 
+                      distribution={powerDistribution.distribution}
+                      avgPower={powerDistribution.avgPower}
+                      maxedCount={powerDistribution.maxedCount}
+                    />
+                  )
                 )}
                 
                 {/* Tracking Stats - Use enhanced if available, otherwise basic */}
@@ -389,6 +487,48 @@ export default function MemberDetailPage({ params }: PageProps) {
                 )}
               </div>
             )}
+
+            {/* Recent Matches */}
+            <Card>
+              <CardHeader className="flex flex-row items-center justify-between">
+                <CardTitle>Recent Matches</CardTitle>
+                <Badge variant="outline">Last 25</Badge>
+              </CardHeader>
+              <CardContent>
+                {recentMatches.length === 0 ? (
+                  <p className="text-sm text-muted-foreground">No recent matches tracked yet.</p>
+                ) : (
+                  <div className="space-y-2">
+                    {recentMatches.map((match, index) => {
+                      const result = formatBattleResult(match.result);
+                      return (
+                        <div key={`${match.battle_time}-${index}`} className="flex items-center justify-between rounded-md border border-border/60 px-3 py-2">
+                          <div className="min-w-0">
+                            <div className="flex items-center gap-2">
+                              <span className={`text-sm font-medium ${result.className}`}>{result.label}</span>
+                              <span className="text-sm text-muted-foreground">{match.mode || "Unknown mode"}</span>
+                            </div>
+                            <p className="text-xs text-muted-foreground truncate">
+                              {match.map || "Unknown map"} • {match.brawler_name || "Unknown brawler"}
+                              {typeof match.brawler_power === "number" ? ` (P${match.brawler_power})` : ""}
+                            </p>
+                          </div>
+                          <div className="text-right ml-3">
+                            <p className={`text-sm font-semibold ${match.trophy_change > 0 ? "text-green-500" : match.trophy_change < 0 ? "text-red-500" : "text-muted-foreground"}`}>
+                              {match.trophy_change > 0 ? `+${match.trophy_change}` : match.trophy_change}
+                            </p>
+                            <p className="text-xs text-muted-foreground inline-flex items-center gap-1">
+                              <Clock3 className="h-3 w-3" />
+                              {formatRelativeTime(match.battle_time)}
+                            </p>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </CardContent>
+            </Card>
 
             {/* Member History */}
             {memberHistory && (

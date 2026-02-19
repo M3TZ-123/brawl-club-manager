@@ -121,7 +121,7 @@ async function syncClubData(providedClubTag?: string, providedApiKey?: string, i
     // Get existing members from database
     const { data: existingMembers } = await supabase
       .from("members")
-      .select("player_tag, trophies, rank_current, rank_highest");
+      .select("player_tag, player_name, icon_id, role, trophies, rank_current, rank_highest");
 
     const existingMemberMap = new Map(
       existingMembers?.map((m) => [m.player_tag, m]) || []
@@ -151,6 +151,7 @@ async function syncClubData(providedClubTag?: string, providedApiKey?: string, i
     const memberUpdates = [];
     const activityLogs = [];
     const events = [];
+    const memberChangeNotifs: Array<{ type: string; title: string; message: string; player_tag: string; player_name: string }> = [];
     const historyUpdates = [];
     const allBattles: ReturnType<typeof processBattleLog> = [];
     const brawlerSnapshots: {
@@ -164,6 +165,15 @@ async function syncClubData(providedClubTag?: string, providedApiKey?: string, i
       star_powers_count: number;
       gears_count: number;
     }[] = [];
+
+    const normalizeRole = (role: string | null | undefined) =>
+      (role || "").toLowerCase().replace(/[\s_-]/g, "");
+    const roleRank: Record<string, number> = {
+      member: 0,
+      senior: 1,
+      vicepresident: 2,
+      president: 3,
+    };
 
     // Process members in parallel batches of 4
     // Brawl Stars API rate limit: ~10 req/sec per key
@@ -268,9 +278,40 @@ async function syncClubData(providedClubTag?: string, providedApiKey?: string, i
           ? rankedData.highestRank 
           : (existingMemberData?.rank_highest || "Unranked");
 
+        if (existingMemberData?.player_name && existingMemberData.player_name !== member.name) {
+          memberChangeNotifs.push({
+            type: "name_change",
+            title: "Name Changed",
+            message: `${existingMemberData.player_name} is now ${member.name} (${member.tag}).`,
+            player_tag: member.tag,
+            player_name: member.name,
+          });
+        }
+
+        const prevRoleNorm = normalizeRole(existingMemberData?.role);
+        const currentRoleNorm = normalizeRole(member.role);
+        if (prevRoleNorm && currentRoleNorm && prevRoleNorm !== currentRoleNorm) {
+          const prevRank = roleRank[prevRoleNorm] ?? -1;
+          const nextRank = roleRank[currentRoleNorm] ?? -1;
+          const roleType = nextRank > prevRank ? "promotion" : nextRank < prevRank ? "demotion" : "role_change";
+          const roleTitle = roleType === "promotion"
+            ? "Member Promoted"
+            : roleType === "demotion"
+              ? "Member Demoted"
+              : "Role Changed";
+          memberChangeNotifs.push({
+            type: roleType,
+            title: roleTitle,
+            message: `${member.name} (${member.tag}) role changed: ${existingMemberData?.role || "unknown"} → ${member.role}.`,
+            player_tag: member.tag,
+            player_name: member.name,
+          });
+        }
+
         memberUpdates.push({
           player_tag: member.tag,
           player_name: member.name,
+          icon_id: player.icon?.id || existingMemberData?.icon_id || null,
           role: member.role,
           trophies: player.trophies,
           highest_trophies: player.highestTrophies,
@@ -371,12 +412,18 @@ async function syncClubData(providedClubTag?: string, providedApiKey?: string, i
     // Check for members who left
     for (const history of memberHistory || []) {
       if (history.is_current_member && !currentMemberTags.has(history.player_tag)) {
+        const leavingMemberSnapshot = existingMemberMap.get(history.player_tag);
         historyUpdates.push({
           player_tag: history.player_tag,
           player_name: history.player_name,
           last_seen: new Date().toISOString(),
+          last_left_at: new Date().toISOString(),
           times_left: history.times_left + 1,
           is_current_member: false,
+          role_at_leave: leavingMemberSnapshot?.role || null,
+          trophies_at_leave: typeof leavingMemberSnapshot?.trophies === "number"
+            ? leavingMemberSnapshot.trophies
+            : null,
         });
         events.push({
           event_type: "leave",
@@ -389,6 +436,39 @@ async function syncClubData(providedClubTag?: string, providedApiKey?: string, i
           .from("members")
           .update({ is_active: false })
           .eq("player_tag", history.player_tag);
+      }
+    }
+
+    // Deduplicate join/leave events (batch + recent DB window) to avoid duplicates
+    let eventsToInsert = events;
+    if (events.length > 0) {
+      const uniqueBatchEventKeys = new Set<string>();
+      eventsToInsert = events.filter((evt) => {
+        const key = `${evt.event_type}|${evt.player_tag}|${evt.player_name}`;
+        if (uniqueBatchEventKeys.has(key)) return false;
+        uniqueBatchEventKeys.add(key);
+        return true;
+      });
+
+      const recentEventWindowISO = new Date(Date.now() - 10 * 60 * 1000).toISOString();
+      const eventTypes = [...new Set(eventsToInsert.map((evt) => evt.event_type))];
+      const eventTags = [...new Set(eventsToInsert.map((evt) => evt.player_tag))];
+
+      if (eventTypes.length > 0 && eventTags.length > 0) {
+        const { data: recentEvents } = await supabase
+          .from("club_events")
+          .select("event_type, player_tag, player_name, event_time")
+          .in("event_type", eventTypes)
+          .in("player_tag", eventTags)
+          .gte("event_time", recentEventWindowISO);
+
+        const existingRecentEventKeys = new Set(
+          (recentEvents || []).map((evt) => `${evt.event_type}|${evt.player_tag}|${evt.player_name}`)
+        );
+
+        eventsToInsert = eventsToInsert.filter(
+          (evt) => !existingRecentEventKeys.has(`${evt.event_type}|${evt.player_tag}|${evt.player_name}`)
+        );
       }
     }
 
@@ -416,8 +496,8 @@ async function syncClubData(providedClubTag?: string, providedApiKey?: string, i
     }
 
     // Insert events
-    if (events.length > 0) {
-      dbWrites.push(supabase.from("club_events").insert(events));
+    if (eventsToInsert.length > 0) {
+      dbWrites.push(supabase.from("club_events").insert(eventsToInsert));
     }
 
     // Wait for core DB writes to finish
@@ -621,7 +701,7 @@ async function syncClubData(providedClubTag?: string, providedApiKey?: string, i
     // Insert DB notifications for the notification panel
       const notifRows: Array<{ type: string; title: string; message: string; player_tag: string | null; player_name: string | null }> = [];
 
-      for (const evt of events) {
+      for (const evt of eventsToInsert) {
         if (evt.event_type === "join") {
           notifRows.push({
             type: "join",
@@ -639,6 +719,16 @@ async function syncClubData(providedClubTag?: string, providedApiKey?: string, i
             player_name: evt.player_name,
           });
         }
+      }
+
+      for (const notif of memberChangeNotifs) {
+        notifRows.push({
+          type: notif.type,
+          title: notif.title,
+          message: notif.message,
+          player_tag: notif.player_tag,
+          player_name: notif.player_name,
+        });
       }
 
       // Inactive members notification — reuse the same 24h throttle logic
@@ -665,9 +755,38 @@ async function syncClubData(providedClubTag?: string, providedApiKey?: string, i
       }
 
       if (notifRows.length > 0) {
-        const { error: notifError } = await supabase.from("notifications").insert(notifRows);
-        if (notifError) console.error("Error inserting notifications:", notifError);
-        else console.log(`Inserted ${notifRows.length} notification(s) into DB`);
+        const uniqueBatchNotifKeys = new Set<string>();
+        let notifRowsToInsert = notifRows.filter((notif) => {
+          const key = `${notif.type}|${notif.player_tag || ""}|${notif.title}|${notif.message}`;
+          if (uniqueBatchNotifKeys.has(key)) return false;
+          uniqueBatchNotifKeys.add(key);
+          return true;
+        });
+
+        const notifTypes = [...new Set(notifRowsToInsert.map((n) => n.type))];
+        const recentNotifWindowISO = new Date(Date.now() - 10 * 60 * 1000).toISOString();
+
+        if (notifTypes.length > 0) {
+          const { data: recentNotifs } = await supabase
+            .from("notifications")
+            .select("type, title, message, player_tag, created_at")
+            .in("type", notifTypes)
+            .gte("created_at", recentNotifWindowISO);
+
+          const existingRecentNotifKeys = new Set(
+            (recentNotifs || []).map((notif) => `${notif.type}|${notif.player_tag || ""}|${notif.title}|${notif.message}`)
+          );
+
+          notifRowsToInsert = notifRowsToInsert.filter(
+            (notif) => !existingRecentNotifKeys.has(`${notif.type}|${notif.player_tag || ""}|${notif.title}|${notif.message}`)
+          );
+        }
+
+        if (notifRowsToInsert.length > 0) {
+          const { error: notifError } = await supabase.from("notifications").insert(notifRowsToInsert);
+          if (notifError) console.error("Error inserting notifications:", notifError);
+          else console.log(`Inserted ${notifRowsToInsert.length} notification(s) into DB`);
+        }
       }
 
     // Send Discord webhook notifications for joins/leaves/inactivity
@@ -676,7 +795,7 @@ async function syncClubData(providedClubTag?: string, providedApiKey?: string, i
         const embeds: Array<{ title: string; description: string; color: number; timestamp: string }> = [];
 
         // Join events
-        for (const evt of events.filter(e => e.event_type === "join")) {
+        for (const evt of eventsToInsert.filter(e => e.event_type === "join")) {
           embeds.push({
             title: "\u2705 Member Joined",
             description: `**${evt.player_name}** (${evt.player_tag}) joined the club.`,
@@ -686,7 +805,7 @@ async function syncClubData(providedClubTag?: string, providedApiKey?: string, i
         }
 
         // Leave events
-        for (const evt of events.filter(e => e.event_type === "leave")) {
+        for (const evt of eventsToInsert.filter(e => e.event_type === "leave")) {
           embeds.push({
             title: "\u274c Member Left",
             description: `**${evt.player_name}** (${evt.player_tag}) left the club.`,
@@ -756,10 +875,16 @@ async function syncClubData(providedClubTag?: string, providedApiKey?: string, i
 
     // Save last sync time to database
     const syncTime = new Date().toISOString();
-    await supabase.from("settings").upsert({
-      key: "last_sync_time",
-      value: syncTime,
-    }, { onConflict: "key" });
+    await Promise.all([
+      supabase.from("settings").upsert({
+        key: "last_sync_time",
+        value: syncTime,
+      }, { onConflict: "key" }),
+      supabase.from("settings").upsert({
+        key: "required_trophies",
+        value: String(club.requiredTrophies ?? ""),
+      }, { onConflict: "key" }),
+    ]);
 
     // Separate joins and leaves for the response
     const joins = events.filter(e => e.event_type === "join");

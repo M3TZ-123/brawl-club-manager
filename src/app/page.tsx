@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { useAppStore } from "@/lib/store";
 import { LayoutWrapper } from "@/components/layout-wrapper";
@@ -10,10 +10,18 @@ import { MembersTable } from "@/components/members-table";
 import { ActivityTimeline } from "@/components/activity-timeline";
 import { ActivityPieChart, MemberBarChart } from "@/components/charts";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
 import { Member, ClubEvent } from "@/types/database";
-import { Trophy, UserX, TrendingUp, TrendingDown, Minus, Crown, Target } from "lucide-react";
+import { Trophy, UserX, TrendingUp, TrendingDown, Minus, Crown, Target, Copy, Check } from "lucide-react";
 
 interface ClubInsights {
+  megaPig: {
+    isTracked: boolean;
+    totalWins: number;
+    totalBattles: number;
+    rankReached: string | null;
+    lastBattleAt: string | null;
+  };
   winRate: number;
   totalWins: number;
   totalBattlesThisWeek: number;
@@ -28,7 +36,14 @@ interface ClubInsights {
 }
 
 export default function DashboardPage() {
-  const { clubTag, apiKey, isLoadingSettings, hasLoadedSettings, loadSettingsFromDB } = useAppStore();
+  const {
+    clubTag,
+    apiKey,
+    requiredTrophies,
+    isLoadingSettings,
+    hasLoadedSettings,
+    loadSettingsFromDB,
+  } = useAppStore();
   const [isSetupComplete, setIsSetupComplete] = useState(false);
   const [members, setMembers] = useState<Member[]>([]);
   const [events, setEvents] = useState<ClubEvent[]>([]);
@@ -36,6 +51,8 @@ export default function DashboardPage() {
   const [mounted, setMounted] = useState(false);
   const [dataLoaded, setDataLoaded] = useState(false);
   const [insights, setInsights] = useState<ClubInsights | null>(null);
+  const [copiedTag, setCopiedTag] = useState<string | null>(null);
+  const inactiveMembersRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
     setMounted(true);
@@ -88,6 +105,22 @@ export default function DashboardPage() {
     }
   };
 
+  const scrollToInactiveMembers = () => {
+    inactiveMembersRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+  };
+
+  const handleCopyTag = async (tag: string) => {
+    try {
+      await navigator.clipboard.writeText(tag);
+      setCopiedTag(tag);
+      window.setTimeout(() => {
+        setCopiedTag((current) => (current === tag ? null : current));
+      }, 1200);
+    } catch (error) {
+      console.error("Failed to copy player tag:", error);
+    }
+  };
+
   if (!mounted || isLoadingSettings) {
     return (
       <div className="flex h-screen items-center justify-center bg-background">
@@ -130,10 +163,43 @@ export default function DashboardPage() {
             avgTrophies={avgTrophies}
           />
 
+          <Card>
+            <CardContent className="pt-4 pb-4">
+              <div className="flex items-center gap-2 mb-1">
+                <Trophy className="h-4 w-4 text-yellow-500" />
+                <span className="text-xs font-medium text-muted-foreground">Club Conditions</span>
+              </div>
+              <p className="text-2xl font-bold">
+                {requiredTrophies != null ? requiredTrophies.toLocaleString() : "—"}
+              </p>
+              <p className="text-xs text-muted-foreground mt-1">Required trophies to join</p>
+            </CardContent>
+          </Card>
+
           {/* Club Insights */}
           {insights && (
             <>
-              <div className="grid gap-4 grid-cols-2 lg:grid-cols-4">
+              <div className="grid gap-4 grid-cols-2 lg:grid-cols-5">
+                {/* Mega Pig */}
+                <Card>
+                  <CardContent className="pt-4 pb-3">
+                    <div className="flex items-center gap-2 mb-2">
+                      <Trophy className="h-4 w-4 text-yellow-500" />
+                      <span className="text-xs font-medium text-muted-foreground">Mega Pig Status</span>
+                    </div>
+                    <p className="text-2xl font-bold">{insights.megaPig.totalWins}W</p>
+                    {insights.megaPig.isTracked ? (
+                      <p className="text-xs text-muted-foreground mt-1">
+                        Rank reached: {insights.megaPig.rankReached || "N/A (API limit)"}
+                      </p>
+                    ) : (
+                      <p className="text-xs text-muted-foreground mt-1">
+                        No Mega Pig battles detected this week
+                      </p>
+                    )}
+                  </CardContent>
+                </Card>
+
                 {/* Win Rate */}
                 <Card>
                   <CardContent className="pt-4 pb-3">
@@ -154,18 +220,25 @@ export default function DashboardPage() {
                 {/* Kick List */}
                 <Card>
                   <CardContent className="pt-4 pb-3">
-                    <div className="flex items-center gap-2 mb-2">
-                      <UserX className="h-4 w-4 text-red-500" />
-                      <span className="text-xs font-medium text-muted-foreground">Kick List</span>
-                    </div>
-                    <p className="text-2xl font-bold">{insights.kickCount}</p>
-                    {insights.kickCount > 0 ? (
-                      <p className="text-xs text-muted-foreground mt-1">
-                        Inactive members
-                      </p>
-                    ) : (
-                      <p className="text-xs text-green-500 mt-1 font-medium">All members active</p>
-                    )}
+                    <button
+                      type="button"
+                      onClick={scrollToInactiveMembers}
+                      disabled={insights.kickCount === 0}
+                      className="w-full text-left disabled:cursor-default"
+                    >
+                      <div className="flex items-center gap-2 mb-2">
+                        <UserX className="h-4 w-4 text-red-500" />
+                        <span className="text-xs font-medium text-muted-foreground">Kick List</span>
+                      </div>
+                      <p className="text-2xl font-bold">{insights.kickCount}</p>
+                      {insights.kickCount > 0 ? (
+                        <p className="text-xs text-muted-foreground mt-1">
+                          Click to jump to inactive members
+                        </p>
+                      ) : (
+                        <p className="text-xs text-green-500 mt-1 font-medium">All members active</p>
+                      )}
+                    </button>
                   </CardContent>
                 </Card>
 
@@ -213,8 +286,9 @@ export default function DashboardPage() {
 
               {/* Kick List Details */}
               {insights.kickCount > 0 && (
-                <Card>
-                  <CardContent className="pt-4 pb-4">
+                <div id="inactive-members" ref={inactiveMembersRef}>
+                  <Card>
+                    <CardContent className="pt-4 pb-4">
                     <div className="flex items-center gap-2 mb-4">
                       <UserX className="h-4 w-4 text-red-500" />
                       <span className="text-sm font-medium">Inactive Members</span>
@@ -246,7 +320,21 @@ export default function DashboardPage() {
                                 severity === "high" ? "bg-red-500" :
                                 severity === "medium" ? "bg-orange-500" : "bg-yellow-500"
                               }`} />
-                              <span className="text-sm font-medium truncate">{k.name}</span>
+                              <div className="min-w-0">
+                                <span className="text-sm font-medium truncate block">{k.name}</span>
+                                <div className="flex items-center gap-1.5">
+                                  <span className="text-xs text-muted-foreground">{k.tag}</span>
+                                  <Button
+                                    variant="ghost"
+                                    size="icon"
+                                    className="h-5 w-5"
+                                    onClick={() => handleCopyTag(k.tag)}
+                                    aria-label={`Copy tag ${k.tag}`}
+                                  >
+                                    {copiedTag === k.tag ? <Check className="h-3 w-3" /> : <Copy className="h-3 w-3" />}
+                                  </Button>
+                                </div>
+                              </div>
                             </div>
                             <span className={`text-xs whitespace-nowrap ml-3 ${
                               severity === "high" ? "text-red-400" :
@@ -256,8 +344,9 @@ export default function DashboardPage() {
                         );
                       })}
                     </div>
-                  </CardContent>
-                </Card>
+                    </CardContent>
+                  </Card>
+                </div>
               )}
             </>
           )}

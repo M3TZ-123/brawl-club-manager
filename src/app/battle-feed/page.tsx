@@ -3,6 +3,7 @@
 import { useEffect, useState, useCallback, useRef } from "react";
 import Link from "next/link";
 import { supabase } from "@/lib/supabase";
+import { getBrawlerIconFromMap, normalizeBrawlerName } from "@/lib/brawl-assets";
 import { LayoutWrapper } from "@/components/layout-wrapper";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -12,10 +13,10 @@ import {
   Trophy,
   Star,
   ChevronDown,
-  Clock,
+  ChevronUp,
   Shield,
   ShieldAlert,
-  Search,
+  Users,
   Radio,
   X,
 } from "lucide-react";
@@ -96,6 +97,21 @@ function normalizeTag(tag: string | null | undefined): string {
   return withHash.toUpperCase();
 }
 
+function getMatchType(mode: string, totalTrophyChange: number, result: string) {
+  const modeLower = (mode || "").toLowerCase();
+
+  if (modeLower.includes("mega") || modeLower.includes("pig") || modeLower.includes("club")) {
+    return { label: "Mega Pig/Club", className: "text-amber-400 border-amber-500/40" };
+  }
+  if (modeLower.includes("ranked") || modeLower.includes("powerleague")) {
+    return { label: "Ranked", className: "text-violet-400 border-violet-500/40" };
+  }
+  if (modeLower === "unknown" || result === "unknown") {
+    return { label: "Friendly / Map Maker", className: "text-muted-foreground border-border" };
+  }
+  return { label: "Ladder", className: "text-blue-400 border-blue-500/40" };
+}
+
 // Compute time-ago using a server-relative clock to avoid client timezone/clock issues.
 // clockDelta = clientNow - serverNow at the moment the API responded.
 // adjustedNow = Date.now() - clockDelta ≈ current server time.
@@ -124,7 +140,49 @@ function timeAgo(dateStr: string, clockDelta = 0): string {
   return new Date(dateStr).toLocaleDateString();
 }
 
-function PlayerRow({ tag, name, brawler, power, isClub, trophyChange, isStar, result }: {
+function BrawlerChip({ brawler, power, brawlerIconByName }: {
+  brawler: string | null;
+  power: number | null;
+  brawlerIconByName: Record<string, string>;
+}) {
+  const [imgError, setImgError] = useState(false);
+
+  if (!brawler) {
+    return <span className="text-xs text-muted-foreground">Unknown Brawler</span>;
+  }
+
+  const iconUrl = getBrawlerIconFromMap(brawler, brawlerIconByName);
+
+  return (
+    <div className="flex items-center gap-1.5">
+      <div className="relative h-7 w-7 overflow-visible">
+        <div className="h-7 w-7 rounded-md overflow-hidden bg-muted/30 border border-border/70 shadow-sm">
+          {iconUrl && !imgError ? (
+            <img
+              src={iconUrl}
+              alt={brawler}
+              className="h-full w-full object-cover"
+              onError={() => setImgError(true)}
+              loading="lazy"
+            />
+          ) : (
+            <span className="absolute inset-0 flex items-center justify-center text-[9px] font-bold text-muted-foreground">
+              {brawler.charAt(0)}
+            </span>
+          )}
+        </div>
+        {power ? (
+          <span className="absolute right-0 bottom-0 translate-x-1/4 translate-y-1/4 min-w-[15px] h-[15px] rounded-full bg-black text-white border border-white/40 text-[9px] leading-[15px] text-center font-bold shadow">
+            {power}
+          </span>
+        ) : null}
+      </div>
+      <span className="text-xs text-muted-foreground truncate max-w-[88px]">{brawler}</span>
+    </div>
+  );
+}
+
+function PlayerRow({ tag, name, brawler, power, isClub, trophyChange, isStar, result, brawlerIconByName }: {
   tag: string;
   name: string;
   brawler: string | null;
@@ -133,6 +191,7 @@ function PlayerRow({ tag, name, brawler, power, isClub, trophyChange, isStar, re
   trophyChange?: number;
   isStar?: boolean;
   result?: string;
+  brawlerIconByName: Record<string, string>;
 }) {
   const inner = (
     <div className="flex items-center justify-between py-1">
@@ -144,15 +203,18 @@ function PlayerRow({ tag, name, brawler, power, isClub, trophyChange, isStar, re
         {isStar && <Star className="h-3 w-3 text-yellow-500 fill-yellow-500 flex-shrink-0" />}
       </div>
       <div className="flex items-center gap-2 flex-shrink-0 ml-2">
-        {brawler && (
-          <span className="text-xs text-muted-foreground">
-            {brawler}{power ? ` Lv${power}` : ""}
+        <BrawlerChip brawler={brawler} power={power} brawlerIconByName={brawlerIconByName} />
+        {trophyChange !== undefined && (
+          <span className={`text-xs font-bold min-w-[34px] text-right ${
+            trophyChange > 0 ? "text-green-500" : trophyChange < 0 ? "text-red-500" : "text-muted-foreground"
+          }`}>
+            {trophyChange > 0 ? `+${trophyChange}` : trophyChange < 0 ? trophyChange : (result && result !== "unknown" ? "N/A" : "±0")}
           </span>
         )}
-        {trophyChange !== undefined && trophyChange !== 0 && (
-          <span className={`text-xs font-bold min-w-[32px] text-right ${trophyChange > 0 ? "text-green-500" : "text-red-500"}`}>
-            {trophyChange > 0 ? `+${trophyChange}` : trophyChange}
-          </span>
+        {result === "unknown" && (
+          <Badge variant="outline" className="text-[10px] h-5 px-1.5 text-muted-foreground border-border">
+            Friendly
+          </Badge>
         )}
       </div>
     </div>
@@ -168,11 +230,22 @@ function PlayerRow({ tag, name, brawler, power, isClub, trophyChange, isStar, re
   return <div className="px-1 -mx-1">{inner}</div>;
 }
 
-function MatchCard({ match, clubTags, clockDelta }: { match: Match; clubTags: Set<string>; clockDelta: number }) {
+function MatchCard({ match, clubTags, clockDelta, brawlerIconByName }: {
+  match: Match;
+  clubTags: Set<string>;
+  clockDelta: number;
+  brawlerIconByName: Record<string, string>;
+}) {
+  const [expanded, setExpanded] = useState(false);
   const mainResult = match.clubPlayers[0]?.result || "unknown";
   const style = RESULT_STYLES[mainResult] || RESULT_STYLES.draw;
   const totalTrophyChange = match.clubPlayers.reduce((s, p) => s + p.trophy_change, 0);
+  const hasPointData = match.clubPlayers.some((p) => p.trophy_change !== 0);
   const normalizedClubTags = new Set([...clubTags].map((tag) => normalizeTag(tag)));
+  const matchType = getMatchType(match.mode, totalTrophyChange, mainResult);
+  const ourClubCount = (match.ourTeam || [])
+    .filter((p) => normalizedClubTags.has(normalizeTag(p.tag))).length;
+  const isPremade = (ourClubCount >= 2) || (match.clubPlayers.length >= 2 && !match.isShowdown);
 
   return (
     <div className={`rounded-xl border ${style.border} ${style.bg} overflow-hidden`}>
@@ -186,20 +259,64 @@ function MatchCard({ match, clubTags, clockDelta }: { match: Match; clubTags: Se
           </div>
         </div>
         <div className="flex items-center gap-3">
+          <Badge variant="outline" className={`text-xs ${matchType.className}`}>
+            {matchType.label}
+          </Badge>
+          {isPremade && (
+            <Badge variant="outline" className="text-xs text-cyan-400 border-cyan-500/40">
+              <Users className="h-3 w-3 mr-1" />Club Squad
+            </Badge>
+          )}
           <Badge variant="outline" className={`${style.text} border-current text-xs`}>
             {style.label}
           </Badge>
-          {totalTrophyChange !== 0 && (
-            <span className={`text-sm font-bold ${totalTrophyChange > 0 ? "text-green-500" : "text-red-500"}`}>
-              {totalTrophyChange > 0 ? `+${totalTrophyChange}` : totalTrophyChange}
+          {hasPointData ? (
+            <span className={`text-sm font-bold ${
+              totalTrophyChange > 0 ? "text-green-500" : totalTrophyChange < 0 ? "text-red-500" : "text-muted-foreground"
+            }`}>
+              {totalTrophyChange > 0 ? `+${totalTrophyChange}` : totalTrophyChange < 0 ? totalTrophyChange : "±0"}
             </span>
+          ) : (
+            <Badge variant="outline" className="text-[10px] h-5 px-1.5 text-muted-foreground border-border">
+              Points N/A
+            </Badge>
           )}
           <span className="text-xs text-muted-foreground">{timeAgo(match.battle_time, clockDelta)}</span>
         </div>
       </div>
 
+      <div className="px-4 py-2.5 border-b border-border/40">
+        <div className="flex items-center justify-between mb-1.5">
+          <span className="text-[11px] uppercase tracking-wide text-muted-foreground font-semibold">Club Players</span>
+          <button
+            type="button"
+            onClick={() => setExpanded((v) => !v)}
+            className="inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground"
+          >
+            {expanded ? "Hide Teams" : "Show Teams"}
+            {expanded ? <ChevronUp className="h-3.5 w-3.5" /> : <ChevronDown className="h-3.5 w-3.5" />}
+          </button>
+        </div>
+        <div className="space-y-0.5">
+          {match.clubPlayers.map((p) => (
+            <PlayerRow
+              key={`compact-${p.tag}`}
+              tag={p.tag}
+              name={p.name}
+              brawler={p.brawler}
+              power={p.power}
+              isClub={true}
+              trophyChange={p.trophy_change}
+              isStar={p.is_star_player}
+              result={p.result}
+              brawlerIconByName={brawlerIconByName}
+            />
+          ))}
+        </div>
+      </div>
+
       {/* Teams */}
-      {match.isShowdown ? (
+      {expanded && (match.isShowdown ? (
         /* Showdown layout: single column with club player(s) */
         <div className="px-4 py-3">
           <div className="flex items-center gap-1.5 mb-2">
@@ -221,6 +338,7 @@ function MatchCard({ match, clubTags, clockDelta }: { match: Match; clubTags: Se
                   isClub={isClub}
                   trophyChange={clubPlayer?.trophy_change}
                   isStar={clubPlayer?.is_star_player}
+                  brawlerIconByName={brawlerIconByName}
                 />
               );
             })}
@@ -240,6 +358,7 @@ function MatchCard({ match, clubTags, clockDelta }: { match: Match; clubTags: Se
                     brawler={p.brawler}
                     power={p.power}
                     isClub={normalizedClubTags.has(normalizeTag(p.tag))}
+                    brawlerIconByName={brawlerIconByName}
                   />
                 ))}
               </div>
@@ -270,6 +389,7 @@ function MatchCard({ match, clubTags, clockDelta }: { match: Match; clubTags: Se
                       isClub={isClub}
                       trophyChange={clubPlayer?.trophy_change}
                       isStar={clubPlayer?.is_star_player}
+                      brawlerIconByName={brawlerIconByName}
                     />
                   );
                 })
@@ -284,6 +404,7 @@ function MatchCard({ match, clubTags, clockDelta }: { match: Match; clubTags: Se
                     isClub={true}
                     trophyChange={p.trophy_change}
                     isStar={p.is_star_player}
+                    brawlerIconByName={brawlerIconByName}
                   />
                 ))
               )}
@@ -306,6 +427,7 @@ function MatchCard({ match, clubTags, clockDelta }: { match: Match; clubTags: Se
                     brawler={p.brawler}
                     power={p.power}
                     isClub={normalizedClubTags.has(normalizeTag(p.tag))}
+                    brawlerIconByName={brawlerIconByName}
                   />
                 ))
               ) : (
@@ -316,7 +438,7 @@ function MatchCard({ match, clubTags, clockDelta }: { match: Match; clubTags: Se
             </div>
           </div>
         </div>
-      )}
+      ))}
     </div>
   );
 }
@@ -337,6 +459,7 @@ export default function BattleFeedPage() {
   const [rawOffset, setRawOffset] = useState(0);
   const [isLive, setIsLive] = useState(false);
   const [clockDelta, setClockDelta] = useState(0);
+  const [brawlerIconByName, setBrawlerIconByName] = useState<Record<string, string>>({});
   const memberDropdownRef = useRef<HTMLDivElement>(null);
 
   const PAGE_SIZE = 50;
@@ -393,6 +516,37 @@ export default function BattleFeedPage() {
     },
     [filterMode, filterPlayer, filterDate]
   );
+
+  useEffect(() => {
+    let cancelled = false;
+
+    async function loadBrawlerIcons() {
+      try {
+        const response = await fetch("https://api.brawlapi.com/v1/brawlers");
+        if (!response.ok) return;
+        const data = await response.json();
+        const list = Array.isArray(data?.list) ? data.list : [];
+        const iconMap: Record<string, string> = {};
+        for (const item of list) {
+          if (!item?.name || !item?.imageUrl2) continue;
+          const name = String(item.name);
+          const url = String(item.imageUrl2);
+          iconMap[name.toUpperCase()] = url;
+          iconMap[normalizeBrawlerName(name)] = url;
+        }
+        if (!cancelled) {
+          setBrawlerIconByName(iconMap);
+        }
+      } catch {
+      }
+    }
+
+    loadBrawlerIcons();
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   useEffect(() => {
     setRawOffset(0);
@@ -490,7 +644,7 @@ export default function BattleFeedPage() {
                     setShowMemberDropdown(true);
                   }}
                   onFocus={() => setShowMemberDropdown(true)}
-                  placeholder="Search member..."
+                  placeholder="All Members / Search..."
                   className="h-9 w-44 rounded-md border border-border bg-background px-2 text-sm placeholder:text-muted-foreground/50 pr-7"
                 />
                 {filterPlayer && (
@@ -503,6 +657,17 @@ export default function BattleFeedPage() {
                 )}
                 {showMemberDropdown && !filterPlayer && (
                   <div className="absolute right-0 z-50 mt-1 w-56 max-h-52 overflow-y-auto rounded-md border border-border bg-background shadow-lg">
+                    <button
+                      onClick={() => {
+                        setFilterPlayer("");
+                        setMemberSearch("");
+                        setShowMemberDropdown(false);
+                      }}
+                      className="w-full text-left px-3 py-1.5 text-sm hover:bg-accent/50 flex justify-between items-center border-b border-border/50"
+                    >
+                      <span>All Members</span>
+                      <span className="text-xs text-muted-foreground">Any</span>
+                    </button>
                     {filteredMembers.length === 0 ? (
                       <div className="px-3 py-2 text-xs text-muted-foreground">No members found</div>
                     ) : (
@@ -578,6 +743,7 @@ export default function BattleFeedPage() {
                 match={match}
                 clubTags={clubTags}
                 clockDelta={clockDelta}
+                brawlerIconByName={brawlerIconByName}
               />
             ))}
 

@@ -27,8 +27,15 @@ export async function GET() {
     const { data: activityLogs } = await supabase
       .from("activity_log")
       .select("*")
-      .gte("recorded_at", weekAgo.toISOString())
+      .gte("recorded_at", new Date(weekAgo.getTime() - 24 * 60 * 60 * 1000).toISOString())
       .order("recorded_at", { ascending: true });
+
+    const weekAgoDate = weekAgo.toISOString().slice(0, 10);
+    const { data: weeklyStats } = await supabase
+      .from("daily_stats")
+      .select("player_tag, wins, battles")
+      .in("player_tag", currentMemberTags.length > 0 ? currentMemberTags : [""])
+      .gte("date", weekAgoDate);
 
     // Get events from last 7 days
     const { data: events } = await supabase
@@ -44,14 +51,34 @@ export async function GET() {
     const totalTrophies = members.reduce((sum, m) => sum + m.trophies, 0);
     const activeCount = members.filter((m) => m.is_active).length;
 
-    // Trophy changes by player
-    const playerTrophyChanges: Record<string, number> = {};
-    activityLogs?.forEach((log) => {
-      if (!playerTrophyChanges[log.player_tag]) {
-        playerTrophyChanges[log.player_tag] = 0;
+    // Trophy changes by player (current members only), based on 7-day baseline snapshots
+    // This matches /api/members logic and avoids drift from summing sync deltas.
+    const currentMemberTagSet = new Set((members || []).map((m) => m.player_tag));
+    const logsByPlayer = new Map<string, { player_tag: string; trophies: number; recorded_at: string }[]>();
+
+    for (const log of activityLogs || []) {
+      if (!currentMemberTagSet.has(log.player_tag)) continue;
+      if (!logsByPlayer.has(log.player_tag)) {
+        logsByPlayer.set(log.player_tag, []);
       }
-      playerTrophyChanges[log.player_tag] += log.trophy_change;
-    });
+      logsByPlayer.get(log.player_tag)!.push({
+        player_tag: log.player_tag,
+        trophies: log.trophies,
+        recorded_at: log.recorded_at,
+      });
+    }
+
+    const playerTrophyChanges: Record<string, number> = {};
+    for (const member of members) {
+      const playerLogs = logsByPlayer.get(member.player_tag) || [];
+      if (playerLogs.length === 0) continue;
+
+      const logsBefore7d = playerLogs.filter((log) => new Date(log.recorded_at) <= weekAgo);
+      const baseline7d = logsBefore7d.length > 0 ? logsBefore7d[logsBefore7d.length - 1] : null;
+
+      if (!baseline7d) continue;
+      playerTrophyChanges[member.player_tag] = member.trophies - baseline7d.trophies;
+    }
 
     // Top gainers (only players who actually gained trophies)
     const topGainers = Object.entries(playerTrophyChanges)
@@ -67,8 +94,7 @@ export async function GET() {
       .sort((a, b) => b.trophyChange - a.trophyChange)
       .slice(0, 5);
 
-    // Least progress (bottom 5 by trophy change — includes 0 and negative)
-    const topLosers = Object.entries(playerTrophyChanges)
+    const allChanges = Object.entries(playerTrophyChanges)
       .map(([tag, change]) => {
         const member = members.find((m) => m.player_tag === tag);
         return {
@@ -77,8 +103,18 @@ export async function GET() {
           trophyChange: change,
         };
       })
-      .sort((a, b) => a.trophyChange - b.trophyChange)
-      .slice(0, 5);
+      .sort((a, b) => a.trophyChange - b.trophyChange);
+
+    // Worst trophy drops (negative only). If none, fallback to lowest progress.
+    const negativeLosers = allChanges.filter((item) => item.trophyChange < 0).slice(0, 5);
+    const hasRealLosses = negativeLosers.length > 0;
+    const topLosers = hasRealLosses ? negativeLosers : allChanges.slice(0, 5);
+
+    const weeklyWins = (weeklyStats || []).reduce((sum, row) => sum + (row.wins || 0), 0);
+    const weeklyBattles = (weeklyStats || []).reduce((sum, row) => sum + (row.battles || 0), 0);
+    const weeklyWinRate = weeklyBattles > 0
+      ? Math.round((weeklyWins / weeklyBattles) * 100)
+      : 0;
 
     // Activity distribution
     const activityDistribution = {
@@ -124,15 +160,21 @@ export async function GET() {
         avgTrophies: Math.round(totalTrophies / members.length),
         activeMembers: activeCount,
         activityRate: Math.round((activeCount / members.length) * 100),
+        weeklyWins,
+        weeklyBattles,
+        weeklyWinRate,
       },
       topGainers,
       topLosers,
+      topLosersMode: hasRealLosses ? "losses" : "lowest_progress",
       activityDistribution,
       recentEvents: events?.slice(0, 10) || [],
-      trophyTrend: Object.entries(dailyTrophies).map(([date, trophies]) => ({
-        date,
-        trophies,
-      })),
+      trophyTrend: Object.entries(dailyTrophies)
+        .map(([date, trophies]) => ({
+          date,
+          trophies,
+        }))
+        .sort((a, b) => a.date.localeCompare(b.date)),
     };
 
     return NextResponse.json(report);

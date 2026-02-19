@@ -5,6 +5,7 @@
 CREATE TABLE IF NOT EXISTS members (
   player_tag VARCHAR(20) PRIMARY KEY,
   player_name VARCHAR(50) NOT NULL,
+  icon_id INT,
   role VARCHAR(20) DEFAULT 'member',
   trophies INT DEFAULT 0,
   highest_trophies INT DEFAULT 0,
@@ -19,6 +20,14 @@ CREATE TABLE IF NOT EXISTS members (
   is_active BOOLEAN DEFAULT true,
   last_updated TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
+
+-- Migration: Add icon_id column if it doesn't exist
+DO $$
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'members' AND column_name = 'icon_id') THEN
+    ALTER TABLE members ADD COLUMN icon_id INT;
+  END IF;
+END $$;
 
 -- Migration: Add win_rate column if it doesn't exist
 DO $$
@@ -54,11 +63,30 @@ CREATE TABLE IF NOT EXISTS member_history (
   player_name VARCHAR(50) NOT NULL,
   first_seen TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
   last_seen TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+  last_left_at TIMESTAMP WITH TIME ZONE,
   times_joined INT DEFAULT 1,
   times_left INT DEFAULT 0,
   is_current_member BOOLEAN DEFAULT true,
+  role_at_leave VARCHAR(20),
+  trophies_at_leave INT,
   notes TEXT
 );
+
+-- Migration: Add leave snapshot columns if they don't exist
+DO $$
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'member_history' AND column_name = 'last_left_at') THEN
+    ALTER TABLE member_history ADD COLUMN last_left_at TIMESTAMP WITH TIME ZONE;
+  END IF;
+
+  IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'member_history' AND column_name = 'role_at_leave') THEN
+    ALTER TABLE member_history ADD COLUMN role_at_leave VARCHAR(20);
+  END IF;
+
+  IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'member_history' AND column_name = 'trophies_at_leave') THEN
+    ALTER TABLE member_history ADD COLUMN trophies_at_leave INT;
+  END IF;
+END $$;
 
 -- Settings table
 CREATE TABLE IF NOT EXISTS settings (

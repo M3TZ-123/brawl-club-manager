@@ -23,6 +23,7 @@ export default function NotificationsPage() {
   const [unreadCount, setUnreadCount] = useState(0);
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState<"all" | "unread">("all");
+  const [category, setCategory] = useState<"all" | "join" | "leave" | "inactive" | "promotion" | "name_change">("all");
 
   useEffect(() => {
     loadNotifications();
@@ -82,14 +83,23 @@ export default function NotificationsPage() {
         return { dot: "bg-red-500", color: "text-red-500", bg: "border-l-red-500" };
       case "inactive":
         return { dot: "bg-amber-500", color: "text-amber-500", bg: "border-l-amber-500" };
+      case "promotion":
+        return { dot: "bg-emerald-500", color: "text-emerald-500", bg: "border-l-emerald-500" };
+      case "demotion":
+        return { dot: "bg-orange-500", color: "text-orange-500", bg: "border-l-orange-500" };
+      case "name_change":
+        return { dot: "bg-cyan-500", color: "text-cyan-500", bg: "border-l-cyan-500" };
       default:
         return { dot: "bg-blue-500", color: "text-blue-500", bg: "border-l-blue-500" };
     }
   };
 
-  const filtered = filter === "unread"
-    ? notifications.filter((n) => !n.is_read)
-    : notifications;
+  const filtered = notifications.filter((n) => {
+    if (filter === "unread" && n.is_read) return false;
+    if (category === "all") return true;
+    if (category === "promotion") return n.type === "promotion" || n.type === "demotion";
+    return n.type === category;
+  });
 
   return (
     <LayoutWrapper>
@@ -140,6 +150,15 @@ export default function NotificationsPage() {
         </div>
       </div>
 
+      <div className="flex flex-wrap gap-2">
+        <Button size="sm" variant={category === "all" ? "default" : "outline"} onClick={() => setCategory("all")}>All Types</Button>
+        <Button size="sm" variant={category === "join" ? "default" : "outline"} onClick={() => setCategory("join")}>Joined</Button>
+        <Button size="sm" variant={category === "leave" ? "default" : "outline"} onClick={() => setCategory("leave")}>Left</Button>
+        <Button size="sm" variant={category === "inactive" ? "default" : "outline"} onClick={() => setCategory("inactive")}>Inactive</Button>
+        <Button size="sm" variant={category === "promotion" ? "default" : "outline"} onClick={() => setCategory("promotion")}>Promotions</Button>
+        <Button size="sm" variant={category === "name_change" ? "default" : "outline"} onClick={() => setCategory("name_change")}>Name Changes</Button>
+      </div>
+
       {/* Notification list */}
       {loading ? (
         <div className="flex items-center justify-center py-20">
@@ -150,12 +169,12 @@ export default function NotificationsPage() {
           <CardContent className="flex flex-col items-center justify-center py-16 text-muted-foreground">
             <Bell className="h-10 w-10 mb-3 opacity-40" />
             <p className="text-lg font-medium">
-              {filter === "unread" ? "No unread notifications" : "No notifications yet"}
+              {filter === "unread" ? "No unread notifications" : "No notifications found"}
             </p>
             <p className="text-sm mt-1">
               {filter === "unread"
                 ? "You've read all your notifications."
-                : "Notifications will appear here when members join, leave, or become inactive."}
+                : "Try changing filters or wait for new club events."}
             </p>
           </CardContent>
         </Card>

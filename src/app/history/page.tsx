@@ -18,19 +18,30 @@ import { MemberHistory } from "@/types/database";
 import { formatDate, formatDateTime } from "@/lib/utils";
 import { Search, UserPlus, UserMinus, Pencil, Check, X, Trash2 } from "lucide-react";
 
+const MIN_VALID_DATE_MS = new Date("2000-01-01T00:00:00.000Z").getTime();
+
+function formatSafeDate(value: string | null | undefined, withTime = false): string {
+  if (!value) return "Unknown";
+  const parsed = new Date(value);
+  const ts = parsed.getTime();
+  if (Number.isNaN(ts) || ts < MIN_VALID_DATE_MS) return "Unknown";
+  return withTime ? formatDateTime(parsed.toISOString()) : formatDate(parsed.toISOString());
+}
+
 export default function HistoryPage() {
   const [history, setHistory] = useState<MemberHistory[]>([]);
   const [filteredHistory, setFilteredHistory] = useState<MemberHistory[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState("");
   const [filter, setFilter] = useState<"all" | "current" | "former">("all");
+  const [timeRange, setTimeRange] = useState<"all" | "7" | "30" | "90">("30");
   const [editingTag, setEditingTag] = useState<string | null>(null);
   const [editingNote, setEditingNote] = useState("");
   const [savingNote, setSavingNote] = useState(false);
 
   useEffect(() => {
     loadHistory();
-  }, []);
+  }, [timeRange]);
 
   useEffect(() => {
     let filtered = [...history];
@@ -56,7 +67,8 @@ export default function HistoryPage() {
 
   const loadHistory = async () => {
     try {
-      const response = await fetch("/api/history");
+      const query = timeRange === "all" ? "" : `?days=${timeRange}`;
+      const response = await fetch(`/api/history${query}`);
       if (response.ok) {
         const data = await response.json();
         setHistory(data.history || []);
@@ -184,6 +196,16 @@ export default function HistoryPage() {
                       <option value="current">Current Members</option>
                       <option value="former">Former Members</option>
                     </select>
+                    <select
+                      value={timeRange}
+                      onChange={(e) => setTimeRange(e.target.value as typeof timeRange)}
+                      className="h-10 rounded-md border border-input bg-background px-3 text-sm"
+                    >
+                      <option value="all">All Time</option>
+                      <option value="7">Last 7 Days</option>
+                      <option value="30">Last 30 Days</option>
+                      <option value="90">Last 90 Days</option>
+                    </select>
                   </div>
                 </div>
               </CardHeader>
@@ -200,7 +222,9 @@ export default function HistoryPage() {
                         <TableHead>Player</TableHead>
                         <TableHead>Status</TableHead>
                         <TableHead className="hidden sm:table-cell">First Joined</TableHead>
-                        <TableHead className="hidden sm:table-cell">Last Seen</TableHead>
+                        <TableHead className="hidden sm:table-cell">Left At</TableHead>
+                        <TableHead className="hidden lg:table-cell">Role At Leave</TableHead>
+                        <TableHead className="hidden lg:table-cell">Trophies At Leave</TableHead>
                         <TableHead className="text-center">Joined</TableHead>
                         <TableHead className="text-center">Left</TableHead>
                         <TableHead className="hidden md:table-cell">Notes</TableHead>
@@ -209,7 +233,7 @@ export default function HistoryPage() {
                     <TableBody>
                       {filteredHistory.length === 0 ? (
                         <TableRow>
-                          <TableCell colSpan={7} className="text-center py-8 text-muted-foreground">
+                          <TableCell colSpan={9} className="text-center py-8 text-muted-foreground">
                             No member history found
                           </TableCell>
                         </TableRow>
@@ -224,10 +248,18 @@ export default function HistoryPage() {
                             </TableCell>
                             <TableCell>{getMemberBadge(h)}</TableCell>
                             <TableCell className="hidden sm:table-cell text-muted-foreground">
-                              {formatDate(h.first_seen)}
+                              {formatSafeDate(h.first_seen)}
                             </TableCell>
                             <TableCell className="hidden sm:table-cell text-muted-foreground">
-                              {formatDate(h.last_seen)}
+                              {formatSafeDate(h.last_left_at || (!h.is_current_member ? h.last_seen : null), true)}
+                            </TableCell>
+                            <TableCell className="hidden lg:table-cell text-muted-foreground">
+                              {!h.is_current_member ? (h.role_at_leave || "Unknown") : "-"}
+                            </TableCell>
+                            <TableCell className="hidden lg:table-cell text-muted-foreground">
+                              {!h.is_current_member
+                                ? (typeof h.trophies_at_leave === "number" ? h.trophies_at_leave.toLocaleString() : "Unknown")
+                                : "-"}
                             </TableCell>
                             <TableCell className="text-center">
                               <span className="inline-flex items-center gap-1 text-green-500">

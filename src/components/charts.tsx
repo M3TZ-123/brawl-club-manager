@@ -24,6 +24,27 @@ interface TrophyChartProps {
 }
 
 export function TrophyChart({ data }: TrophyChartProps) {
+  const chartData = data.map((item) => ({
+    ...item,
+    shortDate: new Date(`${item.date}T00:00:00`).toLocaleDateString("en-US", {
+      month: "short",
+      day: "numeric",
+    }),
+  }));
+
+  const trophyValues = data.map((item) => item.trophies);
+  const dataMin = trophyValues.length > 0 ? Math.min(...trophyValues) : 0;
+  const dataMax = trophyValues.length > 0 ? Math.max(...trophyValues) : 0;
+  const range = Math.max(dataMax - dataMin, 1);
+  const padding = Math.max(Math.ceil(range * 0.1), 500);
+  const minDomain = Math.max(0, dataMin - padding);
+  const maxDomain = dataMax + padding;
+
+  const formatExact = (value: number) => {
+    if (!Number.isFinite(value)) return "0";
+    return formatNumber(Math.round(value));
+  };
+
   return (
     <Card>
       <CardHeader>
@@ -31,23 +52,45 @@ export function TrophyChart({ data }: TrophyChartProps) {
       </CardHeader>
       <CardContent>
         <ResponsiveContainer width="100%" height={300}>
-          <LineChart data={data}>
+          <LineChart data={chartData} margin={{ top: 10, right: 16, left: 8, bottom: 18 }}>
             <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
-            <XAxis dataKey="date" className="text-xs" />
-            <YAxis className="text-xs" />
+            <XAxis
+              dataKey="shortDate"
+              className="text-xs"
+              height={42}
+              tickMargin={12}
+              axisLine={false}
+              tickLine={false}
+              tick={{ dy: 4 }}
+              interval="preserveStartEnd"
+            />
+            <YAxis
+              className="text-xs"
+              domain={[minDomain, maxDomain]}
+              tickCount={5}
+              width={110}
+              tickMargin={10}
+              tickFormatter={(value) => formatExact(Number(value))}
+              axisLine={false}
+              tickLine={false}
+              tick={{ dx: -6 }}
+            />
             <Tooltip
               contentStyle={{
                 backgroundColor: "hsl(var(--card))",
                 border: "1px solid hsl(var(--border))",
                 borderRadius: "8px",
               }}
+              formatter={(value) => [formatNumber(Number(value)), "Trophies"]}
+              labelFormatter={(value) => `Date: ${value}`}
             />
             <Line
               type="monotone"
               dataKey="trophies"
               stroke="hsl(var(--primary))"
-              strokeWidth={2}
-              dot={{ fill: "hsl(var(--primary))" }}
+              strokeWidth={2.5}
+              dot={{ r: 3.5, fill: "hsl(var(--primary))" }}
+              activeDot={{ r: 5 }}
             />
           </LineChart>
         </ResponsiveContainer>
@@ -93,21 +136,45 @@ export function TrophyStatistics({ data, currentTrophies }: TrophyStatisticsProp
   const weekGain = baseline7d !== null ? currentTrophies - baseline7d : null;
   const monthGain = baseline30d !== null ? currentTrophies - baseline30d : null;
 
-  // Format chart data - group by day for cleaner display
-  const chartData = data.reduce((acc, log) => {
-    const date = new Date(log.recorded_at).toLocaleDateString("en-US", {
-      month: "short",
-      day: "numeric",
-    });
-    // Keep only the last entry for each day
-    const existing = acc.findIndex(d => d.date === date);
-    if (existing >= 0) {
-      acc[existing] = { date, trophies: log.trophies };
-    } else {
-      acc.push({ date, trophies: log.trophies });
-    }
-    return acc;
-  }, [] as { date: string; trophies: number }[]);
+  // Build grouped day map (latest trophy value per day)
+  const groupedByDay = new Map<string, number>();
+  const orderedByTime = [...data].sort(
+    (a, b) => new Date(a.recorded_at).getTime() - new Date(b.recorded_at).getTime()
+  );
+  for (const log of orderedByTime) {
+    const dayKey = log.recorded_at.slice(0, 10);
+    groupedByDay.set(dayKey, log.trophies);
+  }
+
+  // Ensure at least a 7-day timeline on X axis
+  const minTimelineDays = 7;
+  const today = new Date();
+  const timelineKeys: string[] = [];
+  for (let offset = minTimelineDays - 1; offset >= 0; offset--) {
+    const day = new Date(today);
+    day.setDate(day.getDate() - offset);
+    timelineKeys.push(day.toISOString().slice(0, 10));
+  }
+
+  // Merge timeline with real data keys if we have longer history
+  const allDayKeys = Array.from(new Set([...timelineKeys, ...Array.from(groupedByDay.keys())])).sort();
+
+  const chartData = allDayKeys.map((dayKey) => {
+    const dateObj = new Date(`${dayKey}T00:00:00`);
+    return {
+      dayKey,
+      date: dateObj.toLocaleDateString("en-US", { month: "short", day: "numeric" }),
+      trophies: groupedByDay.has(dayKey) ? groupedByDay.get(dayKey)! : null,
+    };
+  });
+
+  const knownTrophyValues = chartData
+    .map((point) => point.trophies)
+    .filter((value): value is number => typeof value === "number");
+  const yMin = knownTrophyValues.length > 0 ? Math.min(...knownTrophyValues) : currentTrophies;
+  const yMax = knownTrophyValues.length > 0 ? Math.max(...knownTrophyValues) : currentTrophies;
+  const yPadding = Math.max(Math.ceil((yMax - yMin || 1) * 0.08), 150);
+  const onlyOneTrackedDay = groupedByDay.size <= 1;
 
   const formatGain = (gain: number | null) => {
     if (gain === null) return "-";
@@ -154,6 +221,7 @@ export function TrophyStatistics({ data, currentTrophies }: TrophyStatisticsProp
               axisLine={false}
               tickLine={false}
               tick={{ fill: 'hsl(var(--muted-foreground))', dy: 10 }}
+              interval="preserveStartEnd"
             />
             <YAxis 
               className="text-xs" 
@@ -168,7 +236,7 @@ export function TrophyStatistics({ data, currentTrophies }: TrophyStatisticsProp
                 }
                 return formatNumber(value);
               }}
-              domain={[(dataMin: number) => Math.floor(dataMin - Math.max(dataMin * 0.005, 200)), (dataMax: number) => Math.ceil(dataMax + Math.max(dataMax * 0.005, 200))]}
+              domain={[Math.max(0, yMin - yPadding), yMax + yPadding]}
               tickCount={5}
             />
             <Tooltip
@@ -177,7 +245,10 @@ export function TrophyStatistics({ data, currentTrophies }: TrophyStatisticsProp
                 border: "1px solid hsl(var(--border))",
                 borderRadius: "8px",
               }}
-              formatter={(value) => [formatNumber(value as number), "Trophies"]}
+              formatter={(value) => {
+                if (value == null) return ["No data", "Trophies"];
+                return [formatNumber(value as number), "Trophies"];
+              }}
             />
             <Area
               type="monotone"
@@ -185,10 +256,14 @@ export function TrophyStatistics({ data, currentTrophies }: TrophyStatisticsProp
               stroke="#f59e0b"
               strokeWidth={2}
               fill="url(#trophyGradient)"
+              connectNulls={false}
             />
           </AreaChart>
         </ResponsiveContainer>
         <div className="text-center text-xs text-muted-foreground mt-2">Day</div>
+        {onlyOneTrackedDay && (
+          <p className="text-center text-xs text-muted-foreground mt-1">Tracking starts today</p>
+        )}
       </CardContent>
     </Card>
   );
@@ -199,6 +274,15 @@ interface ActivityChartProps {
 }
 
 export function ActivityPieChart({ data }: ActivityChartProps) {
+  const total = data.reduce((sum, entry) => sum + (entry.value || 0), 0);
+
+  const getColorLabel = (color: string) => {
+    const normalized = color.toLowerCase();
+    if (normalized === "#22c55e") return "Green";
+    if (normalized === "#ef4444") return "Red";
+    return "Color";
+  };
+
   return (
     <Card>
       <CardHeader>
@@ -226,6 +310,21 @@ export function ActivityPieChart({ data }: ActivityChartProps) {
             <Tooltip />
           </PieChart>
         </ResponsiveContainer>
+        <div className="mt-3 flex flex-wrap items-center justify-center gap-4 text-xs text-muted-foreground">
+          {data.map((entry) => (
+            <div key={entry.name} className="flex items-center gap-2">
+              <span
+                className="h-2.5 w-2.5 rounded-full"
+                style={{ backgroundColor: entry.color }}
+                aria-hidden
+              />
+              <span>
+                {getColorLabel(entry.color)} = {entry.name} ({entry.value}
+                {total > 0 ? `, ${Math.round((entry.value / total) * 100)}%` : ""})
+              </span>
+            </div>
+          ))}
+        </div>
       </CardContent>
     </Card>
   );

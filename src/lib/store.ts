@@ -20,6 +20,7 @@ interface AppState {
   refreshInterval: number; // minutes
   notificationsEnabled: boolean;
   discordWebhook: string;
+  requiredTrophies: number | null;
   
   // Actions
   setClubTag: (tag: string) => void;
@@ -35,6 +36,7 @@ interface AppState {
   setRefreshInterval: (minutes: number) => void;
   setNotificationsEnabled: (enabled: boolean) => void;
   setDiscordWebhook: (webhook: string) => void;
+  setRequiredTrophies: (trophies: number | null) => void;
   loadSettingsFromDB: () => Promise<void>;
   saveSettingsToDB: () => Promise<void>;
 }
@@ -56,6 +58,7 @@ export const useAppStore = create<AppState>()(
       refreshInterval: 60, // 1 hour
       notificationsEnabled: true,
       discordWebhook: "",
+      requiredTrophies: null,
       
       // Actions
       setClubTag: (tag) => set({ clubTag: tag }),
@@ -71,6 +74,7 @@ export const useAppStore = create<AppState>()(
       setRefreshInterval: (minutes) => set({ refreshInterval: minutes }),
       setNotificationsEnabled: (enabled) => set({ notificationsEnabled: enabled }),
       setDiscordWebhook: (webhook) => set({ discordWebhook: webhook }),
+      setRequiredTrophies: (trophies) => set({ requiredTrophies: trophies }),
       
       // Load settings from database (only once)
       loadSettingsFromDB: async () => {
@@ -91,6 +95,7 @@ export const useAppStore = create<AppState>()(
               refreshInterval: settings.refresh_interval ? parseInt(settings.refresh_interval) : get().refreshInterval,
               notificationsEnabled: settings.notifications_enabled === "true",
               discordWebhook: settings.discord_webhook || get().discordWebhook || "",
+              requiredTrophies: settings.required_trophies ? parseInt(settings.required_trophies) : get().requiredTrophies,
               lastSyncTime: settings.last_sync_time || get().lastSyncTime,
             });
           }
@@ -105,19 +110,25 @@ export const useAppStore = create<AppState>()(
       saveSettingsToDB: async () => {
         const state = get();
         try {
+          const payload: Record<string, string> = {
+            club_tag: state.clubTag,
+            club_name: state.clubName,
+            api_key: state.apiKey,
+            inactivity_threshold: String(state.inactivityThreshold),
+            refresh_interval: String(state.refreshInterval),
+            notifications_enabled: String(state.notificationsEnabled),
+            discord_webhook: state.discordWebhook,
+            last_sync_time: state.lastSyncTime || "",
+          };
+
+          if (state.requiredTrophies != null && Number.isFinite(state.requiredTrophies)) {
+            payload.required_trophies = String(state.requiredTrophies);
+          }
+
           await fetch("/api/settings", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              club_tag: state.clubTag,
-              club_name: state.clubName,
-              api_key: state.apiKey,
-              inactivity_threshold: String(state.inactivityThreshold),
-              refresh_interval: String(state.refreshInterval),
-              notifications_enabled: String(state.notificationsEnabled),
-              discord_webhook: state.discordWebhook,
-              last_sync_time: state.lastSyncTime || "",
-            }),
+            body: JSON.stringify(payload),
           });
         } catch (error) {
           console.error("Failed to save settings to DB:", error);

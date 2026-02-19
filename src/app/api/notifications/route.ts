@@ -16,6 +16,10 @@ export async function GET(request: NextRequest) {
     const { searchParams } = new URL(request.url);
     const unreadOnly = searchParams.get("unreadOnly") === "true";
     const limit = Math.min(parseInt(searchParams.get("limit") || "50"), 100);
+    const typesParam = searchParams.get("types");
+    const types = typesParam
+      ? typesParam.split(",").map((t) => t.trim()).filter(Boolean)
+      : [];
 
     // One-time backfill: if notifications table is empty, import from club_events
     const { count: existingCount, error: existingCountError } = await supabase
@@ -37,7 +41,15 @@ export async function GET(request: NextRequest) {
         .limit(100);
 
       if (events && events.length > 0) {
-        const backfill = events.map((e: { event_type: string; player_name: string; player_tag: string; event_time: string }) => ({
+        const uniqueKeys = new Set<string>();
+        const backfill = events
+          .filter((e: { event_type: string; player_name: string; player_tag: string; event_time: string }) => {
+            const key = `${e.event_type}|${e.player_tag}|${e.player_name}|${e.event_time}`;
+            if (uniqueKeys.has(key)) return false;
+            uniqueKeys.add(key);
+            return true;
+          })
+          .map((e: { event_type: string; player_name: string; player_tag: string; event_time: string }) => ({
           type: e.event_type,
           title: e.event_type === "join" ? "Member Joined" : "Member Left",
           message: `${e.player_name} (${e.player_tag}) ${e.event_type === "join" ? "joined" : "left"} the club.`,
@@ -62,6 +74,10 @@ export async function GET(request: NextRequest) {
 
     if (unreadOnly) {
       query = query.eq("is_read", false);
+    }
+
+    if (types.length > 0) {
+      query = query.in("type", types);
     }
 
     const { data: notifications, error } = await query;
