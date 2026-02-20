@@ -1,11 +1,22 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import { cn, formatDateTime } from "@/lib/utils";
+import { ReactNode, useEffect, useState } from "react";
+import Link from "next/link";
+import { cn } from "@/lib/utils";
 import { LayoutWrapper } from "@/components/layout-wrapper";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Bell, CheckCheck, Loader2 } from "lucide-react";
+import {
+  Bell,
+  CheckCheck,
+  ChevronDown,
+  ChevronUp,
+  Clock3,
+  Loader2,
+  Pencil,
+  UserMinus,
+  UserPlus,
+} from "lucide-react";
 
 interface Notification {
   id: number;
@@ -78,20 +89,69 @@ export default function NotificationsPage() {
   const getStyle = (type: string) => {
     switch (type) {
       case "join":
-        return { dot: "bg-green-500", color: "text-green-500", bg: "border-l-green-500" };
+        return { icon: UserPlus, color: "text-green-500", bg: "border-l-green-500" };
       case "leave":
-        return { dot: "bg-red-500", color: "text-red-500", bg: "border-l-red-500" };
+        return { icon: UserMinus, color: "text-red-500", bg: "border-l-red-500" };
       case "inactive":
-        return { dot: "bg-amber-500", color: "text-amber-500", bg: "border-l-amber-500" };
+        return { icon: Clock3, color: "text-amber-500", bg: "border-l-amber-500" };
       case "promotion":
-        return { dot: "bg-emerald-500", color: "text-emerald-500", bg: "border-l-emerald-500" };
+        return { icon: ChevronUp, color: "text-emerald-500", bg: "border-l-emerald-500" };
       case "demotion":
-        return { dot: "bg-orange-500", color: "text-orange-500", bg: "border-l-orange-500" };
+        return { icon: ChevronDown, color: "text-orange-500", bg: "border-l-orange-500" };
       case "name_change":
-        return { dot: "bg-cyan-500", color: "text-cyan-500", bg: "border-l-cyan-500" };
+        return { icon: Pencil, color: "text-cyan-500", bg: "border-l-cyan-500" };
       default:
-        return { dot: "bg-blue-500", color: "text-blue-500", bg: "border-l-blue-500" };
+        return { icon: Bell, color: "text-blue-500", bg: "border-l-blue-500" };
     }
+  };
+
+  const renderMessageWithMemberLinks = (message: string) => {
+    const parts: ReactNode[] = [];
+    const regex = /([^,()]+?)\s\((#[A-Z0-9]+)\)/g;
+    let lastIndex = 0;
+    let match: RegExpExecArray | null;
+
+    while ((match = regex.exec(message)) !== null) {
+      const [full, , tag] = match;
+      if (match.index > lastIndex) {
+        parts.push(message.slice(lastIndex, match.index));
+      }
+
+      parts.push(
+        <Link
+          key={`${tag}-${match.index}`}
+          href={`/members/${encodeURIComponent(tag)}`}
+          className="font-medium text-primary hover:underline"
+          onClick={(e) => e.stopPropagation()}
+        >
+          {full.trim()}
+        </Link>
+      );
+
+      lastIndex = match.index + full.length;
+    }
+
+    if (lastIndex < message.length) {
+      parts.push(message.slice(lastIndex));
+    }
+
+    if (parts.length === 0) return message;
+    return parts;
+  };
+
+  const getDateHeading = (date: Date) => {
+    const today = new Date();
+    const yesterday = new Date();
+    yesterday.setDate(today.getDate() - 1);
+
+    if (date.toDateString() === today.toDateString()) return "Today";
+    if (date.toDateString() === yesterday.toDateString()) return "Yesterday";
+
+    return new Intl.DateTimeFormat("en-US", {
+      month: "short",
+      day: "numeric",
+      year: "numeric",
+    }).format(date);
   };
 
   const filtered = notifications.filter((n) => {
@@ -100,6 +160,26 @@ export default function NotificationsPage() {
     if (category === "promotion") return n.type === "promotion" || n.type === "demotion";
     return n.type === category;
   });
+
+  const groupedByDate = filtered.reduce<Array<{ key: string; label: string; items: Notification[] }>>(
+    (groups, notif) => {
+      const date = new Date(notif.created_at);
+      const key = date.toDateString();
+      const existing = groups.find((group) => group.key === key);
+      if (existing) {
+        existing.items.push(notif);
+        return groups;
+      }
+
+      groups.push({
+        key,
+        label: getDateHeading(date),
+        items: [notif],
+      });
+      return groups;
+    },
+    []
+  );
 
   return (
     <LayoutWrapper>
@@ -179,47 +259,56 @@ export default function NotificationsPage() {
           </CardContent>
         </Card>
       ) : (
-        <div className="space-y-2">
-          {filtered.map((notif) => {
-            const style = getStyle(notif.type);
-            return (
-              <Card
-                key={notif.id}
-                onClick={() => !notif.is_read && markAsRead(notif.id)}
-                className={cn(
-                  "border-l-4 cursor-pointer transition-all",
-                  style.bg,
-                  notif.is_read
-                    ? "opacity-60 hover:opacity-80"
-                    : "bg-primary/[0.02] hover:bg-primary/[0.05] shadow-sm"
-                )}
-              >
-                <CardContent className="p-4">
-                  <div className="flex items-start gap-3">
-                    <span className={cn("w-2.5 h-2.5 rounded-full mt-1 shrink-0", style.dot)} />
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-2 flex-wrap">
-                        <span className={cn("text-sm font-semibold", style.color)}>
-                          {notif.title}
+        <div className="space-y-6">
+          {groupedByDate.map((group) => (
+            <section key={group.key} className="space-y-2">
+              <h2 className="text-base font-semibold text-foreground/90">{group.label}</h2>
+              {group.items.map((notif) => {
+                const style = getStyle(notif.type);
+                const Icon = style.icon;
+
+                return (
+                  <Card
+                    key={notif.id}
+                    onClick={() => !notif.is_read && markAsRead(notif.id)}
+                    className={cn(
+                      "border-l-4 cursor-pointer transition-all",
+                      style.bg,
+                      notif.is_read
+                        ? "opacity-60 hover:opacity-80"
+                        : "bg-primary/[0.02] hover:bg-primary/[0.05] shadow-sm"
+                    )}
+                  >
+                    <CardContent className="p-4">
+                      <div className="flex items-start gap-3">
+                        <span className={cn("mt-0.5 shrink-0", style.color)}>
+                          <Icon className="h-4 w-4" />
                         </span>
-                        {!notif.is_read && (
-                          <span className="text-[10px] uppercase tracking-wider font-bold text-primary bg-primary/10 px-1.5 py-0.5 rounded">
-                            New
-                          </span>
-                        )}
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <span className={cn("text-sm font-semibold", style.color)}>
+                              {notif.title}
+                            </span>
+                            {!notif.is_read && (
+                              <span className="text-[10px] uppercase tracking-wider font-bold text-primary bg-primary/10 px-1.5 py-0.5 rounded">
+                                New
+                              </span>
+                            )}
+                          </div>
+                          <p className="text-sm text-muted-foreground mt-1 break-words">
+                            {renderMessageWithMemberLinks(notif.message)}
+                          </p>
+                          <p className="text-xs text-muted-foreground/60 mt-2">
+                            {new Date(notif.created_at).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}
+                          </p>
+                        </div>
                       </div>
-                      <p className="text-sm text-muted-foreground mt-1">
-                        {notif.message}
-                      </p>
-                      <p className="text-xs text-muted-foreground/60 mt-2">
-                        {formatDateTime(notif.created_at)}
-                      </p>
-                    </div>
-                  </div>
-                </CardContent>
-              </Card>
-            );
-          })}
+                    </CardContent>
+                  </Card>
+                );
+              })}
+            </section>
+          ))}
         </div>
       )}
     </div>

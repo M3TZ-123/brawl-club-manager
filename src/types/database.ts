@@ -356,6 +356,7 @@ export interface Database {
           message: string;
           player_tag: string | null;
           player_name: string | null;
+          dedupe_key: string;
           is_read: boolean;
           created_at: string;
         };
@@ -366,6 +367,7 @@ export interface Database {
           message: string;
           player_tag?: string | null;
           player_name?: string | null;
+          dedupe_key: string;
           is_read?: boolean;
           created_at?: string;
         };
@@ -376,6 +378,7 @@ export interface Database {
           message?: string;
           player_tag?: string | null;
           player_name?: string | null;
+          dedupe_key?: string;
           is_read?: boolean;
           created_at?: string;
         };

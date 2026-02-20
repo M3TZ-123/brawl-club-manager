@@ -17,6 +17,12 @@ import {
   PanelLeft,
   X,
   Bell,
+  ChevronDown,
+  ChevronUp,
+  Clock3,
+  Pencil,
+  UserMinus,
+  UserPlus,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -325,11 +331,55 @@ function SimpleHeader() {
 
   const getNotifIcon = (type: string) => {
     switch (type) {
-      case "join": return { dot: "bg-green-500", label: "Joined", color: "text-green-500" };
-      case "leave": return { dot: "bg-red-500", label: "Left", color: "text-red-500" };
-      case "inactive": return { dot: "bg-amber-500", label: "Inactive", color: "text-amber-500" };
-      default: return { dot: "bg-blue-500", label: type, color: "text-blue-500" };
+      case "join":
+        return { icon: UserPlus, label: "Joined", color: "text-green-500" };
+      case "leave":
+        return { icon: UserMinus, label: "Left", color: "text-red-500" };
+      case "inactive":
+        return { icon: Clock3, label: "Inactive", color: "text-amber-500" };
+      case "promotion":
+        return { icon: ChevronUp, label: "Promoted", color: "text-emerald-500" };
+      case "demotion":
+        return { icon: ChevronDown, label: "Demoted", color: "text-orange-500" };
+      case "name_change":
+        return { icon: Pencil, label: "Name changed", color: "text-cyan-500" };
+      default:
+        return { icon: Bell, label: type, color: "text-blue-500" };
     }
+  };
+
+  const renderMessageWithMemberLinks = (message: string) => {
+    const parts: ReactNode[] = [];
+    const regex = /([^,()]+?)\s\((#[A-Z0-9]+)\)/g;
+    let lastIndex = 0;
+    let match: RegExpExecArray | null;
+
+    while ((match = regex.exec(message)) !== null) {
+      const [full, , tag] = match;
+      if (match.index > lastIndex) {
+        parts.push(message.slice(lastIndex, match.index));
+      }
+
+      parts.push(
+        <Link
+          key={`${tag}-${match.index}`}
+          href={`/members/${encodeURIComponent(tag)}`}
+          className="font-medium text-primary hover:underline"
+          onClick={(e) => e.stopPropagation()}
+        >
+          {full.trim()}
+        </Link>
+      );
+
+      lastIndex = match.index + full.length;
+    }
+
+    if (lastIndex < message.length) {
+      parts.push(message.slice(lastIndex));
+    }
+
+    if (parts.length === 0) return message;
+    return parts;
   };
 
   return (
@@ -396,6 +446,7 @@ function SimpleHeader() {
                   <div className="max-h-80 overflow-y-auto">
                     {notifications.map((notif) => {
                       const style = getNotifIcon(notif.type);
+                      const Icon = style.icon;
                       return (
                         <div
                           key={notif.id}
@@ -408,7 +459,9 @@ function SimpleHeader() {
                           )}
                         >
                           <div className="flex items-start gap-2">
-                            <span className={cn("w-2 h-2 rounded-full mt-1.5 shrink-0", style.dot)} />
+                            <span className={cn("mt-1 shrink-0", style.color)}>
+                              <Icon className="h-3.5 w-3.5" />
+                            </span>
                             <div className="flex-1 min-w-0">
                               <div className="flex items-center gap-2">
                                 <span className={cn("text-xs font-semibold", style.color)}>
@@ -419,7 +472,7 @@ function SimpleHeader() {
                                 )}
                               </div>
                               <p className="text-sm text-muted-foreground mt-0.5 break-words">
-                                {notif.message}
+                                {renderMessageWithMemberLinks(notif.message)}
                               </p>
                               <p className="text-xs text-muted-foreground/70 mt-1">
                                 {formatDateTime(notif.created_at)}

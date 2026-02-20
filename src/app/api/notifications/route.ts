@@ -1,5 +1,20 @@
 import { NextRequest, NextResponse } from "next/server";
+import { createHash } from "crypto";
 import { supabase } from "@/lib/supabase";
+
+function buildNotificationDedupeKey(
+  type: string,
+  title: string,
+  message: string,
+  playerTag: string | null,
+  createdAtISO: string
+) {
+  const secondEpoch = Math.floor(new Date(createdAtISO).getTime() / 1000) * 1000;
+  const secondIso = new Date(secondEpoch).toISOString();
+  return createHash("sha256")
+    .update(`${type}|${playerTag || ""}|${title}|${message}|${secondIso}`)
+    .digest("hex");
+}
 
 function isMissingNotificationsTable(error: unknown): boolean {
   if (!error || typeof error !== "object") return false;
@@ -57,8 +72,17 @@ export async function GET(request: NextRequest) {
           player_name: e.player_name,
           is_read: true, // mark old events as already read
           created_at: e.event_time,
+          dedupe_key: buildNotificationDedupeKey(
+            e.event_type,
+            e.event_type === "join" ? "Member Joined" : "Member Left",
+            `${e.player_name} (${e.player_tag}) ${e.event_type === "join" ? "joined" : "left"} the club.`,
+            e.player_tag,
+            e.event_time
+          ),
         }));
-        const { error: insertError } = await supabase.from("notifications").insert(backfill);
+        const { error: insertError } = await supabase
+          .from("notifications")
+          .upsert(backfill, { onConflict: "dedupe_key", ignoreDuplicates: true });
         if (insertError && !isMissingNotificationsTable(insertError)) {
           throw insertError;
         }

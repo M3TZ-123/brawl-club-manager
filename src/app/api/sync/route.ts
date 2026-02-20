@@ -1,6 +1,21 @@
 import { NextRequest, NextResponse } from "next/server";
+import { createHash } from "crypto";
 import { getClub, getPlayer, setApiKey, getPlayerRankedData, getPlayerBattleLog, processBattleLog, calculateWinRateFromBattleLog, BrawlStarsBattleLog } from "@/lib/brawl-api";
 import { supabase } from "@/lib/supabase";
+
+function buildNotificationDedupeKey(
+  type: string,
+  title: string,
+  message: string,
+  playerTag: string | null,
+  createdAtISO: string
+) {
+  const secondEpoch = Math.floor(new Date(createdAtISO).getTime() / 1000) * 1000;
+  const secondIso = new Date(secondEpoch).toISOString();
+  return createHash("sha256")
+    .update(`${type}|${playerTag || ""}|${title}|${message}|${secondIso}`)
+    .digest("hex");
+}
 
 // GET handler for Vercel Cron Jobs and GitHub Actions
 export async function GET(request: NextRequest) {
@@ -699,7 +714,15 @@ async function syncClubData(providedClubTag?: string, providedApiKey?: string, i
     ]);
 
     // Insert DB notifications for the notification panel
-      const notifRows: Array<{ type: string; title: string; message: string; player_tag: string | null; player_name: string | null }> = [];
+      const notifRows: Array<{
+        type: string;
+        title: string;
+        message: string;
+        player_tag: string | null;
+        player_name: string | null;
+        dedupe_key: string;
+      }> = [];
+      const notifCreatedAt = new Date().toISOString();
 
       for (const evt of eventsToInsert) {
         if (evt.event_type === "join") {
@@ -709,6 +732,13 @@ async function syncClubData(providedClubTag?: string, providedApiKey?: string, i
             message: `${evt.player_name} (${evt.player_tag}) joined the club.`,
             player_tag: evt.player_tag,
             player_name: evt.player_name,
+            dedupe_key: buildNotificationDedupeKey(
+              "join",
+              "Member Joined",
+              `${evt.player_name} (${evt.player_tag}) joined the club.`,
+              evt.player_tag,
+              notifCreatedAt
+            ),
           });
         } else if (evt.event_type === "leave") {
           notifRows.push({
@@ -717,6 +747,13 @@ async function syncClubData(providedClubTag?: string, providedApiKey?: string, i
             message: `${evt.player_name} (${evt.player_tag}) left the club.`,
             player_tag: evt.player_tag,
             player_name: evt.player_name,
+            dedupe_key: buildNotificationDedupeKey(
+              "leave",
+              "Member Left",
+              `${evt.player_name} (${evt.player_tag}) left the club.`,
+              evt.player_tag,
+              notifCreatedAt
+            ),
           });
         }
       }
@@ -728,6 +765,13 @@ async function syncClubData(providedClubTag?: string, providedApiKey?: string, i
           message: notif.message,
           player_tag: notif.player_tag,
           player_name: notif.player_name,
+          dedupe_key: buildNotificationDedupeKey(
+            notif.type,
+            notif.title,
+            notif.message,
+            notif.player_tag,
+            notifCreatedAt
+          ),
         });
       }
 
@@ -741,14 +785,26 @@ async function syncClubData(providedClubTag?: string, providedApiKey?: string, i
           .single();
         const lastTime = lastAlert?.value ? new Date(lastAlert.value).getTime() : 0;
         if ((Date.now() - lastTime) / (1000 * 60 * 60) >= 24) {
-          const names = inactiveMembersForNotif.slice(0, 10).map(m => m.player_name).join(", ");
+          const names = inactiveMembersForNotif
+            .slice(0, 10)
+            .map((m) => `${m.player_name} (${m.player_tag})`)
+            .join(", ");
           const extra = inactiveMembersForNotif.length > 10 ? ` and ${inactiveMembersForNotif.length - 10} more` : "";
+          const inactiveTitle = `${inactiveMembersForNotif.length} Inactive Member(s)`;
+          const inactiveMessage = `${names}${extra} — inactive for ${inactivityThreshold}+ hours.`;
           notifRows.push({
             type: "inactive",
-            title: `${inactiveMembersForNotif.length} Inactive Member(s)`,
-            message: `${names}${extra} — inactive for ${inactivityThreshold}+ hours.`,
+            title: inactiveTitle,
+            message: inactiveMessage,
             player_tag: null,
             player_name: null,
+            dedupe_key: buildNotificationDedupeKey(
+              "inactive",
+              inactiveTitle,
+              inactiveMessage,
+              null,
+              notifCreatedAt
+            ),
           });
           await supabase.from("settings").upsert({ key: "last_inactive_notif", value: new Date().toISOString() }, { onConflict: "key" });
         }
@@ -783,7 +839,9 @@ async function syncClubData(providedClubTag?: string, providedApiKey?: string, i
         }
 
         if (notifRowsToInsert.length > 0) {
-          const { error: notifError } = await supabase.from("notifications").insert(notifRowsToInsert);
+          const { error: notifError } = await supabase
+            .from("notifications")
+            .upsert(notifRowsToInsert, { onConflict: "dedupe_key", ignoreDuplicates: true });
           if (notifError) console.error("Error inserting notifications:", notifError);
           else console.log(`Inserted ${notifRowsToInsert.length} notification(s) into DB`);
         }

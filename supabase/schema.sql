@@ -236,12 +236,32 @@ CREATE TABLE IF NOT EXISTS notifications (
   message TEXT NOT NULL,
   player_tag VARCHAR(20),               -- optional, related player
   player_name VARCHAR(50),              -- optional, related player name
+  dedupe_key VARCHAR(64),
   is_read BOOLEAN DEFAULT false,
   created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
 
+ALTER TABLE notifications
+ADD COLUMN IF NOT EXISTS dedupe_key VARCHAR(64);
+
+UPDATE notifications
+SET dedupe_key = md5(
+  type || '|' || COALESCE(player_tag, '') || '|' || title || '|' || message || '|' ||
+  TO_CHAR(DATE_TRUNC('second', created_at), 'YYYY-MM-DD"T"HH24:MI:SS')
+)
+WHERE dedupe_key IS NULL;
+
+DELETE FROM notifications n
+USING notifications d
+WHERE n.id < d.id
+  AND n.dedupe_key = d.dedupe_key;
+
+ALTER TABLE notifications
+ALTER COLUMN dedupe_key SET NOT NULL;
+
 CREATE INDEX IF NOT EXISTS idx_notifications_read ON notifications(is_read, created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_notifications_time ON notifications(created_at DESC);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_notifications_dedupe_key ON notifications(dedupe_key);
 
 -- Clean old notifications (keep last 90 days)
 CREATE OR REPLACE FUNCTION cleanup_old_notifications()
