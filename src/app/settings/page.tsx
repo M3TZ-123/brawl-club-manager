@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from "react";
 import { useAppStore } from "@/lib/store";
+import { AdminGate } from "@/components/admin-gate";
 import { LayoutWrapper } from "@/components/layout-wrapper";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -148,6 +149,7 @@ export default function SettingsPage() {
 
   return (
     <LayoutWrapper>
+      <AdminGate>
       <div className="max-w-4xl mx-auto space-y-6">
         <div>
           <h1 className="text-2xl font-bold">Settings</h1>
@@ -500,6 +502,7 @@ export default function SettingsPage() {
               </TabsContent>
             </Tabs>
           </div>
+      </AdminGate>
     </LayoutWrapper>
   );
 }

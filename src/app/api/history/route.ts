@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { supabase } from "@/lib/supabase";
-import { rejectCrossOriginRequest } from "@/lib/request-security";
+import { supabaseAdmin } from "@/lib/supabase-admin";
+import { rejectUnauthorizedAdminMutation } from "@/lib/admin-auth";
 
 function parseDate(value: string | null | undefined): Date | null {
   if (!value) return null;
@@ -21,7 +21,7 @@ async function fetchAllMemberHistory(cutoffDate: Date | null): Promise<MemberHis
   const rows: MemberHistoryRow[] = [];
 
   for (let from = 0; ; from += pageSize) {
-    let query = supabase
+    let query = supabaseAdmin
       .from("member_history")
       .select("player_tag, player_name, first_seen, last_seen, last_left_at, times_joined, times_left, is_current_member, role_at_leave, trophies_at_leave, notes")
       .order("last_seen", { ascending: false })
@@ -81,8 +81,8 @@ export async function GET(request: NextRequest) {
 
 export async function PATCH(request: NextRequest) {
   try {
-    const crossOriginResponse = rejectCrossOriginRequest(request);
-    if (crossOriginResponse) return crossOriginResponse;
+    const authResponse = rejectUnauthorizedAdminMutation(request);
+    if (authResponse) return authResponse;
 
     const body = await request.json().catch(() => ({}));
     const { player_tag, notes } = body;
@@ -98,7 +98,7 @@ export async function PATCH(request: NextRequest) {
       ? notes.trim().slice(0, 1000)
       : null;
 
-    const { error } = await supabase
+    const { error } = await supabaseAdmin
       .from("member_history")
       .update({ notes: sanitizedNotes || null })
       .eq("player_tag", player_tag.trim());

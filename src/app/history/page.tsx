@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { LayoutWrapper } from "@/components/layout-wrapper";
 import { fetchJsonCached, invalidateJsonCache } from "@/lib/client-data-cache";
+import { useAdminSession } from "@/hooks/use-admin-session";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import {
@@ -30,6 +31,7 @@ function formatSafeDate(value: string | null | undefined, withTime = false): str
 }
 
 export default function HistoryPage() {
+  const { isAdmin } = useAdminSession();
   const [history, setHistory] = useState<MemberHistory[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState("");
@@ -99,6 +101,7 @@ export default function HistoryPage() {
   };
 
   const startEditingNote = (playerTag: string, currentNote: string | null) => {
+    if (!isAdmin) return;
     setEditingTag(playerTag);
     setEditingNote(currentNote || "");
   };
@@ -109,6 +112,7 @@ export default function HistoryPage() {
   };
 
   const saveNote = async (playerTag: string) => {
+    if (!isAdmin) return;
     try {
       setSavingNote(true);
       const response = await fetch("/api/history", {
@@ -316,20 +320,23 @@ export default function HistoryPage() {
                                 </div>
                               ) : (
                                 <div
-                                  className="flex items-center gap-1 cursor-pointer group"
+                                  className={`flex items-center gap-1 group ${isAdmin ? "cursor-pointer" : ""}`}
                                   onClick={() => startEditingNote(h.player_tag, h.notes)}
-                                  title="Click to edit note"
+                                  title={isAdmin ? "Click to edit note" : "Admin login required to edit notes"}
                                 >
                                   <span className="text-muted-foreground truncate">
                                     {h.notes || "-"}
                                   </span>
-                                  <Pencil className="h-3 w-3 text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity shrink-0" />
-                                  {h.notes && (
+                                  {isAdmin && (
+                                    <Pencil className="h-3 w-3 text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity shrink-0" />
+                                  )}
+                                  {h.notes && isAdmin && (
                                     <button
                                       className="h-5 w-5 flex items-center justify-center rounded hover:bg-destructive/20 opacity-0 group-hover:opacity-100 transition-opacity shrink-0"
                                       title="Delete note"
                                       onClick={(e) => {
                                         e.stopPropagation();
+                                        if (!isAdmin) return;
                                         setEditingNote("");
                                         setSavingNote(true);
                                         fetch("/api/history", {

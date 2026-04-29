@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { supabase } from "@/lib/supabase";
+import { supabaseAdmin } from "@/lib/supabase-admin";
 
 type DailyStatsRow = {
   player_tag: string;
@@ -29,7 +29,7 @@ type TrackingRow = {
 async function fetchWeeklyDailyStats(playerTags: string[], sinceDate: string): Promise<DailyStatsRow[]> {
   if (playerTags.length === 0) return [];
 
-  const { data, error } = await supabase
+  const { data, error } = await supabaseAdmin
     .from("daily_stats")
     .select("player_tag, date, battles, wins, losses, star_player, trophies_gained, trophies_lost")
     .in("player_tag", playerTags)
@@ -42,7 +42,7 @@ async function fetchWeeklyDailyStats(playerTags: string[], sinceDate: string): P
 async function fetchTrackingRows(playerTags: string[]): Promise<TrackingRow[]> {
   if (playerTags.length === 0) return [];
 
-  const { data, error } = await supabase
+  const { data, error } = await supabaseAdmin
     .from("player_tracking")
     .select("player_tag, total_battles, total_wins, total_losses, star_player_count, trophies_gained, trophies_lost, active_days, current_streak, best_streak, peak_day_battles")
     .in("player_tag", playerTags);
@@ -58,10 +58,10 @@ export async function GET() {
     const weekAgoStr = sevenDaysAgo.toISOString().split("T")[0];
 
     const [membersRes, currentMembersRes] = await Promise.all([
-      supabase
+      supabaseAdmin
         .from("members")
         .select("player_tag, player_name, trophies, highest_trophies, role, win_rate, solo_victories, duo_victories, trio_victories, brawlers_count, rank_current, rank_highest, exp_level"),
-      supabase
+      supabaseAdmin
         .from("member_history")
         .select("player_tag")
         .eq("is_current_member", true),

@@ -1,8 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createHash } from "crypto";
 import { getClub, getPlayer, getPlayerRankedData, getPlayerBattleLog, processBattleLog, calculateWinRateFromBattleLog, BrawlStarsBattleLog } from "@/lib/brawl-api";
-import { supabase } from "@/lib/supabase";
-import { rejectCrossOriginRequest } from "@/lib/request-security";
+import { supabaseAdmin } from "@/lib/supabase-admin";
+import { rejectUnauthorizedAdminMutation, rejectUnauthorizedAdminRequest } from "@/lib/admin-auth";
 
 function buildNotificationDedupeKey(
   type: string,
@@ -69,7 +69,7 @@ async function fetchAllExistingMembers(): Promise<ExistingMemberRow[]> {
   const rows: ExistingMemberRow[] = [];
 
   for (let from = 0; ; from += pageSize) {
-    const { data, error } = await supabase
+    const { data, error } = await supabaseAdmin
       .from("members")
       .select("player_tag, player_name, icon_id, role, trophies, rank_current, rank_highest")
       .range(from, from + pageSize - 1);
@@ -87,7 +87,7 @@ async function fetchAllMemberHistory(): Promise<MemberHistoryRow[]> {
   const rows: MemberHistoryRow[] = [];
 
   for (let from = 0; ; from += pageSize) {
-    const { data, error } = await supabase
+    const { data, error } = await supabaseAdmin
       .from("member_history")
       .select("*")
       .range(from, from + pageSize - 1);
@@ -107,7 +107,7 @@ async function fetchRecentActivity(playerTags: string[], sinceISO: string): Prom
   const rows: RecentActivityRow[] = [];
 
   for (let from = 0; ; from += pageSize) {
-    const { data, error } = await supabase
+    const { data, error } = await supabaseAdmin
       .from("activity_log")
       .select("player_tag, trophy_change, activity_type, recorded_at")
       .in("player_tag", playerTags)
@@ -133,7 +133,7 @@ async function fetchStoredBattlesForDailyStats(
   const rows: StoredBattleForStats[] = [];
 
   for (let from = 0; ; from += pageSize) {
-    const { data, error } = await supabase
+    const { data, error } = await supabaseAdmin
       .from("battle_history")
       .select("player_tag, battle_time, result, trophy_change, is_star_player")
       .in("player_tag", playerTags)
@@ -156,7 +156,7 @@ async function fetchPreviousBrawlerSnapshots(playerTags: string[], sinceISO: str
   const rows: PreviousBrawlerSnapshot[] = [];
 
   for (let from = 0; ; from += pageSize) {
-    const { data, error } = await supabase
+    const { data, error } = await supabaseAdmin
       .from("brawler_snapshots")
       .select("player_tag, brawler_id, power_level, recorded_at")
       .in("player_tag", playerTags)
@@ -175,16 +175,12 @@ async function fetchPreviousBrawlerSnapshots(playerTags: string[], sinceISO: str
 // GET handler for Vercel Cron Jobs and GitHub Actions
 export async function GET(request: NextRequest) {
   try {
-    // Optional: Verify cron secret if configured
     const authHeader = request.headers.get("authorization");
     const cronSecret = process.env.CRON_SECRET;
-    
-    // Only check auth if CRON_SECRET is actually set on the server
-    if (cronSecret && cronSecret.length > 0) {
-      if (authHeader !== `Bearer ${cronSecret}`) {
-        console.log("Unauthorized cron request - invalid secret");
-        return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-      }
+
+    if (!cronSecret || authHeader !== `Bearer ${cronSecret}`) {
+      const authResponse = rejectUnauthorizedAdminRequest(request);
+      if (authResponse) return authResponse;
     }
 
     console.log("Cron sync triggered via GET");
@@ -202,8 +198,8 @@ export async function GET(request: NextRequest) {
 
 export async function POST(request: NextRequest) {
   try {
-    const crossOriginResponse = rejectCrossOriginRequest(request);
-    if (crossOriginResponse) return crossOriginResponse;
+    const authResponse = rejectUnauthorizedAdminMutation(request);
+    if (authResponse) return authResponse;
 
     // Get settings from request body
     const body = await request.json().catch(() => ({}));
@@ -232,7 +228,7 @@ async function syncClubData(providedClubTag?: string, providedApiKey?: string, i
     // Always fetch all settings from database
     {
       console.log("Fetching settings from database...");
-      const { data: settings, error: settingsError } = await supabase
+      const { data: settings, error: settingsError } = await supabaseAdmin
         .from("settings")
         .select("key, value")
         .in("key", ["club_tag", "api_key", "discord_webhook", "notifications_enabled", "inactivity_threshold"]);
@@ -610,7 +606,7 @@ async function syncClubData(providedClubTag?: string, providedApiKey?: string, i
         });
 
         // Mark member as inactive
-        await supabase
+        await supabaseAdmin
           .from("members")
           .update({ is_active: false })
           .eq("player_tag", history.player_tag);
@@ -633,7 +629,7 @@ async function syncClubData(providedClubTag?: string, providedApiKey?: string, i
       const eventTags = [...new Set(eventsToInsert.map((evt) => evt.player_tag))];
 
       if (eventTypes.length > 0 && eventTags.length > 0) {
-        const { data: recentEvents } = await supabase
+        const { data: recentEvents } = await supabaseAdmin
           .from("club_events")
           .select("event_type, player_tag, player_name, event_time")
           .in("event_type", eventTypes)
@@ -656,26 +652,26 @@ async function syncClubData(providedClubTag?: string, providedApiKey?: string, i
 
     // Upsert members
     if (memberUpdates.length > 0) {
-      dbWrites.push(supabase.from("members").upsert(memberUpdates, {
+      dbWrites.push(supabaseAdmin.from("members").upsert(memberUpdates, {
         onConflict: "player_tag",
       }));
     }
 
     // Insert activity logs
     if (activityLogs.length > 0) {
-      dbWrites.push(supabase.from("activity_log").insert(activityLogs));
+      dbWrites.push(supabaseAdmin.from("activity_log").insert(activityLogs));
     }
 
     // Upsert member history
     if (historyUpdates.length > 0) {
-      dbWrites.push(supabase.from("member_history").upsert(historyUpdates, {
+      dbWrites.push(supabaseAdmin.from("member_history").upsert(historyUpdates, {
         onConflict: "player_tag",
       }));
     }
 
     // Insert events
     if (eventsToInsert.length > 0) {
-      dbWrites.push(supabase.from("club_events").insert(eventsToInsert));
+      dbWrites.push(supabaseAdmin.from("club_events").insert(eventsToInsert));
     }
 
     // Wait for core DB writes to finish
@@ -706,7 +702,7 @@ async function syncClubData(providedClubTag?: string, providedApiKey?: string, i
     if (allBattles.length > 0) {
       // Store battles before rebuilding daily stats so repeat syncs aggregate from full history,
       // not just the latest API battle-log window.
-      const { error: battleHistoryError } = await supabase
+      const { error: battleHistoryError } = await supabaseAdmin
         .from("battle_history")
         .upsert(allBattles, {
           onConflict: "player_tag,battle_time",
@@ -781,7 +777,7 @@ async function syncClubData(providedClubTag?: string, providedApiKey?: string, i
       const dailyStatsArray = Array.from(dailyStatsMap.values());
       if (dailyStatsArray.length > 0) {
         secondaryDbWrites.push(
-          supabase
+          supabaseAdmin
             .from("daily_stats")
             .upsert(dailyStatsArray, { onConflict: "player_tag,date" })
             .then(({ error }) => {
@@ -803,7 +799,7 @@ async function syncClubData(providedClubTag?: string, providedApiKey?: string, i
           console.error("Error loading previous brawler snapshots:", prevSnapshotsError);
           return [] as PreviousBrawlerSnapshot[];
         }),
-        supabase
+        supabaseAdmin
           .from("player_tracking")
           .select("player_tag, power_ups, unlocks")
           .in("player_tag", playerTags),
@@ -859,7 +855,7 @@ async function syncClubData(providedClubTag?: string, providedApiKey?: string, i
 
       if (trackingUpdates.length > 0) {
         secondaryDbWrites.push(
-          supabase.from("player_tracking").upsert(trackingUpdates, { onConflict: "player_tag" })
+          supabaseAdmin.from("player_tracking").upsert(trackingUpdates, { onConflict: "player_tag" })
         );
       }
       
@@ -871,14 +867,14 @@ async function syncClubData(providedClubTag?: string, providedApiKey?: string, i
       const tomorrowStart = new Date(todayStart);
       tomorrowStart.setUTCDate(tomorrowStart.getUTCDate() + 1);
       secondaryDbWrites.push(
-        supabase
+        supabaseAdmin
           .from("brawler_snapshots")
           .delete()
           .in("player_tag", snapshotPlayerTags)
           .gte("recorded_at", todayStart.toISOString())
           .lt("recorded_at", tomorrowStart.toISOString())
           .then(() => 
-            supabase
+            supabaseAdmin
               .from("brawler_snapshots")
               .insert(brawlerSnapshots)
           )
@@ -899,17 +895,17 @@ async function syncClubData(providedClubTag?: string, providedApiKey?: string, i
     const cutoffDateStr = cutoffISO.slice(0, 10);
 
     await Promise.all([
-      supabase.from("battle_history").delete().lt("battle_time", cutoffISO)
+      supabaseAdmin.from("battle_history").delete().lt("battle_time", cutoffISO)
         .then(({ error, count }) => {
           if (error) console.error("Error purging old battles:", error);
           else if (count && count > 0) console.log(`Purged ${count} battles older than ${retentionDays} days`);
         }),
-      supabase.from("daily_stats").delete().lt("date", cutoffDateStr)
+      supabaseAdmin.from("daily_stats").delete().lt("date", cutoffDateStr)
         .then(({ error, count }) => {
           if (error) console.error("Error purging old daily stats:", error);
           else if (count && count > 0) console.log(`Purged ${count} daily stats older than ${retentionDays} days`);
         }),
-      supabase.from("brawler_snapshots").delete().lt("recorded_at", cutoffDateStr)
+      supabaseAdmin.from("brawler_snapshots").delete().lt("recorded_at", cutoffDateStr)
         .then(({ error, count }) => {
           if (error) console.error("Error purging old brawler snapshots:", error);
           else if (count && count > 0) console.log(`Purged ${count} snapshots older than ${retentionDays} days`);
@@ -981,7 +977,7 @@ async function syncClubData(providedClubTag?: string, providedApiKey?: string, i
       // Inactive members notification — reuse the same 24h throttle logic
       const inactiveMembersForNotif = memberUpdates.filter(m => !m.is_active);
       if (inactiveMembersForNotif.length > 0) {
-        const { data: lastAlert } = await supabase
+        const { data: lastAlert } = await supabaseAdmin
           .from("settings")
           .select("value")
           .eq("key", "last_inactive_notif")
@@ -1009,7 +1005,7 @@ async function syncClubData(providedClubTag?: string, providedApiKey?: string, i
               notifCreatedAt
             ),
           });
-          await supabase.from("settings").upsert({ key: "last_inactive_notif", value: new Date().toISOString() }, { onConflict: "key" });
+          await supabaseAdmin.from("settings").upsert({ key: "last_inactive_notif", value: new Date().toISOString() }, { onConflict: "key" });
         }
       }
 
@@ -1026,7 +1022,7 @@ async function syncClubData(providedClubTag?: string, providedApiKey?: string, i
         const recentNotifWindowISO = new Date(Date.now() - 10 * 60 * 1000).toISOString();
 
         if (notifTypes.length > 0) {
-          const { data: recentNotifs } = await supabase
+          const { data: recentNotifs } = await supabaseAdmin
             .from("notifications")
             .select("type, title, message, player_tag, created_at")
             .in("type", notifTypes)
@@ -1042,7 +1038,7 @@ async function syncClubData(providedClubTag?: string, providedApiKey?: string, i
         }
 
         if (notifRowsToInsert.length > 0) {
-          const { error: notifError } = await supabase
+          const { error: notifError } = await supabaseAdmin
             .from("notifications")
             .upsert(notifRowsToInsert, { onConflict: "dedupe_key", ignoreDuplicates: true });
           if (notifError) console.error("Error inserting notifications:", notifError);
@@ -1079,7 +1075,7 @@ async function syncClubData(providedClubTag?: string, providedApiKey?: string, i
         const inactiveMembers = memberUpdates.filter(m => !m.is_active);
         if (inactiveMembers.length > 0) {
           // Check when we last sent an inactive alert
-          const { data: lastInactiveAlert } = await supabase
+          const { data: lastInactiveAlert } = await supabaseAdmin
             .from("settings")
             .select("value")
             .eq("key", "last_inactive_alert")
@@ -1103,7 +1099,7 @@ async function syncClubData(providedClubTag?: string, providedApiKey?: string, i
             });
             
             // Save the timestamp so we don't spam
-            await supabase.from("settings").upsert({
+            await supabaseAdmin.from("settings").upsert({
               key: "last_inactive_alert",
               value: new Date().toISOString(),
             }, { onConflict: "key" });
@@ -1137,11 +1133,11 @@ async function syncClubData(providedClubTag?: string, providedApiKey?: string, i
     // Save last sync time to database
     const syncTime = new Date().toISOString();
     await Promise.all([
-      supabase.from("settings").upsert({
+      supabaseAdmin.from("settings").upsert({
         key: "last_sync_time",
         value: syncTime,
       }, { onConflict: "key" }),
-      supabase.from("settings").upsert({
+      supabaseAdmin.from("settings").upsert({
         key: "required_trophies",
         value: String(club.requiredTrophies ?? ""),
       }, { onConflict: "key" }),

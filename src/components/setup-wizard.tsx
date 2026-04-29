@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { useAppStore } from "@/lib/store";
+import { AdminGate } from "@/components/admin-gate";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
@@ -85,6 +86,10 @@ export function SetupWizard({ onComplete }: SetupWizardProps) {
   };
 
   return (
+    <AdminGate
+      title="Admin Setup Required"
+      description="Sign in before adding the Brawl Stars API key and creating the initial club setup."
+    >
     <div className="min-h-screen flex items-center justify-center bg-background p-4">
       <Card className="w-full max-w-md">
         <CardHeader className="text-center">
@@ -206,5 +211,6 @@ export function SetupWizard({ onComplete }: SetupWizardProps) {
         </CardContent>
       </Card>
     </div>
+    </AdminGate>
   );
 }

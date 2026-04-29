@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { supabase } from "@/lib/supabase";
+import { supabaseAdmin } from "@/lib/supabase-admin";
 
 type BattleSummary = {
   battle_time: string;
@@ -14,7 +14,7 @@ async function fetchMegaPigBattleSummaries(playerTags: string[], sinceDate: stri
   const rows: BattleSummary[] = [];
 
   for (let from = 0; ; from += pageSize) {
-    const { data, error } = await supabase
+    const { data, error } = await supabaseAdmin
       .from("battle_history")
       .select("battle_time, mode, result")
       .in("player_tag", playerTags)
@@ -39,10 +39,10 @@ export async function GET() {
     const prevWeekStr = prevWeekStart.toISOString().split("T")[0];
     // Parallel data fetches
     const [currentMembersRes, membersRes, thisWeekStatsRes, prevWeekStatsRes] = await Promise.all([
-      supabase.from("member_history").select("player_tag").eq("is_current_member", true),
-      supabase.from("members").select("player_tag, player_name, trophies, is_active, last_updated"),
-      supabase.from("daily_stats").select("player_tag, date, battles, wins, trophies_gained, trophies_lost").gte("date", weekAgoStr),
-      supabase.from("daily_stats").select("player_tag, battles").gte("date", prevWeekStr).lt("date", weekAgoStr),
+      supabaseAdmin.from("member_history").select("player_tag").eq("is_current_member", true),
+      supabaseAdmin.from("members").select("player_tag, player_name, trophies, is_active, last_updated"),
+      supabaseAdmin.from("daily_stats").select("player_tag, date, battles, wins, trophies_gained, trophies_lost").gte("date", weekAgoStr),
+      supabaseAdmin.from("daily_stats").select("player_tag, battles").gte("date", prevWeekStr).lt("date", weekAgoStr),
     ]);
 
     const currentTags = new Set((currentMembersRes.data || []).map(h => h.player_tag));
@@ -99,7 +99,7 @@ export async function GET() {
     // Get last battle date from daily_stats (actual activity, not sync timestamp)
     const lastBattleDateMap = new Map<string, string>();
     if (inactiveTags.length > 0) {
-      const { data: lastBattles } = await supabase
+      const { data: lastBattles } = await supabaseAdmin
         .from("daily_stats")
         .select("player_tag, date")
         .in("player_tag", inactiveTags)
@@ -167,7 +167,7 @@ export async function GET() {
       
       // If still not found, query directly
       if (!mvpName) {
-        const { data: mvpMember } = await supabase
+        const { data: mvpMember } = await supabaseAdmin
           .from("members")
           .select("player_name")
           .or(`player_tag.eq.${mvpTag},player_tag.eq.#${mvpTag},player_tag.eq.${mvpTag.replace("#", "")}`)

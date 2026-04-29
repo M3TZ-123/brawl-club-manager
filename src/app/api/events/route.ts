@@ -1,10 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
-import { supabase } from "@/lib/supabase";
-import { rejectCrossOriginRequest } from "@/lib/request-security";
+import { supabaseAdmin } from "@/lib/supabase-admin";
+import { rejectUnauthorizedAdminMutation } from "@/lib/admin-auth";
 
 export async function GET() {
   try {
-    const { data: events, error } = await supabase
+    const { data: events, error } = await supabaseAdmin
       .from("club_events")
       .select("*")
       .order("event_time", { ascending: false })
@@ -25,11 +25,11 @@ export async function GET() {
 // DELETE endpoint to clear all events and reset tracking from today
 export async function DELETE(request: NextRequest) {
   try {
-    const crossOriginResponse = rejectCrossOriginRequest(request);
-    if (crossOriginResponse) return crossOriginResponse;
+    const authResponse = rejectUnauthorizedAdminMutation(request);
+    if (authResponse) return authResponse;
 
     // Clear all club events
-    const { error: eventsError } = await supabase
+    const { error: eventsError } = await supabaseAdmin
       .from("club_events")
       .delete()
       .neq("id", 0); // Delete all rows
@@ -38,7 +38,7 @@ export async function DELETE(request: NextRequest) {
 
     // Reset member history - mark all current members as baseline
     // This means joins/leaves will only be tracked from this point forward
-    const { error: historyError } = await supabase
+    const { error: historyError } = await supabaseAdmin
       .from("member_history")
       .update({
         first_seen: new Date().toISOString(),

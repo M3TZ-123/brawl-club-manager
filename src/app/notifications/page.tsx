@@ -4,6 +4,7 @@ import { ReactNode, useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { cn } from "@/lib/utils";
 import { fetchJsonCached, invalidateJsonCache } from "@/lib/client-data-cache";
+import { useAdminSession } from "@/hooks/use-admin-session";
 import { LayoutWrapper } from "@/components/layout-wrapper";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -46,6 +47,7 @@ function getDateHeading(date: Date) {
 }
 
 export default function NotificationsPage() {
+  const { isAdmin } = useAdminSession();
   const [notifications, setNotifications] = useState<Notification[]>([]);
   const [unreadCount, setUnreadCount] = useState(0);
   const [loading, setLoading] = useState(true);
@@ -84,6 +86,7 @@ export default function NotificationsPage() {
   }, [loadNotifications]);
 
   const markAsRead = async (id: number) => {
+    if (!isAdmin) return;
     try {
       await fetch("/api/notifications", {
         method: "PATCH",
@@ -101,6 +104,7 @@ export default function NotificationsPage() {
   };
 
   const markAllAsRead = async () => {
+    if (!isAdmin) return;
     try {
       await fetch("/api/notifications", {
         method: "PATCH",
@@ -238,7 +242,7 @@ export default function NotificationsPage() {
               Unread{unreadCount > 0 && ` (${unreadCount})`}
             </button>
           </div>
-          {unreadCount > 0 && (
+          {unreadCount > 0 && isAdmin && (
             <Button variant="outline" size="sm" onClick={markAllAsRead}>
               <CheckCheck className="h-4 w-4 mr-1" />
               Mark all read
@@ -287,9 +291,10 @@ export default function NotificationsPage() {
                 return (
                   <Card
                     key={notif.id}
-                    onClick={() => !notif.is_read && markAsRead(notif.id)}
+                    onClick={() => isAdmin && !notif.is_read && markAsRead(notif.id)}
                     className={cn(
-                      "border-l-4 cursor-pointer transition-all",
+                      "border-l-4 transition-all",
+                      isAdmin && "cursor-pointer",
                       style.bg,
                       notif.is_read
                         ? "opacity-60 hover:opacity-80"

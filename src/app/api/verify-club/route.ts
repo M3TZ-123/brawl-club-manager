@@ -1,11 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getClub } from "@/lib/brawl-api";
-import { rejectCrossOriginRequest } from "@/lib/request-security";
+import { rejectUnauthorizedAdminMutation } from "@/lib/admin-auth";
 
 export async function POST(request: NextRequest) {
   try {
-    const crossOriginResponse = rejectCrossOriginRequest(request);
-    if (crossOriginResponse) return crossOriginResponse;
+    const authResponse = rejectUnauthorizedAdminMutation(request);
+    if (authResponse) return authResponse;
 
     const { clubTag, apiKey } = await request.json();
 

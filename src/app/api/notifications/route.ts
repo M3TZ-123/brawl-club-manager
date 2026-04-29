@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { supabase } from "@/lib/supabase";
-import { rejectCrossOriginRequest } from "@/lib/request-security";
+import { supabaseAdmin } from "@/lib/supabase-admin";
+import { rejectUnauthorizedAdminMutation } from "@/lib/admin-auth";
 
 function isMissingNotificationsTable(error: unknown): boolean {
   if (!error || typeof error !== "object") return false;
@@ -28,7 +28,7 @@ export async function GET(request: NextRequest) {
       ? typesParam.split(",").map((t) => t.trim()).filter(Boolean)
       : [];
 
-    let query = supabase
+    let query = supabaseAdmin
       .from("notifications")
       .select("*")
       .order("created_at", { ascending: false })
@@ -44,7 +44,7 @@ export async function GET(request: NextRequest) {
 
     const [notificationsRes, unreadCountRes] = await Promise.all([
       query,
-      supabase
+      supabaseAdmin
         .from("notifications")
         .select("*", { count: "exact", head: true })
         .eq("is_read", false),
@@ -81,13 +81,13 @@ export async function GET(request: NextRequest) {
 // Body: { ids: number[] } to mark specific ones, or { all: true } to mark all
 export async function PATCH(request: NextRequest) {
   try {
-    const crossOriginResponse = rejectCrossOriginRequest(request);
-    if (crossOriginResponse) return crossOriginResponse;
+    const authResponse = rejectUnauthorizedAdminMutation(request);
+    if (authResponse) return authResponse;
 
     const body = await request.json().catch(() => ({}));
 
     if (body.all === true) {
-      const { error } = await supabase
+      const { error } = await supabaseAdmin
         .from("notifications")
         .update({ is_read: true })
         .eq("is_read", false);
@@ -110,7 +110,7 @@ export async function PATCH(request: NextRequest) {
         );
       }
 
-      const { error } = await supabase
+      const { error } = await supabaseAdmin
         .from("notifications")
         .update({ is_read: true })
         .in("id", ids);
@@ -140,10 +140,10 @@ export async function PATCH(request: NextRequest) {
 // DELETE — Delete old read notifications (cleanup)
 export async function DELETE(request: NextRequest) {
   try {
-    const crossOriginResponse = rejectCrossOriginRequest(request);
-    if (crossOriginResponse) return crossOriginResponse;
+    const authResponse = rejectUnauthorizedAdminMutation(request);
+    if (authResponse) return authResponse;
 
-    const { error } = await supabase
+    const { error } = await supabaseAdmin
       .from("notifications")
       .delete()
       .eq("is_read", true)

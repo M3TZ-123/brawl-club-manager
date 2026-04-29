@@ -86,9 +86,17 @@ NEXT_PUBLIC_SUPABASE_URL=https://xxxxx.supabase.co
 NEXT_PUBLIC_SUPABASE_ANON_KEY=your_anon_key
 SUPABASE_SERVICE_ROLE_KEY=your_service_role_key
 
+# Admin access (server-only, never NEXT_PUBLIC_)
+ADMIN_PASSWORD=choose_a_strong_admin_password
+ADMIN_SESSION_SECRET=generate_a_long_random_cookie_signing_secret
+CRON_SECRET=generate_a_long_random_cron_secret
+
 # Optional
 DISCORD_WEBHOOK_URL=your_discord_webhook
 ```
+
+Admin-only actions include setup, settings changes, manual sync, player refresh, notification mutations, history notes, and join/leave tracking reset.
+After updating `supabase/schema.sql`, run the Row Level Security section in Supabase SQL Editor so the public anon key cannot read `settings` or write to any app tables.
 
 ### 5. Run Development Server
 

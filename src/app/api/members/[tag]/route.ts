@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
-import { supabase } from "@/lib/supabase";
+import { supabaseAdmin } from "@/lib/supabase-admin";
 import { getPlayer, getPlayerRankedData, calculateEnhancedStats, calculateWinRateFromBattleLog, getPlayerBattleLog, processBattleLog, BrawlStarsBattleLog } from "@/lib/brawl-api";
-import { rejectCrossOriginRequest } from "@/lib/request-security";
+import { rejectUnauthorizedAdminMutation } from "@/lib/admin-auth";
 
 type RecentMatch = {
   battle_time: string;
@@ -36,7 +36,7 @@ async function fetchActivityHistorySince(playerTag: string, sinceISO: string): P
   const rows: ActivityHistoryRow[] = [];
 
   for (let from = 0; ; from += pageSize) {
-    const { data, error } = await supabase
+    const { data, error } = await supabaseAdmin
       .from("activity_log")
       .select("*")
       .eq("player_tag", playerTag)
@@ -61,7 +61,7 @@ async function fetchStoredBattlesForDailyStats(
   const rows: StoredBattleForStats[] = [];
 
   for (let from = 0; ; from += pageSize) {
-    const { data, error } = await supabase
+    const { data, error } = await supabaseAdmin
       .from("battle_history")
       .select("player_tag, battle_time, result, trophy_change, is_star_player")
       .eq("player_tag", playerTag)
@@ -152,7 +152,7 @@ async function rebuildDailyStatsForBattles(playerTag: string, battleTimes: strin
 
   const dailyStatsArray = Array.from(dailyStatsMap.values());
   if (dailyStatsArray.length > 0) {
-    const { error } = await supabase
+    const { error } = await supabaseAdmin
       .from("daily_stats")
       .upsert(dailyStatsArray, { onConflict: "player_tag,date" });
     if (error) throw error;
@@ -160,7 +160,7 @@ async function rebuildDailyStatsForBattles(playerTag: string, battleTimes: strin
 }
 
 async function getInactivityThresholdHours(): Promise<number> {
-  const { data } = await supabase
+  const { data } = await supabaseAdmin
     .from("settings")
     .select("value")
     .eq("key", "inactivity_threshold")
@@ -171,7 +171,7 @@ async function getInactivityThresholdHours(): Promise<number> {
 }
 
 async function getConfiguredApiKey(): Promise<string | undefined> {
-  const { data, error } = await supabase
+  const { data, error } = await supabaseAdmin
     .from("settings")
     .select("value")
     .eq("key", "api_key")
@@ -207,41 +207,41 @@ export async function GET(
       playerTrackingRes,
       snapshotRowsRes,
     ] = await Promise.all([
-      supabase
+      supabaseAdmin
         .from("members")
         .select("*")
         .eq("player_tag", playerTag)
         .single(),
       fetchActivityHistorySince(playerTag, activitySince),
-      supabase
+      supabaseAdmin
         .from("activity_log")
         .select("recorded_at")
         .eq("player_tag", playerTag)
         .order("recorded_at", { ascending: true })
         .limit(1),
-      supabase
+      supabaseAdmin
         .from("battle_history")
         .select("battle_time, mode, map, result, trophy_change, is_star_player, brawler_name, brawler_power")
         .eq("player_tag", playerTag)
         .order("battle_time", { ascending: false })
         .limit(25),
-      supabase
+      supabaseAdmin
         .from("member_history")
         .select("*")
         .eq("player_tag", playerTag)
         .maybeSingle(),
-      supabase
+      supabaseAdmin
         .from("daily_stats")
         .select("*")
         .eq("player_tag", playerTag)
         .gte("date", twentyEightDaysAgo.toISOString().slice(0, 10))
         .order("date", { ascending: true }),
-      supabase
+      supabaseAdmin
         .from("player_tracking")
         .select("*")
         .eq("player_tag", playerTag)
         .maybeSingle(),
-      supabase
+      supabaseAdmin
         .from("brawler_snapshots")
         .select("brawler_id, brawler_name, power_level, trophies, rank, recorded_at")
         .eq("player_tag", playerTag)
@@ -427,8 +427,8 @@ export async function POST(
   { params }: { params: Promise<{ tag: string }> }
 ) {
   try {
-    const crossOriginResponse = rejectCrossOriginRequest(request);
-    if (crossOriginResponse) return crossOriginResponse;
+    const authResponse = rejectUnauthorizedAdminMutation(request);
+    if (authResponse) return authResponse;
 
     const { tag } = await params;
     const playerTag = decodeURIComponent(tag);
@@ -454,7 +454,7 @@ export async function POST(
     const winRateData = calculateWinRateFromBattleLog(battleLog);
 
     // Get previous data so refresh does not wipe good rank/icon values when a side API is unavailable.
-    const { data: existingMember } = await supabase
+    const { data: existingMember } = await supabaseAdmin
       .from("members")
       .select("trophies, rank_current, rank_highest, icon_id")
       .eq("player_tag", playerTag)
@@ -487,7 +487,7 @@ export async function POST(
       : (existingMember?.rank_highest || "Unranked");
 
     // Update member
-    const { data: updatedMember, error } = await supabase
+    const { data: updatedMember, error } = await supabaseAdmin
       .from("members")
       .update({
         player_name: player.name,
@@ -512,7 +512,7 @@ export async function POST(
     if (error) throw error;
 
     // Log activity
-    await supabase.from("activity_log").insert({
+    await supabaseAdmin.from("activity_log").insert({
       player_tag: playerTag,
       trophies: player.trophies,
       trophy_change: trophyChange,
@@ -520,7 +520,7 @@ export async function POST(
     });
 
     if (processedBattles.length > 0) {
-      const { error: battleError } = await supabase
+      const { error: battleError } = await supabaseAdmin
         .from("battle_history")
         .upsert(processedBattles, {
           onConflict: "player_tag,battle_time",
@@ -540,7 +540,7 @@ export async function POST(
       const tomorrowStart = new Date(todayStart);
       tomorrowStart.setUTCDate(tomorrowStart.getUTCDate() + 1);
 
-      const { error: deleteSnapshotsError } = await supabase
+      const { error: deleteSnapshotsError } = await supabaseAdmin
         .from("brawler_snapshots")
         .delete()
         .eq("player_tag", playerTag)
@@ -561,7 +561,7 @@ export async function POST(
         gears_count: brawler.gears?.length || 0,
       }));
 
-      const { error: insertSnapshotsError } = await supabase
+      const { error: insertSnapshotsError } = await supabaseAdmin
         .from("brawler_snapshots")
         .insert(snapshotRows);
 

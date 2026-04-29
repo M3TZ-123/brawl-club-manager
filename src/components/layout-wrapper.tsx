@@ -4,6 +4,7 @@ import { ReactNode, createContext, useContext, useCallback, useEffect, useRef, u
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useAppStore } from "@/lib/store";
+import { useAdminSession } from "@/hooks/use-admin-session";
 import { cn, formatDateTime } from "@/lib/utils";
 import { fetchJsonCached, invalidateJsonCache } from "@/lib/client-data-cache";
 import {
@@ -24,6 +25,7 @@ import {
   Pencil,
   UserMinus,
   UserPlus,
+  ShieldCheck,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -37,6 +39,7 @@ const navigation = [
   { name: "History", href: "/history", icon: History },
   { name: "Notifications", href: "/notifications", icon: Bell },
   { name: "Settings", href: "/settings", icon: Settings },
+  { name: "Admin", href: "/admin", icon: ShieldCheck },
 ];
 
 // Simple sidebar context
@@ -60,6 +63,7 @@ function SimpleSidebar() {
   const pathname = usePathname();
   const { clubName, lastSyncTime, isSyncing, clubTag, apiKeyConfigured, refreshInterval } = useAppStore();
   const { isOpen, close } = useSidebarContext();
+  const { isAdmin, isLoading: isAdminLoading } = useAdminSession();
   const autoSyncIntervalRef = useRef<NodeJS.Timeout | null>(null);
 
   // Ensure settings (including lastSyncTime) are loaded from DB on any page
@@ -69,6 +73,12 @@ function SimpleSidebar() {
 
   const handleSync = useCallback(async (isAutoSync = false) => {
     if (!clubTag || !apiKeyConfigured) return;
+    if (!isAdmin) {
+      if (!isAutoSync) {
+        alert("Admin login required to sync club data.");
+      }
+      return;
+    }
     
     try {
       useAppStore.getState().setIsSyncing(true);
@@ -119,11 +129,11 @@ function SimpleSidebar() {
     } finally {
       useAppStore.getState().setIsSyncing(false);
     }
-  }, [apiKeyConfigured, clubTag]);
+  }, [apiKeyConfigured, clubTag, isAdmin]);
 
   // Auto-sync based on refresh interval
   useEffect(() => {
-    if (!clubTag || !apiKeyConfigured || refreshInterval <= 0) return;
+    if (!clubTag || !apiKeyConfigured || !isAdmin || refreshInterval <= 0) return;
 
     const checkAndSync = () => {
       const lastSync = useAppStore.getState().lastSyncTime;
@@ -149,7 +159,7 @@ function SimpleSidebar() {
         clearInterval(autoSyncIntervalRef.current);
       }
     };
-  }, [clubTag, apiKeyConfigured, refreshInterval, handleSync]);
+  }, [clubTag, apiKeyConfigured, isAdmin, refreshInterval, handleSync]);
 
   return (
     <>
@@ -219,13 +229,21 @@ function SimpleSidebar() {
           <div className="border-t border-border px-3 py-4">
             <Button
               onClick={() => handleSync(false)}
-              disabled={isSyncing || !clubTag || !apiKeyConfigured}
+              disabled={isSyncing || !clubTag || !apiKeyConfigured || !isAdmin || isAdminLoading}
               variant="outline"
               className="w-full justify-center gap-2 border-border"
             >
               <RefreshCw className={cn("size-4", isSyncing && "animate-spin")} />
               <span>{isSyncing ? "Syncing..." : "Sync Now"}</span>
             </Button>
+            {!isAdmin && (
+              <Link
+                href="/admin"
+                className="mt-2 block text-center text-xs text-primary hover:underline"
+              >
+                Admin login required
+              </Link>
+            )}
             {lastSyncTime && (
               <p className="text-xs text-muted-foreground text-center mt-2">
                 Last: {new Date(lastSyncTime).toLocaleTimeString()}
@@ -252,6 +270,7 @@ interface NotificationItem {
 function SimpleHeader() {
   const { clubName, theme, setTheme } = useAppStore();
   const { toggle } = useSidebarContext();
+  const { isAdmin } = useAdminSession();
   const [notifications, setNotifications] = useState<NotificationItem[]>([]);
   const [showNotifications, setShowNotifications] = useState(false);
   const [unreadCount, setUnreadCount] = useState(0);
@@ -308,6 +327,7 @@ function SimpleHeader() {
   }, [showNotifications]);
 
   const markAsRead = async (id: number) => {
+    if (!isAdmin) return;
     try {
       await fetch("/api/notifications", {
         method: "PATCH",
@@ -325,6 +345,7 @@ function SimpleHeader() {
   };
 
   const markAllAsRead = async () => {
+    if (!isAdmin) return;
     try {
       await fetch("/api/notifications", {
         method: "PATCH",
@@ -439,7 +460,7 @@ function SimpleHeader() {
               <CardContent className="p-0">
                 <div className="p-3 border-b flex items-center justify-between">
                   <h3 className="font-semibold">Notifications</h3>
-                  {unreadCount > 0 && (
+                  {unreadCount > 0 && isAdmin && (
                     <button
                       onClick={markAllAsRead}
                       className="text-xs text-primary hover:underline"
@@ -460,9 +481,10 @@ function SimpleHeader() {
                       return (
                         <div
                           key={notif.id}
-                          onClick={() => !notif.is_read && markAsRead(notif.id)}
+                          onClick={() => isAdmin && !notif.is_read && markAsRead(notif.id)}
                           className={cn(
-                            "p-3 border-b last:border-b-0 cursor-pointer transition-colors",
+                            "p-3 border-b last:border-b-0 transition-colors",
+                            isAdmin && "cursor-pointer",
                             notif.is_read
                               ? "hover:bg-muted/30 opacity-60"
                               : "bg-primary/5 hover:bg-primary/10"

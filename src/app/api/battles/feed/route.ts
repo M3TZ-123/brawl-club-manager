@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { supabase } from "@/lib/supabase";
+import { supabaseAdmin } from "@/lib/supabase-admin";
 
 function parseBoundedInt(value: string | null, fallback: number, min: number, max: number): number {
   const parsed = Number.parseInt(value || "", 10);
@@ -14,7 +14,7 @@ type BattleModeRow = {
 async function fetchRecentBattleModes(playerTags: string[]): Promise<BattleModeRow[]> {
   if (playerTags.length === 0) return [];
 
-  const { data, error } = await supabase
+  const { data, error } = await supabaseAdmin
     .from("battle_history")
     .select("mode")
     .in("player_tag", playerTags)
@@ -36,7 +36,7 @@ export async function GET(request: Request) {
     const date = searchParams.get("date") || null; // YYYY-MM-DD
 
     // Get only current club member tags from member_history
-    const { data: currentMemberHistory } = await supabase
+    const { data: currentMemberHistory } = await supabaseAdmin
       .from("member_history")
       .select("player_tag")
       .eq("is_current_member", true);
@@ -44,7 +44,7 @@ export async function GET(request: Request) {
     const currentMemberTags = currentMemberHistory?.map((m) => m.player_tag) || [];
 
     // Get current member names from members table
-    const { data: members } = await supabase
+    const { data: members } = await supabaseAdmin
       .from("members")
       .select("player_tag, player_name")
       .in("player_tag", currentMemberTags.length > 0 ? currentMemberTags : [""]);
@@ -53,7 +53,7 @@ export async function GET(request: Request) {
     const clubTags = new Set(nameMap.keys());
 
     // Build query - fetch raw battles
-    let query = supabase
+    let query = supabaseAdmin
       .from("battle_history")
       .select(
         "player_tag, battle_time, mode, map, result, trophy_change, is_star_player, brawler_name, brawler_power, teams_json",

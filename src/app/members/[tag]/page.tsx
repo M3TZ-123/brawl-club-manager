@@ -8,6 +8,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { fetchJsonCached, invalidateJsonCache } from "@/lib/client-data-cache";
+import { useAdminSession } from "@/hooks/use-admin-session";
 import { Member, ActivityLog, MemberHistory } from "@/types/database";
 import {
   formatNumber,
@@ -186,6 +187,7 @@ export default function MemberDetailPage({ params }: PageProps) {
   const [avatarError, setAvatarError] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
   const [isRefreshing, setIsRefreshing] = useState(false);
+  const { isAdmin } = useAdminSession();
 
   const playerTag = useMemo(() => decodeURIComponent(resolvedParams.tag), [resolvedParams.tag]);
   const memberApiUrl = useMemo(() => `/api/members/${encodeURIComponent(playerTag)}`, [playerTag]);
@@ -227,6 +229,10 @@ export default function MemberDetailPage({ params }: PageProps) {
   }, [loadMemberData]);
 
   const handleRefresh = async () => {
+    if (!isAdmin) {
+      alert("Admin login required to refresh player stats.");
+      return;
+    }
     setIsRefreshing(true);
     try {
       const response = await fetch(`/api/members/${encodeURIComponent(playerTag)}`, {
@@ -360,9 +366,9 @@ export default function MemberDetailPage({ params }: PageProps) {
                       )}
                     </div>
                   </div>
-                  <Button onClick={handleRefresh} disabled={isRefreshing}>
+                  <Button onClick={handleRefresh} disabled={isRefreshing || !isAdmin}>
                     <RefreshCw className={`h-4 w-4 mr-2 ${isRefreshing ? "animate-spin" : ""}`} />
-                    Refresh Stats
+                    {isAdmin ? "Refresh Stats" : "Admin Only"}
                   </Button>
                 </div>
               </CardContent>

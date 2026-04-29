@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { supabase } from "@/lib/supabase";
+import { supabaseAdmin } from "@/lib/supabase-admin";
 import { ClubEvent, Member } from "@/types/database";
 
 interface DashboardSummary {
@@ -12,11 +12,11 @@ interface DashboardSummary {
 export async function GET() {
   try {
     const [currentMembersRes, eventsRes] = await Promise.all([
-      supabase
+      supabaseAdmin
         .from("member_history")
         .select("player_tag")
         .eq("is_current_member", true),
-      supabase
+      supabaseAdmin
         .from("club_events")
         .select("*")
         .order("event_time", { ascending: false })
@@ -31,7 +31,7 @@ export async function GET() {
     );
     const currentTagList = [...currentTags];
 
-    const { data: memberRows, error: membersError } = await supabase
+    const { data: memberRows, error: membersError } = await supabaseAdmin
       .from("members")
       .select("player_tag, player_name, icon_id, role, trophies, highest_trophies, exp_level, rank_current, rank_highest, win_rate, brawlers_count, solo_victories, duo_victories, trio_victories, is_active, last_updated")
       .in("player_tag", currentTagList.length > 0 ? currentTagList : [""])

@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { supabase } from "@/lib/supabase";
+import { supabaseAdmin } from "@/lib/supabase-admin";
 
 type WeeklyStatsRow = {
   player_tag: string;
@@ -13,7 +13,7 @@ type WeeklyStatsRow = {
 export async function GET() {
   try {
     // Get current member tags from member_history (same logic as /api/members)
-    const { data: currentMemberHistory, error: currentMemberError } = await supabase
+    const { data: currentMemberHistory, error: currentMemberError } = await supabaseAdmin
       .from("member_history")
       .select("player_tag")
       .eq("is_current_member", true);
@@ -30,17 +30,17 @@ export async function GET() {
     const currentMemberFilter = currentMemberTags.length > 0 ? currentMemberTags : [""];
 
     const [membersRes, weeklyStatsRes, eventsRes] = await Promise.all([
-      supabase
+      supabaseAdmin
         .from("members")
         .select("player_tag, player_name, trophies, is_active")
         .in("player_tag", currentMemberFilter)
         .order("trophies", { ascending: false }),
-      supabase
+      supabaseAdmin
         .from("daily_stats")
         .select("player_tag, date, wins, battles, trophies_gained, trophies_lost")
         .in("player_tag", currentMemberFilter)
         .gte("date", weekAgoDate),
-      supabase
+      supabaseAdmin
         .from("club_events")
         .select("event_type, player_name, event_time")
         .gte("event_time", weekAgo.toISOString())

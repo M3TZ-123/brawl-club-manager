@@ -101,19 +101,6 @@ CREATE INDEX IF NOT EXISTS idx_club_events_time ON club_events(event_time DESC);
 CREATE INDEX IF NOT EXISTS idx_members_trophies ON members(trophies DESC);
 CREATE INDEX IF NOT EXISTS idx_member_history_current ON member_history(is_current_member);
 
--- Enable Row Level Security (optional, for public access)
--- ALTER TABLE members ENABLE ROW LEVEL SECURITY;
--- ALTER TABLE activity_log ENABLE ROW LEVEL SECURITY;
--- ALTER TABLE club_events ENABLE ROW LEVEL SECURITY;
--- ALTER TABLE member_history ENABLE ROW LEVEL SECURITY;
--- ALTER TABLE settings ENABLE ROW LEVEL SECURITY;
-
--- Create policies for public read access (adjust as needed)
--- CREATE POLICY "Allow public read" ON members FOR SELECT USING (true);
--- CREATE POLICY "Allow public read" ON activity_log FOR SELECT USING (true);
--- CREATE POLICY "Allow public read" ON club_events FOR SELECT USING (true);
--- CREATE POLICY "Allow public read" ON member_history FOR SELECT USING (true);
-
 -- Function to clean old activity logs (keep last 30 days)
 CREATE OR REPLACE FUNCTION cleanup_old_activity_logs()
 RETURNS void AS $$
@@ -272,3 +259,58 @@ BEGIN
   WHERE created_at < NOW() - INTERVAL '90 days';
 END;
 $$ LANGUAGE plpgsql;
+
+-- =============================================
+-- ROW LEVEL SECURITY
+-- =============================================
+-- Public clients may read dashboard stats. All writes and sensitive settings
+-- must go through Next.js API routes using the server-only service role key.
+ALTER TABLE members ENABLE ROW LEVEL SECURITY;
+ALTER TABLE activity_log ENABLE ROW LEVEL SECURITY;
+ALTER TABLE club_events ENABLE ROW LEVEL SECURITY;
+ALTER TABLE member_history ENABLE ROW LEVEL SECURITY;
+ALTER TABLE battle_history ENABLE ROW LEVEL SECURITY;
+ALTER TABLE player_tracking ENABLE ROW LEVEL SECURITY;
+ALTER TABLE brawler_snapshots ENABLE ROW LEVEL SECURITY;
+ALTER TABLE daily_stats ENABLE ROW LEVEL SECURITY;
+ALTER TABLE notifications ENABLE ROW LEVEL SECURITY;
+ALTER TABLE settings ENABLE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS "public read members" ON members;
+CREATE POLICY "public read members" ON members
+  FOR SELECT TO anon, authenticated USING (true);
+
+DROP POLICY IF EXISTS "public read activity_log" ON activity_log;
+CREATE POLICY "public read activity_log" ON activity_log
+  FOR SELECT TO anon, authenticated USING (true);
+
+DROP POLICY IF EXISTS "public read club_events" ON club_events;
+CREATE POLICY "public read club_events" ON club_events
+  FOR SELECT TO anon, authenticated USING (true);
+
+DROP POLICY IF EXISTS "public read member_history" ON member_history;
+CREATE POLICY "public read member_history" ON member_history
+  FOR SELECT TO anon, authenticated USING (true);
+
+DROP POLICY IF EXISTS "public read battle_history" ON battle_history;
+CREATE POLICY "public read battle_history" ON battle_history
+  FOR SELECT TO anon, authenticated USING (true);
+
+DROP POLICY IF EXISTS "public read player_tracking" ON player_tracking;
+CREATE POLICY "public read player_tracking" ON player_tracking
+  FOR SELECT TO anon, authenticated USING (true);
+
+DROP POLICY IF EXISTS "public read brawler_snapshots" ON brawler_snapshots;
+CREATE POLICY "public read brawler_snapshots" ON brawler_snapshots
+  FOR SELECT TO anon, authenticated USING (true);
+
+DROP POLICY IF EXISTS "public read daily_stats" ON daily_stats;
+CREATE POLICY "public read daily_stats" ON daily_stats
+  FOR SELECT TO anon, authenticated USING (true);
+
+DROP POLICY IF EXISTS "public read notifications" ON notifications;
+CREATE POLICY "public read notifications" ON notifications
+  FOR SELECT TO anon, authenticated USING (true);
+
+-- No anon/authenticated policy is created for settings. This keeps stored
+-- API keys and webhooks readable only through server API routes.

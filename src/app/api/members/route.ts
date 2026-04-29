@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { supabase } from "@/lib/supabase";
+import { supabaseAdmin } from "@/lib/supabase-admin";
 
 type ActivitySnapshot = {
   player_tag: string;
@@ -30,7 +30,7 @@ async function fetchActivitySnapshotsWindow(
   const rows: ActivitySnapshot[] = [];
 
   for (let from = 0; ; from += pageSize) {
-    const { data, error } = await supabase
+    const { data, error } = await supabaseAdmin
       .from("activity_log")
       .select("player_tag, trophies, recorded_at")
       .in("player_tag", playerTags)
@@ -50,7 +50,7 @@ async function fetchActivitySnapshotsWindow(
 async function fetchTrackingSnapshots(playerTags: string[]): Promise<BattleSnapshot[]> {
   if (playerTags.length === 0) return [];
 
-  const { data, error } = await supabase
+  const { data, error } = await supabaseAdmin
     .from("player_tracking")
     .select("player_tag, last_battle_date")
     .in("player_tag", playerTags);
@@ -62,7 +62,7 @@ async function fetchTrackingSnapshots(playerTags: string[]): Promise<BattleSnaps
 async function fetchDailyStatsSnapshots(playerTags: string[], sinceDate: string): Promise<DailyStatsSnapshot[]> {
   if (playerTags.length === 0) return [];
 
-  const { data, error } = await supabase
+  const { data, error } = await supabaseAdmin
     .from("daily_stats")
     .select("player_tag, date, trophies_gained, trophies_lost")
     .in("player_tag", playerTags)
@@ -75,7 +75,7 @@ async function fetchDailyStatsSnapshots(playerTags: string[], sinceDate: string)
 export async function GET() {
   try {
     // Get current member tags from member_history
-    const { data: currentMemberHistory, error: currentMemberError } = await supabase
+    const { data: currentMemberHistory, error: currentMemberError } = await supabaseAdmin
       .from("member_history")
       .select("player_tag")
       .eq("is_current_member", true);
@@ -85,7 +85,7 @@ export async function GET() {
     const currentMemberTags = currentMemberHistory?.map(h => h.player_tag) || [];
 
     // Only fetch members who are currently in the club
-    const { data: members, error } = await supabase
+    const { data: members, error } = await supabaseAdmin
       .from("members")
       .select("*")
       .in("player_tag", currentMemberTags.length > 0 ? currentMemberTags : [''])

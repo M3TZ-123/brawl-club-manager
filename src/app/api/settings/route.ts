@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { supabase } from "@/lib/supabase";
-import { rejectCrossOriginRequest } from "@/lib/request-security";
+import { supabaseAdmin } from "@/lib/supabase-admin";
+import { rejectUnauthorizedAdminMutation } from "@/lib/admin-auth";
 
 const SENSITIVE_KEYS = new Set(["api_key", "discord_webhook"]);
 
@@ -60,7 +60,7 @@ function sanitizeSettingValue(key: string, value: unknown): string | null {
 // GET - Retrieve non-sensitive settings
 export async function GET() {
   try {
-    const { data, error } = await supabase
+    const { data, error } = await supabaseAdmin
       .from("settings")
       .select("key, value");
 
@@ -100,8 +100,8 @@ export async function GET() {
 // POST - Save settings
 export async function POST(request: NextRequest) {
   try {
-    const crossOriginResponse = rejectCrossOriginRequest(request);
-    if (crossOriginResponse) return crossOriginResponse;
+    const authResponse = rejectUnauthorizedAdminMutation(request);
+    if (authResponse) return authResponse;
 
     const body = await request.json().catch(() => ({}));
     if (!body || typeof body !== "object" || Array.isArray(body)) {
@@ -125,7 +125,7 @@ export async function POST(request: NextRequest) {
       .filter((row): row is { key: string; value: string } => row != null);
 
     if (upserts.length > 0) {
-      const { error } = await supabase
+      const { error } = await supabaseAdmin
         .from("settings")
         .upsert(upserts, { onConflict: "key" });
 
