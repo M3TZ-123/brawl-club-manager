@@ -127,10 +127,10 @@ Create one cron-job.org job:
 - Custom request header:
 
 ```txt
-Authorization: Bearer YOUR_VERCEL_CRON_SECRET_VALUE
+x-cron-secret: YOUR_VERCEL_CRON_SECRET_VALUE
 ```
 
-The value after `Bearer` must be exactly the same as the `CRON_SECRET` environment variable in Vercel.
+The header value must be exactly the same as the `CRON_SECRET` environment variable in Vercel. The endpoint also accepts `Authorization: Bearer YOUR_VERCEL_CRON_SECRET_VALUE`, but `x-cron-secret` is simpler for cron-job.org because it avoids basic-auth/Authorization formatting issues.
 
 The in-app refresh interval is only a browser/admin fallback. It works while an admin has the app open, but production auto-sync should rely on cron-job.org or another external scheduler.
 

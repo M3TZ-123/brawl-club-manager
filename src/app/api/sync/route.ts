@@ -176,13 +176,20 @@ async function fetchPreviousBrawlerSnapshots(playerTags: string[], sinceISO: str
   return rows;
 }
 
-// GET handler for Vercel Cron Jobs and GitHub Actions
+function isAuthorizedCronRequest(request: NextRequest) {
+  const cronSecret = process.env.CRON_SECRET?.trim();
+  if (!cronSecret) return false;
+
+  const authorization = request.headers.get("authorization")?.trim();
+  const customCronSecret = request.headers.get("x-cron-secret")?.trim();
+
+  return authorization === `Bearer ${cronSecret}` || customCronSecret === cronSecret;
+}
+
+// GET handler for Vercel Cron Jobs and external schedulers like cron-job.org.
 export async function GET(request: NextRequest) {
   try {
-    const authHeader = request.headers.get("authorization");
-    const cronSecret = process.env.CRON_SECRET;
-
-    if (!cronSecret || authHeader !== `Bearer ${cronSecret}`) {
+    if (!isAuthorizedCronRequest(request)) {
       const authResponse = rejectUnauthorizedAdminRequest(request);
       if (authResponse) return authResponse;
     }
