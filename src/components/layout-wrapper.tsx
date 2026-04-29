@@ -38,8 +38,8 @@ const navigation = [
   { name: "Reports", href: "/reports", icon: FileText },
   { name: "History", href: "/history", icon: History },
   { name: "Notifications", href: "/notifications", icon: Bell },
-  { name: "Settings", href: "/settings", icon: Settings },
-  { name: "Admin", href: "/admin", icon: ShieldCheck },
+  { name: "Settings", href: "/settings", icon: Settings, adminOnly: true },
+  { name: "Admin", href: "/admin", icon: ShieldCheck, adminOnly: true },
 ];
 
 // Simple sidebar context
@@ -199,7 +199,9 @@ function SimpleSidebar() {
 
           {/* Navigation */}
           <nav className="flex-1 px-3 py-4 space-y-1">
-            {navigation.map((item) => {
+            {navigation
+              .filter((item) => !item.adminOnly || isAdmin)
+              .map((item) => {
               const isActive = pathname === item.href;
               return (
                 <Link
@@ -236,14 +238,6 @@ function SimpleSidebar() {
               <RefreshCw className={cn("size-4", isSyncing && "animate-spin")} />
               <span>{isSyncing ? "Syncing..." : "Sync Now"}</span>
             </Button>
-            {!isAdmin && (
-              <Link
-                href="/admin"
-                className="mt-2 block text-center text-xs text-primary hover:underline"
-              >
-                Admin login required
-              </Link>
-            )}
             {lastSyncTime && (
               <p className="text-xs text-muted-foreground text-center mt-2">
                 Last: {new Date(lastSyncTime).toLocaleTimeString()}

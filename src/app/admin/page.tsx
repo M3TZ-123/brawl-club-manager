@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { Database, KeyRound, LogOut, RotateCw, ShieldCheck } from "lucide-react";
 import { AdminGate } from "@/components/admin-gate";
 import { LayoutWrapper } from "@/components/layout-wrapper";
@@ -10,6 +11,12 @@ import { useAdminSession } from "@/hooks/use-admin-session";
 
 function AdminPanel() {
   const { logout } = useAdminSession();
+  const router = useRouter();
+
+  const handleLogout = async () => {
+    await logout();
+    router.replace("/");
+  };
 
   return (
     <LayoutWrapper>
@@ -21,7 +28,7 @@ function AdminPanel() {
               Manage protected operations and sensitive configuration.
             </p>
           </div>
-          <Button variant="outline" className="gap-2" onClick={logout}>
+          <Button variant="outline" className="gap-2" onClick={handleLogout}>
             <LogOut className="h-4 w-4" />
             Sign Out
           </Button>
