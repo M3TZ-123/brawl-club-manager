@@ -181,6 +181,14 @@ export const useAppStore = create<AppState>()(
       partialize: (state) => ({
         theme: state.theme,
         sidebarOpen: state.sidebarOpen,
+        clubTag: state.clubTag,
+        clubName: state.clubName,
+        apiKeyConfigured: state.apiKeyConfigured,
+        inactivityThreshold: state.inactivityThreshold,
+        refreshInterval: state.refreshInterval,
+        notificationsEnabled: state.notificationsEnabled,
+        discordWebhookConfigured: state.discordWebhookConfigured,
+        requiredTrophies: state.requiredTrophies,
         lastSyncTime: state.lastSyncTime,
       }),
     }

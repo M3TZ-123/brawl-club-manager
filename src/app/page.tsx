@@ -57,6 +57,22 @@ function DashboardSkeleton() {
   );
 }
 
+function InsightsSkeleton() {
+  return (
+    <div className="grid gap-4 grid-cols-2 lg:grid-cols-5">
+      {Array.from({ length: 5 }).map((_, index) => (
+        <Card key={index}>
+          <CardContent className="h-28 animate-pulse p-4">
+            <div className="h-4 w-20 rounded bg-muted" />
+            <div className="mt-5 h-7 w-14 rounded bg-muted/70" />
+            <div className="mt-3 h-3 w-24 rounded bg-muted/50" />
+          </CardContent>
+        </Card>
+      ))}
+    </div>
+  );
+}
+
 const ActivityPieChart = dynamic(
   () => import("@/components/charts").then((mod) => mod.ActivityPieChart),
   { ssr: false, loading: () => <ChartSkeleton /> }
@@ -71,6 +87,18 @@ const MembersTable = dynamic(
   () => import("@/components/members-table").then((mod) => mod.MembersTable),
   { loading: () => <MembersPreviewSkeleton /> }
 );
+
+interface DashboardResponse {
+  summary: {
+    totalMembers: number;
+    totalTrophies: number;
+    activeMembers: number;
+    avgTrophies: number;
+  };
+  topMembers: Member[];
+  recentEvents: ClubEvent[];
+  generatedAt?: string;
+}
 
 interface ClubInsights {
   megaPig: {
@@ -103,15 +131,17 @@ export default function DashboardPage() {
     loadSettingsFromDB,
   } = useAppStore();
   const [isSetupComplete, setIsSetupComplete] = useState(false);
-  const [members, setMembers] = useState<Member[]>([]);
-  const [events, setEvents] = useState<ClubEvent[]>([]);
+  const [dashboard, setDashboard] = useState<DashboardResponse | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [mounted, setMounted] = useState(false);
   const [dataLoaded, setDataLoaded] = useState(false);
   const [insights, setInsights] = useState<ClubInsights | null>(null);
+  const [hasRequestedInsights, setHasRequestedInsights] = useState(false);
+  const [isInsightsLoading, setIsInsightsLoading] = useState(false);
   const [copiedTag, setCopiedTag] = useState<string | null>(null);
   const inactiveMembersRef = useRef<HTMLDivElement | null>(null);
   const copyResetTimeoutRef = useRef<number | null>(null);
+  const hasCachedSetup = Boolean(clubTag && apiKeyConfigured);
 
   useEffect(() => {
     setMounted(true);
@@ -123,43 +153,74 @@ export default function DashboardPage() {
 
   const loadData = useCallback(async (force = false) => {
     try {
-      const [membersData, eventsData, insightsData] = await Promise.all([
-        fetchJsonCached<{ members: Member[] }>("/api/members", { staleMs: 30_000, force }),
-        fetchJsonCached<{ events: ClubEvent[] }>("/api/events", { staleMs: 30_000, force }),
-        fetchJsonCached<{ insights: ClubInsights | null }>("/api/insights", { staleMs: 30_000, force }),
-      ]);
+      if (!force) {
+        setIsLoading(true);
+      }
+      const dashboardData = await fetchJsonCached<DashboardResponse>("/api/dashboard", {
+        staleMs: 30_000,
+        force,
+      });
 
-      setMembers(membersData.members || []);
-      setEvents(eventsData.events || []);
-      setInsights(insightsData.insights || null);
+      setDashboard(dashboardData);
     } catch (error) {
-      console.error("Error loading data:", error);
+      console.error("Error loading dashboard:", error);
     } finally {
       setIsLoading(false);
       setDataLoaded(true);
     }
   }, []);
 
+  const loadInsights = useCallback(async (force = false) => {
+    try {
+      setIsInsightsLoading(true);
+      const data = await fetchJsonCached<{ insights: ClubInsights | null }>("/api/insights", {
+        staleMs: 30_000,
+        force,
+      });
+      setInsights(data.insights || null);
+    } catch (error) {
+      console.error("Error loading insights:", error);
+    } finally {
+      setIsInsightsLoading(false);
+      setHasRequestedInsights(true);
+    }
+  }, []);
+
   useEffect(() => {
-    if (!mounted || isLoadingSettings) return;
+    if (!mounted || (isLoadingSettings && !hasCachedSetup)) return;
     
     if (clubTag && apiKeyConfigured) {
       setIsSetupComplete(true);
       if (!dataLoaded) {
         loadData();
       }
-    } else {
+      if (!hasRequestedInsights) {
+        loadInsights();
+      }
+    } else if (!isLoadingSettings) {
+      setIsSetupComplete(false);
       setIsLoading(false);
     }
-  }, [clubTag, apiKeyConfigured, mounted, isLoadingSettings, dataLoaded, loadData]);
+  }, [
+    apiKeyConfigured,
+    clubTag,
+    dataLoaded,
+    hasCachedSetup,
+    hasRequestedInsights,
+    isLoadingSettings,
+    loadData,
+    loadInsights,
+    mounted,
+  ]);
 
   useEffect(() => {
     const handleClubDataUpdated = () => {
       loadData(true);
+      loadInsights(true);
     };
     window.addEventListener("club-data-updated", handleClubDataUpdated);
     return () => window.removeEventListener("club-data-updated", handleClubDataUpdated);
-  }, [loadData]);
+  }, [loadData, loadInsights]);
 
   useEffect(() => {
     return () => {
@@ -190,28 +251,33 @@ export default function DashboardPage() {
   };
 
   const dashboardData = useMemo(() => {
-    const totalTrophies = members.reduce((sum, m) => sum + m.trophies, 0);
-    const activeMembers = members.filter((m) => m.is_active).length;
-    const avgTrophies = members.length > 0 ? Math.round(totalTrophies / members.length) : 0;
+    const summary = dashboard?.summary;
+    const totalMembers = summary?.totalMembers ?? 0;
+    const totalTrophies = summary?.totalTrophies ?? 0;
+    const activeMembers = summary?.activeMembers ?? 0;
+    const avgTrophies = summary?.avgTrophies ?? 0;
+    const topMembers = dashboard?.topMembers ?? [];
+    const recentEvents = dashboard?.recentEvents ?? [];
 
     return {
+      totalMembers,
       totalTrophies,
       activeMembers,
       avgTrophies,
       activityData: [
         { name: "Active", value: activeMembers, color: "#22c55e" },
-        { name: "Inactive", value: Math.max(members.length - activeMembers, 0), color: "#ef4444" },
+        { name: "Inactive", value: Math.max(totalMembers - activeMembers, 0), color: "#ef4444" },
       ],
-      topMembers: members.slice(0, 10).map((m) => ({
+      topMembers: topMembers.map((m) => ({
         name: m.player_name,
         trophies: m.trophies,
       })),
-      dashboardMembers: members.slice(0, 10),
-      recentEvents: events.slice(0, 5),
+      dashboardMembers: topMembers,
+      recentEvents,
     };
-  }, [events, members]);
+  }, [dashboard]);
 
-  if (!mounted || isLoadingSettings) {
+  if (!mounted || (isLoadingSettings && !hasCachedSetup)) {
     return (
       <div className="flex h-screen items-center justify-center bg-background">
         <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary"></div>
@@ -219,7 +285,7 @@ export default function DashboardPage() {
     );
   }
 
-  if (!isSetupComplete && !isLoading) {
+  if (!isSetupComplete && !isLoading && !isLoadingSettings) {
     return <SetupWizard onComplete={() => setIsSetupComplete(true)} />;
   }
 
@@ -231,7 +297,7 @@ export default function DashboardPage() {
         <div className="space-y-6">
           {/* Stats Overview */}
           <StatsCards
-            totalMembers={members.length}
+            totalMembers={dashboardData.totalMembers}
             totalTrophies={dashboardData.totalTrophies}
             activeMembers={dashboardData.activeMembers}
             avgTrophies={dashboardData.avgTrophies}
@@ -251,7 +317,9 @@ export default function DashboardPage() {
           </Card>
 
           {/* Club Insights */}
-          {insights && (
+          {isInsightsLoading && !insights ? (
+            <InsightsSkeleton />
+          ) : insights && (
             <>
               <div className="grid gap-4 grid-cols-2 lg:grid-cols-5">
                 {/* Mega Pig */}
