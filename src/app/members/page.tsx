@@ -41,7 +41,6 @@ import {
   RefreshCw,
   RotateCcw,
   Search,
-  Shield,
   SlidersHorizontal,
   Trophy,
   TrendingDown,
@@ -50,7 +49,7 @@ import {
   Users,
 } from "lucide-react";
 
-type QuickFilter = "all" | "attention" | "top-gainers" | "no-progress" | "inactive" | "officers";
+type QuickFilter = "all" | "attention" | "top-gainers" | "no-progress" | "low-activity" | "inactive";
 type RoleFilter = "all" | "president" | "vicepresident" | "senior" | "member";
 type ActivityFilter = "all" | ActivityStatus | "unknown";
 type MovementFilter = "all" | "positive" | "negative" | "flat" | "unknown";
@@ -106,12 +105,7 @@ function getSevenDayChange(member: MemberWithGains) {
 function needsAttention(member: MemberWithGains) {
   const status = getActivityStatus(member);
   const sevenDayChange = getSevenDayChange(member);
-  return status === "minimal" || status === "inactive" || (sevenDayChange != null && sevenDayChange < 0);
-}
-
-function isOfficer(member: MemberWithGains) {
-  const role = member.role.toLowerCase();
-  return role === "president" || role === "vicepresident";
+  return status === "minimal" || status === "inactive" || (sevenDayChange ?? 0) <= 0;
 }
 
 function rankMatches(rank: string | null, filter: RankFilter) {
@@ -358,8 +352,8 @@ export default function MembersPage() {
     { id: "attention" as const, label: "Needs Attention", count: members.filter(needsAttention).length, icon: AlertTriangle },
     { id: "top-gainers" as const, label: "Top Gainers", count: members.filter((member) => (member.trophies_7d ?? 0) > 0).length, icon: TrendingUp },
     { id: "no-progress" as const, label: "No Progress", count: members.filter((member) => (member.trophies_7d ?? 0) <= 0).length, icon: TrendingDown },
+    { id: "low-activity" as const, label: "Low Activity", count: members.filter((member) => getActivityStatus(member) === "minimal").length, icon: Activity },
     { id: "inactive" as const, label: "Inactive", count: members.filter((member) => getActivityStatus(member) === "inactive").length, icon: UserX },
-    { id: "officers" as const, label: "Officers", count: members.filter(isOfficer).length, icon: Shield },
   ], [members]);
 
   const filteredMembers = useMemo(() => {
@@ -380,8 +374,8 @@ export default function MembersPage() {
         if (quickFilter === "attention" && !needsAttention(member)) return false;
         if (quickFilter === "top-gainers" && !((member.trophies_7d ?? 0) > 0)) return false;
         if (quickFilter === "no-progress" && !((member.trophies_7d ?? 0) <= 0)) return false;
+        if (quickFilter === "low-activity" && getActivityStatus(member) !== "minimal") return false;
         if (quickFilter === "inactive" && getActivityStatus(member) !== "inactive") return false;
-        if (quickFilter === "officers" && !isOfficer(member)) return false;
 
         if (roleFilter !== "all" && member.role.toLowerCase() !== roleFilter) return false;
         if (activityFilter !== "all" && getActivityStatus(member) !== activityFilter) return false;
@@ -434,10 +428,8 @@ export default function MembersPage() {
       setSortState({ key: "trophies_7d", direction: "desc" });
     } else if (filter === "no-progress") {
       setSortState({ key: "trophies_7d", direction: "asc" });
-    } else if (filter === "inactive" || filter === "attention") {
+    } else if (filter === "inactive" || filter === "low-activity" || filter === "attention") {
       setSortState({ key: "activity_status", direction: "asc" });
-    } else if (filter === "officers") {
-      setSortState({ key: "role", direction: "asc" });
     }
   };
 
