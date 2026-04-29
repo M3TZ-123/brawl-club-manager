@@ -138,23 +138,28 @@ export async function GET() {
     const trendDirection: "up" | "down" | "flat" = trendDiff > 5 ? "up" : trendDiff < -5 ? "down" : "flat";
 
     // ============================
-    // 4. MVP OF THE WEEK — Most trophies gained this week
+    // 4. MVP OF THE WEEK — Best net trophy progress this week
     // ============================
-    const trophyGainByPlayer = new Map<string, number>();
+    const netTrophyChangeByPlayer = new Map<string, number>();
     for (const s of thisWeekStats) {
-      trophyGainByPlayer.set(
+      netTrophyChangeByPlayer.set(
         s.player_tag,
-        (trophyGainByPlayer.get(s.player_tag) || 0) + (s.trophies_gained || 0)
+        (netTrophyChangeByPlayer.get(s.player_tag) || 0)
+          + (s.trophies_gained || 0)
+          - (s.trophies_lost || 0)
       );
     }
 
     let mvpTag = "";
-    let mvpTrophies = 0;
-    for (const [tag, trophies] of trophyGainByPlayer) {
+    let mvpTrophies = Number.NEGATIVE_INFINITY;
+    for (const [tag, trophies] of netTrophyChangeByPlayer) {
       if (trophies > mvpTrophies) {
         mvpTag = tag;
         mvpTrophies = trophies;
       }
+    }
+    if (mvpTrophies === Number.NEGATIVE_INFINITY) {
+      mvpTrophies = 0;
     }
 
     // Try all possible tag formats for name lookup

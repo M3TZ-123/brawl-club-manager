@@ -327,12 +327,13 @@ export default function DashboardPage() {
                   <CardContent className="pt-4 pb-3">
                     <div className="flex items-center gap-2 mb-2">
                       <Trophy className="h-4 w-4 text-yellow-500" />
-                      <span className="text-xs font-medium text-muted-foreground">Mega Pig Status</span>
+                      <span className="text-xs font-medium text-muted-foreground">Mega Pig Wins</span>
                     </div>
-                    <p className="text-2xl font-bold">{insights.megaPig.totalWins}W</p>
+                    <p className="text-2xl font-bold">{insights.megaPig.totalWins.toLocaleString()}W</p>
                     {insights.megaPig.isTracked ? (
                       <p className="text-xs text-muted-foreground mt-1">
-                        Rank reached: {insights.megaPig.rankReached || "N/A (API limit)"}
+                        {insights.megaPig.totalBattles.toLocaleString()} tracked battles
+                        {insights.megaPig.rankReached ? ` · Rank ${insights.megaPig.rankReached}` : ""}
                       </p>
                     ) : (
                       <p className="text-xs text-muted-foreground mt-1">
@@ -354,7 +355,7 @@ export default function DashboardPage() {
                       insights.winRate >= 45 ? "text-foreground" : "text-red-500"
                     }`}>{insights.winRate}%</p>
                     <p className="text-xs text-muted-foreground mt-1">
-                      {insights.totalWins}W this week
+                      {insights.totalWins.toLocaleString()}W / {insights.totalBattlesThisWeek.toLocaleString()} battles
                     </p>
                   </CardContent>
                 </Card>
@@ -404,7 +405,7 @@ export default function DashboardPage() {
                       {insights.trendDiff > 0 ? "+" : ""}{insights.trendDiff}%
                     </p>
                     <p className="text-xs text-muted-foreground mt-1">
-                      {insights.thisWeekTotal} vs {insights.prevWeekTotal} last week
+                      {insights.thisWeekTotal.toLocaleString()} vs {insights.prevWeekTotal.toLocaleString()} last week
                     </p>
                   </CardContent>
                 </Card>
@@ -417,9 +418,12 @@ export default function DashboardPage() {
                       <span className="text-xs font-medium text-muted-foreground">MVP of the Week</span>
                     </div>
                     <p className="text-lg font-bold truncate">{insights.mvpName || "---"}</p>
-                    {insights.mvpTrophies > 0 && (
-                      <p className="text-xs text-green-500 mt-1 font-medium flex items-center gap-1">
-                        <Trophy className="h-3 w-3" /> +{insights.mvpTrophies.toLocaleString()} trophies
+                    {insights.mvpName && (
+                      <p className={`text-xs mt-1 font-medium flex items-center gap-1 ${
+                        insights.mvpTrophies >= 0 ? "text-green-500" : "text-red-500"
+                      }`}>
+                        <Trophy className="h-3 w-3" /> {insights.mvpTrophies > 0 ? "+" : ""}
+                        {insights.mvpTrophies.toLocaleString()} net trophies
                       </p>
                     )}
                   </CardContent>
