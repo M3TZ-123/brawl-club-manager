@@ -61,22 +61,19 @@ export function useSidebarContext() {
 
 function SimpleSidebar() {
   const pathname = usePathname();
-  const { clubName, lastSyncTime, isSyncing, clubTag, apiKeyConfigured, refreshInterval, notificationsEnabled } = useAppStore();
+  const { clubName, lastSyncTime, isSyncing, clubTag, apiKeyConfigured, notificationsEnabled } = useAppStore();
   const { isOpen, close } = useSidebarContext();
   const { isAdmin, isLoading: isAdminLoading } = useAdminSession();
-  const autoSyncIntervalRef = useRef<NodeJS.Timeout | null>(null);
 
   // Ensure settings (including lastSyncTime) are loaded from DB on any page
   useEffect(() => {
     useAppStore.getState().loadSettingsFromDB();
   }, []);
 
-  const handleSync = useCallback(async (isAutoSync = false) => {
+  const handleSync = useCallback(async () => {
     if (!clubTag || !apiKeyConfigured) return;
     if (!isAdmin) {
-      if (!isAutoSync) {
-        alert("Admin login required to sync club data.");
-      }
+      alert("Admin login required to sync club data.");
       return;
     }
     
@@ -90,9 +87,7 @@ function SimpleSidebar() {
       const data = await response.json();
       if (!response.ok) {
         console.error("Sync error:", data.error);
-        if (!isAutoSync) {
-          alert(`Sync failed: ${data.error}`);
-        }
+        alert(`Sync failed: ${data.error}`);
       } else {
         const syncTime = new Date().toISOString();
         invalidateJsonCache();
@@ -123,43 +118,11 @@ function SimpleSidebar() {
       }
     } catch (error) {
       console.error("Sync failed:", error);
-      if (!isAutoSync) {
-        alert("Sync failed. Check the console for details.");
-      }
+      alert("Sync failed. Check the console for details.");
     } finally {
       useAppStore.getState().setIsSyncing(false);
     }
   }, [apiKeyConfigured, clubTag, isAdmin, notificationsEnabled]);
-
-  // Auto-sync based on refresh interval
-  useEffect(() => {
-    if (!clubTag || !apiKeyConfigured || !isAdmin || refreshInterval <= 0) return;
-
-    const checkAndSync = () => {
-      const lastSync = useAppStore.getState().lastSyncTime;
-      const intervalMs = refreshInterval * 60 * 1000; // Convert minutes to ms
-      
-      if (lastSync) {
-        const timeSinceLastSync = Date.now() - new Date(lastSync).getTime();
-        if (timeSinceLastSync >= intervalMs) {
-          console.log(`Auto-sync triggered (${refreshInterval} min interval)`);
-          handleSync(true);
-        }
-      }
-    };
-
-    // Check immediately on mount
-    checkAndSync();
-
-    // Set up interval to check every minute
-    autoSyncIntervalRef.current = setInterval(checkAndSync, 60 * 1000);
-
-    return () => {
-      if (autoSyncIntervalRef.current) {
-        clearInterval(autoSyncIntervalRef.current);
-      }
-    };
-  }, [clubTag, apiKeyConfigured, isAdmin, refreshInterval, handleSync]);
 
   return (
     <>
@@ -230,7 +193,7 @@ function SimpleSidebar() {
           {/* Sync */}
           <div className="border-t border-border px-3 py-4">
             <Button
-              onClick={() => handleSync(false)}
+              onClick={handleSync}
               disabled={isSyncing || !clubTag || !apiKeyConfigured || !isAdmin || isAdminLoading}
               variant="outline"
               className="w-full justify-center gap-2 border-border"

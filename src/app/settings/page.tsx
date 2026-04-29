@@ -28,14 +28,12 @@ export default function SettingsPage() {
     apiKeyConfigured,
     theme,
     inactivityThreshold,
-    refreshInterval,
     notificationsEnabled,
     discordWebhookConfigured,
     setClubTag,
     setApiKey,
     setTheme,
     setInactivityThreshold,
-    setRefreshInterval,
     setNotificationsEnabled,
     setDiscordWebhook,
     saveSettingsToDB,
@@ -47,7 +45,6 @@ export default function SettingsPage() {
   const [localApiKey, setLocalApiKey] = useState("");
   const [localDiscordWebhook, setLocalDiscordWebhook] = useState("");
   const [localInactivityThreshold, setLocalInactivityThreshold] = useState<number | null>(null);
-  const [localRefreshInterval, setLocalRefreshInterval] = useState<number | null>(null);
   const [generalStatus, setGeneralStatus] = useState<"idle" | "saving" | "saved">("idle");
   const [activityStatus, setActivityStatus] = useState<"idle" | "saving" | "saved">("idle");
   const [notifStatus, setNotifStatus] = useState<"idle" | "saving" | "saved">("idle");
@@ -60,7 +57,6 @@ export default function SettingsPage() {
 
   const effectiveClubTag = localClubTag ?? clubTag;
   const effectiveInactivityThreshold = localInactivityThreshold ?? inactivityThreshold;
-  const effectiveRefreshInterval = localRefreshInterval ?? refreshInterval;
 
   const parseBoundedInput = (value: string, fallback: number, min: number, max: number) => {
     const parsed = Number.parseInt(value, 10);
@@ -107,7 +103,6 @@ export default function SettingsPage() {
     setActivityStatus("saving");
     try {
       setInactivityThreshold(effectiveInactivityThreshold);
-      setRefreshInterval(effectiveRefreshInterval);
       await saveSettingsToDB();
       setActivityStatus("saved");
       setTimeout(() => setActivityStatus("idle"), 2000);
@@ -266,22 +261,10 @@ export default function SettingsPage() {
                       </p>
                     </div>
 
-                    <div className="space-y-2">
-                      <label className="text-sm font-medium">
-                        Auto-Sync Interval (minutes)
-                      </label>
-                      <Input
-                        type="number"
-                        min="60"
-                        max="1440"
-                        step="60"
-                        value={effectiveRefreshInterval}
-                        onChange={(e) =>
-                          setLocalRefreshInterval(parseBoundedInput(e.target.value, 240, 60, 1440))
-                        }
-                      />
-                      <p className="text-xs text-muted-foreground">
-                        How often to automatically sync data (minimum 60 minutes)
+                    <div className="p-4 rounded-lg bg-muted/50">
+                      <h4 className="font-medium mb-2">Sync Schedule</h4>
+                      <p className="text-sm text-muted-foreground">
+                        Automatic sync is handled by cron-job.org. Use the sidebar Sync Now button for an immediate admin sync.
                       </p>
                     </div>
 
