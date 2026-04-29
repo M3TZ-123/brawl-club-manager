@@ -4,6 +4,14 @@ import { supabaseAdmin } from "@/lib/supabase-admin";
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
 
+function normalizeTimestamp(value: string | null | undefined) {
+  const timestamp = value?.trim();
+  if (!timestamp) return null;
+
+  const parsed = new Date(timestamp);
+  return Number.isNaN(parsed.getTime()) ? timestamp : parsed.toISOString();
+}
+
 export async function GET() {
   try {
     const { data, error } = await supabaseAdmin
@@ -18,7 +26,7 @@ export async function GET() {
 
     return NextResponse.json(
       {
-        lastSyncTime: data?.value || null,
+        lastSyncTime: normalizeTimestamp(data?.value),
       },
       { headers: { "Cache-Control": "no-store" } }
     );

@@ -1,6 +1,5 @@
 "use client";
 
-import dynamic from "next/dynamic";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { useAppStore } from "@/lib/store";
@@ -10,83 +9,36 @@ import { SetupWizard } from "@/components/setup-wizard";
 import { StatsCards } from "@/components/stats-cards";
 import { ActivityTimeline } from "@/components/activity-timeline";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Button } from "@/components/ui/button";
 import { Member, ClubEvent } from "@/types/database";
-import { Trophy, UserX, TrendingUp, TrendingDown, Minus, Crown, Target, Copy, Check } from "lucide-react";
+import {
+  Activity,
+  AlertTriangle,
+  ArrowDownRight,
+  ArrowUpRight,
+  CheckCircle2,
+  Clock3,
+  Crown,
+  ListChecks,
+  Minus,
+  PencilLine,
+  ShieldCheck,
+  Target,
+  TrendingDown,
+  TrendingUp,
+  Trophy,
+  UserMinus,
+  UserPlus,
+  UserX,
+} from "lucide-react";
 
-function ChartSkeleton() {
-  return (
-    <Card>
-      <CardContent className="h-[320px] animate-pulse p-6">
-        <div className="h-5 w-32 rounded bg-muted" />
-        <div className="mt-6 h-56 rounded bg-muted/60" />
-      </CardContent>
-    </Card>
-  );
+type ActivityStatus = "active" | "minimal" | "inactive";
+
+interface DashboardMember extends Member {
+  trophies_24h: number | null;
+  trophies_7d: number | null;
+  activity_status: ActivityStatus;
+  last_battle_at: string | null;
 }
-
-function MembersPreviewSkeleton() {
-  return (
-    <div className="space-y-2">
-      {Array.from({ length: 5 }).map((_, index) => (
-        <div key={index} className="h-10 animate-pulse rounded bg-muted/60" />
-      ))}
-    </div>
-  );
-}
-
-function DashboardSkeleton() {
-  return (
-    <div className="space-y-6">
-      <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
-        {Array.from({ length: 4 }).map((_, index) => (
-          <Card key={index}>
-            <CardContent className="h-28 animate-pulse p-6">
-              <div className="h-4 w-24 rounded bg-muted" />
-              <div className="mt-5 h-7 w-20 rounded bg-muted/70" />
-              <div className="mt-3 h-3 w-28 rounded bg-muted/50" />
-            </CardContent>
-          </Card>
-        ))}
-      </div>
-      <div className="grid gap-6 md:grid-cols-2">
-        <ChartSkeleton />
-        <ChartSkeleton />
-      </div>
-    </div>
-  );
-}
-
-function InsightsSkeleton() {
-  return (
-    <div className="grid gap-4 grid-cols-2 lg:grid-cols-5">
-      {Array.from({ length: 5 }).map((_, index) => (
-        <Card key={index}>
-          <CardContent className="h-28 animate-pulse p-4">
-            <div className="h-4 w-20 rounded bg-muted" />
-            <div className="mt-5 h-7 w-14 rounded bg-muted/70" />
-            <div className="mt-3 h-3 w-24 rounded bg-muted/50" />
-          </CardContent>
-        </Card>
-      ))}
-    </div>
-  );
-}
-
-const ActivityPieChart = dynamic(
-  () => import("@/components/charts").then((mod) => mod.ActivityPieChart),
-  { ssr: false, loading: () => <ChartSkeleton /> }
-);
-
-const MemberBarChart = dynamic(
-  () => import("@/components/charts").then((mod) => mod.MemberBarChart),
-  { ssr: false, loading: () => <ChartSkeleton /> }
-);
-
-const MembersTable = dynamic(
-  () => import("@/components/members-table").then((mod) => mod.MembersTable),
-  { loading: () => <MembersPreviewSkeleton /> }
-);
 
 interface DashboardResponse {
   summary: {
@@ -95,7 +47,22 @@ interface DashboardResponse {
     activeMembers: number;
     avgTrophies: number;
   };
-  topMembers: Member[];
+  topMembers: DashboardMember[];
+  topGainers: DashboardMember[];
+  trophyLosers: DashboardMember[];
+  attentionMembers: DashboardMember[];
+  changeSummary: {
+    joins: number;
+    leaves: number;
+    nameChanges: number;
+    roleChanges: number;
+    since: string;
+  };
+  syncStatus: {
+    lastSyncTime: string | null;
+    source: string;
+    intervalMinutes: number;
+  };
   recentEvents: ClubEvent[];
   generatedAt?: string;
 }
@@ -121,14 +88,342 @@ interface ClubInsights {
   mvpTrophies: number;
 }
 
+function DashboardSkeleton() {
+  return (
+    <div className="space-y-6">
+      <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
+        {Array.from({ length: 4 }).map((_, index) => (
+          <Card key={index}>
+            <CardContent className="h-28 animate-pulse p-6">
+              <div className="h-4 w-24 rounded bg-muted" />
+              <div className="mt-5 h-7 w-20 rounded bg-muted/70" />
+              <div className="mt-3 h-3 w-28 rounded bg-muted/50" />
+            </CardContent>
+          </Card>
+        ))}
+      </div>
+      <div className="grid gap-4 lg:grid-cols-3">
+        {Array.from({ length: 3 }).map((_, index) => (
+          <Card key={index}>
+            <CardContent className="h-40 animate-pulse p-6">
+              <div className="h-4 w-32 rounded bg-muted" />
+              <div className="mt-6 h-10 rounded bg-muted/60" />
+              <div className="mt-3 h-10 rounded bg-muted/40" />
+            </CardContent>
+          </Card>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function InsightsSkeleton() {
+  return (
+    <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-5">
+      {Array.from({ length: 5 }).map((_, index) => (
+        <Card key={index}>
+          <CardContent className="h-32 animate-pulse p-4">
+            <div className="h-4 w-24 rounded bg-muted" />
+            <div className="mt-5 h-8 w-16 rounded bg-muted/70" />
+            <div className="mt-3 h-3 w-32 rounded bg-muted/50" />
+          </CardContent>
+        </Card>
+      ))}
+    </div>
+  );
+}
+
+function formatNumber(value: number | null | undefined) {
+  return (value || 0).toLocaleString();
+}
+
+function formatDelta(value: number | null | undefined) {
+  if (value == null) return "No data";
+  if (value === 0) return "0";
+  return `${value > 0 ? "+" : ""}${value.toLocaleString()}`;
+}
+
+function getDeltaClass(value: number | null | undefined) {
+  if (value == null || value === 0) return "text-muted-foreground";
+  return value > 0 ? "text-green-500" : "text-red-400";
+}
+
+function getActivityLabel(status: ActivityStatus) {
+  if (status === "active") return "Active";
+  if (status === "minimal") return "Low activity";
+  return "Inactive";
+}
+
+function getActivityClass(status: ActivityStatus) {
+  if (status === "active") return "border-green-500/30 bg-green-500/10 text-green-400";
+  if (status === "minimal") return "border-yellow-500/30 bg-yellow-500/10 text-yellow-300";
+  return "border-red-500/30 bg-red-500/10 text-red-300";
+}
+
+function formatRelativeTime(value: string | null | undefined) {
+  if (!value) return "Never";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "Unknown";
+
+  const diffMs = Math.max(Date.now() - date.getTime(), 0);
+  const minutes = Math.floor(diffMs / 60_000);
+  if (minutes < 1) return "Just now";
+  if (minutes < 60) return `${minutes} min ago`;
+
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) return `${hours}h ago`;
+
+  const days = Math.floor(hours / 24);
+  return `${days}d ago`;
+}
+
+function formatTime(value: Date) {
+  return new Intl.DateTimeFormat(undefined, {
+    hour: "numeric",
+    minute: "2-digit",
+  }).format(value);
+}
+
+function getNextScheduledSync(intervalMinutes: number) {
+  const interval = Math.max(intervalMinutes || 30, 1);
+  const next = new Date();
+  next.setSeconds(0, 0);
+  const remainder = next.getMinutes() % interval;
+  next.setMinutes(next.getMinutes() + (remainder === 0 ? interval : interval - remainder));
+  return next;
+}
+
+function getSyncHealth(lastSyncTime: string | null) {
+  if (!lastSyncTime) {
+    return {
+      label: "No sync recorded",
+      detail: "Waiting for the first successful sync",
+      tone: "text-yellow-300",
+      icon: AlertTriangle,
+      isStale: true,
+    };
+  }
+
+  const date = new Date(lastSyncTime);
+  if (Number.isNaN(date.getTime())) {
+    return {
+      label: "Invalid sync time",
+      detail: "Last sync timestamp could not be read",
+      tone: "text-red-300",
+      icon: AlertTriangle,
+      isStale: true,
+    };
+  }
+
+  const minutesAgo = Math.floor(Math.max(Date.now() - date.getTime(), 0) / 60_000);
+  if (minutesAgo <= 45) {
+    return {
+      label: "Healthy",
+      detail: `Updated ${formatRelativeTime(lastSyncTime)}`,
+      tone: "text-green-400",
+      icon: CheckCircle2,
+      isStale: false,
+    };
+  }
+
+  if (minutesAgo <= 90) {
+    return {
+      label: "Delayed",
+      detail: `Last sync ${formatRelativeTime(lastSyncTime)}`,
+      tone: "text-yellow-300",
+      icon: AlertTriangle,
+      isStale: true,
+    };
+  }
+
+  return {
+    label: "Stale",
+    detail: `Last sync ${formatRelativeTime(lastSyncTime)}`,
+    tone: "text-red-300",
+    icon: AlertTriangle,
+    isStale: true,
+  };
+}
+
+function ActivityBadge({ status }: { status: ActivityStatus }) {
+  return (
+    <span className={`rounded-full border px-2 py-0.5 text-[11px] font-medium ${getActivityClass(status)}`}>
+      {getActivityLabel(status)}
+    </span>
+  );
+}
+
+function MemberSignalList({
+  members,
+  emptyText,
+  mode,
+}: {
+  members: DashboardMember[];
+  emptyText: string;
+  mode: "gain" | "loss" | "attention" | "top";
+}) {
+  if (members.length === 0) {
+    return (
+      <div className="rounded-lg border border-dashed border-border/70 p-4 text-center text-sm text-muted-foreground">
+        {emptyText}
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-2">
+      {members.map((member, index) => (
+        <div
+          key={member.player_tag}
+          className="flex items-center justify-between gap-3 rounded-lg border border-border/60 bg-muted/20 px-3 py-2.5"
+        >
+          <div className="flex min-w-0 items-center gap-3">
+            {mode === "top" && (
+              <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md bg-primary/15 text-xs font-bold text-primary">
+                {index + 1}
+              </span>
+            )}
+            <div className="min-w-0">
+              <p className="truncate text-sm font-semibold">{member.player_name || "Unknown player"}</p>
+              <p className="text-xs text-muted-foreground">{member.player_tag}</p>
+            </div>
+          </div>
+
+          <div className="shrink-0 text-right">
+            {mode === "attention" ? (
+              <div className="flex flex-col items-end gap-1">
+                <ActivityBadge status={member.activity_status} />
+                <span className={`text-xs ${getDeltaClass(member.trophies_7d)}`}>
+                  {formatDelta(member.trophies_7d)} in 7d
+                </span>
+              </div>
+            ) : (
+              <>
+                <p className="text-sm font-semibold">{formatNumber(member.trophies)}</p>
+                <p className={`text-xs ${getDeltaClass(member.trophies_7d)}`}>
+                  {mode === "top" ? `${formatDelta(member.trophies_7d)} in 7d` : formatDelta(member.trophies_7d)}
+                </p>
+              </>
+            )}
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function SyncStatusCard({
+  lastSyncTime,
+  intervalMinutes,
+}: {
+  lastSyncTime: string | null;
+  intervalMinutes: number;
+}) {
+  const syncHealth = getSyncHealth(lastSyncTime);
+  const SyncIcon = syncHealth.icon;
+  const nextSync = getNextScheduledSync(intervalMinutes);
+
+  return (
+    <Card>
+      <CardHeader className="pb-3">
+        <CardTitle className="flex items-center gap-2 text-base">
+          <Clock3 className="h-5 w-5 text-blue-400" />
+          Sync Status
+        </CardTitle>
+      </CardHeader>
+      <CardContent className="space-y-3">
+        <div className="flex items-center justify-between gap-3">
+          <span className="text-sm text-muted-foreground">Current status</span>
+          <span className={`flex items-center gap-1.5 text-sm font-semibold ${syncHealth.tone}`}>
+            <SyncIcon className="h-4 w-4" />
+            {syncHealth.label}
+          </span>
+        </div>
+        <div className="flex items-center justify-between gap-3">
+          <span className="text-sm text-muted-foreground">Last sync</span>
+          <span className="text-sm font-medium">{syncHealth.detail}</span>
+        </div>
+        <div className="flex items-center justify-between gap-3">
+          <span className="text-sm text-muted-foreground">Next auto sync</span>
+          <span className="text-sm font-medium">{formatTime(nextSync)}</span>
+        </div>
+        <div className="flex items-center justify-between gap-3">
+          <span className="text-sm text-muted-foreground">Source</span>
+          <span className="flex items-center gap-1.5 text-sm font-medium">
+            <ShieldCheck className="h-4 w-4 text-green-400" />
+            cron-job.org
+          </span>
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+
+function RecentChangesCard({
+  changeSummary,
+}: {
+  changeSummary: DashboardResponse["changeSummary"];
+}) {
+  const items = [
+    { label: "Joined", value: changeSummary.joins, icon: UserPlus, className: "text-green-400" },
+    { label: "Left", value: changeSummary.leaves, icon: UserMinus, className: "text-red-400" },
+    { label: "Names", value: changeSummary.nameChanges, icon: PencilLine, className: "text-blue-400" },
+    { label: "Roles", value: changeSummary.roleChanges, icon: Crown, className: "text-yellow-400" },
+  ];
+
+  return (
+    <Card>
+      <CardHeader className="pb-3">
+        <CardTitle className="flex items-center gap-2 text-base">
+          <Activity className="h-5 w-5 text-green-400" />
+          Recent Club Changes
+        </CardTitle>
+      </CardHeader>
+      <CardContent>
+        <div className="grid grid-cols-2 gap-3">
+          {items.map((item) => (
+            <div key={item.label} className="rounded-lg border border-border/60 bg-muted/20 p-3">
+              <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                <item.icon className={`h-4 w-4 ${item.className}`} />
+                {item.label}
+              </div>
+              <p className="mt-2 text-2xl font-bold">{item.value}</p>
+            </div>
+          ))}
+        </div>
+        <p className="mt-3 text-xs text-muted-foreground">Last 7 days</p>
+      </CardContent>
+    </Card>
+  );
+}
+
+function DataFreshnessAlert({ lastSyncTime }: { lastSyncTime: string | null }) {
+  const syncHealth = getSyncHealth(lastSyncTime);
+  if (!syncHealth.isStale) return null;
+
+  return (
+    <div className="flex items-start gap-3 rounded-lg border border-yellow-500/30 bg-yellow-500/10 px-4 py-3 text-sm text-yellow-100">
+      <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-yellow-300" />
+      <div>
+        <p className="font-semibold">Data freshness warning</p>
+        <p className="text-yellow-100/80">
+          {syncHealth.detail}. Check cron-job.org or click Sync Now from the sidebar if the data should be current.
+        </p>
+      </div>
+    </div>
+  );
+}
+
 export default function DashboardPage() {
   const {
     clubTag,
     apiKeyConfigured,
     requiredTrophies,
+    lastSyncTime,
     isLoadingSettings,
     hasLoadedSettings,
     loadSettingsFromDB,
+    setLastSyncTime,
   } = useAppStore();
   const [isSetupComplete, setIsSetupComplete] = useState(false);
   const [dashboard, setDashboard] = useState<DashboardResponse | null>(null);
@@ -138,14 +433,11 @@ export default function DashboardPage() {
   const [insights, setInsights] = useState<ClubInsights | null>(null);
   const [hasRequestedInsights, setHasRequestedInsights] = useState(false);
   const [isInsightsLoading, setIsInsightsLoading] = useState(false);
-  const [copiedTag, setCopiedTag] = useState<string | null>(null);
-  const inactiveMembersRef = useRef<HTMLDivElement | null>(null);
-  const copyResetTimeoutRef = useRef<number | null>(null);
+  const attentionMembersRef = useRef<HTMLDivElement | null>(null);
   const hasCachedSetup = Boolean(clubTag && apiKeyConfigured);
 
   useEffect(() => {
     setMounted(true);
-    // Load settings from database on mount (only if not already loaded)
     if (!hasLoadedSettings) {
       loadSettingsFromDB();
     }
@@ -162,13 +454,16 @@ export default function DashboardPage() {
       });
 
       setDashboard(dashboardData);
+      if (dashboardData.syncStatus.lastSyncTime) {
+        setLastSyncTime(dashboardData.syncStatus.lastSyncTime);
+      }
     } catch (error) {
       console.error("Error loading dashboard:", error);
     } finally {
       setIsLoading(false);
       setDataLoaded(true);
     }
-  }, []);
+  }, [setLastSyncTime]);
 
   const loadInsights = useCallback(async (force = false) => {
     try {
@@ -188,7 +483,7 @@ export default function DashboardPage() {
 
   useEffect(() => {
     if (!mounted || (isLoadingSettings && !hasCachedSetup)) return;
-    
+
     if (clubTag && apiKeyConfigured) {
       setIsSetupComplete(true);
       if (!dataLoaded) {
@@ -222,32 +517,8 @@ export default function DashboardPage() {
     return () => window.removeEventListener("club-data-updated", handleClubDataUpdated);
   }, [loadData, loadInsights]);
 
-  useEffect(() => {
-    return () => {
-      if (copyResetTimeoutRef.current) {
-        window.clearTimeout(copyResetTimeoutRef.current);
-      }
-    };
-  }, []);
-
-  const scrollToInactiveMembers = () => {
-    inactiveMembersRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
-  };
-
-  const handleCopyTag = async (tag: string) => {
-    try {
-      await navigator.clipboard.writeText(tag);
-      setCopiedTag(tag);
-      if (copyResetTimeoutRef.current) {
-        window.clearTimeout(copyResetTimeoutRef.current);
-      }
-      copyResetTimeoutRef.current = window.setTimeout(() => {
-        setCopiedTag((current) => (current === tag ? null : current));
-        copyResetTimeoutRef.current = null;
-      }, 1200);
-    } catch (error) {
-      console.error("Failed to copy player tag:", error);
-    }
+  const scrollToAttentionMembers = () => {
+    attentionMembersRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
   };
 
   const dashboardData = useMemo(() => {
@@ -256,31 +527,35 @@ export default function DashboardPage() {
     const totalTrophies = summary?.totalTrophies ?? 0;
     const activeMembers = summary?.activeMembers ?? 0;
     const avgTrophies = summary?.avgTrophies ?? 0;
-    const topMembers = dashboard?.topMembers ?? [];
-    const recentEvents = dashboard?.recentEvents ?? [];
 
     return {
       totalMembers,
       totalTrophies,
       activeMembers,
       avgTrophies,
-      activityData: [
-        { name: "Active", value: activeMembers, color: "#22c55e" },
-        { name: "Inactive", value: Math.max(totalMembers - activeMembers, 0), color: "#ef4444" },
-      ],
-      topMembers: topMembers.map((m) => ({
-        name: m.player_name,
-        trophies: m.trophies,
-      })),
-      dashboardMembers: topMembers,
-      recentEvents,
+      topMembers: dashboard?.topMembers ?? [],
+      topGainers: dashboard?.topGainers ?? [],
+      trophyLosers: dashboard?.trophyLosers ?? [],
+      attentionMembers: dashboard?.attentionMembers ?? [],
+      recentEvents: dashboard?.recentEvents ?? [],
+      changeSummary: dashboard?.changeSummary ?? {
+        joins: 0,
+        leaves: 0,
+        nameChanges: 0,
+        roleChanges: 0,
+        since: "",
+      },
+      syncStatus: {
+        lastSyncTime: dashboard?.syncStatus.lastSyncTime || lastSyncTime,
+        intervalMinutes: dashboard?.syncStatus.intervalMinutes ?? 30,
+      },
     };
-  }, [dashboard]);
+  }, [dashboard, lastSyncTime]);
 
   if (!mounted || (isLoadingSettings && !hasCachedSetup)) {
     return (
       <div className="flex h-screen items-center justify-center bg-background">
-        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary"></div>
+        <div className="h-12 w-12 animate-spin rounded-full border-b-2 border-primary" />
       </div>
     );
   }
@@ -295,7 +570,6 @@ export default function DashboardPage() {
         <DashboardSkeleton />
       ) : (
         <div className="space-y-6">
-          {/* Stats Overview */}
           <StatsCards
             totalMembers={dashboardData.totalMembers}
             totalTrophies={dashboardData.totalTrophies}
@@ -303,224 +577,216 @@ export default function DashboardPage() {
             avgTrophies={dashboardData.avgTrophies}
           />
 
-          <Card>
-            <CardContent className="pt-4 pb-4">
-              <div className="flex items-center gap-2 mb-1">
-                <Trophy className="h-4 w-4 text-yellow-500" />
-                <span className="text-xs font-medium text-muted-foreground">Club Conditions</span>
-              </div>
-              <p className="text-2xl font-bold">
-                {requiredTrophies != null ? requiredTrophies.toLocaleString() : "—"}
-              </p>
-              <p className="text-xs text-muted-foreground mt-1">Required trophies to join</p>
-            </CardContent>
-          </Card>
+          <DataFreshnessAlert lastSyncTime={dashboardData.syncStatus.lastSyncTime} />
 
-          {/* Club Insights */}
-          {isInsightsLoading && !insights ? (
-            <InsightsSkeleton />
-          ) : insights && (
-            <>
-              <div className="grid gap-4 grid-cols-2 lg:grid-cols-5">
-                {/* Mega Pig */}
-                <Card>
-                  <CardContent className="pt-4 pb-3">
-                    <div className="flex items-center gap-2 mb-2">
-                      <Trophy className="h-4 w-4 text-yellow-500" />
-                      <span className="text-xs font-medium text-muted-foreground">Mega Pig Battles</span>
-                    </div>
-                    <p className="text-2xl font-bold">{insights.megaPig.totalWins.toLocaleString()} wins</p>
-                    {insights.megaPig.isTracked ? (
-                      <p className="text-xs text-muted-foreground mt-1">
-                        Out of {insights.megaPig.totalBattles.toLocaleString()} member battles this week
-                        {insights.megaPig.rankReached ? ` · Rank ${insights.megaPig.rankReached}` : ""}
-                      </p>
-                    ) : (
-                      <p className="text-xs text-muted-foreground mt-1">
-                        No Mega Pig battles found this week
-                      </p>
-                    )}
-                  </CardContent>
-                </Card>
+          <div className="grid gap-4 lg:grid-cols-3">
+            <Card>
+              <CardHeader className="pb-3">
+                <CardTitle className="flex items-center gap-2 text-base">
+                  <Trophy className="h-5 w-5 text-yellow-500" />
+                  Club Conditions
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                <p className="text-3xl font-bold">
+                  {requiredTrophies != null ? requiredTrophies.toLocaleString() : "--"}
+                </p>
+                <p className="mt-1 text-sm text-muted-foreground">Required trophies to join</p>
+              </CardContent>
+            </Card>
 
-                {/* Win Rate */}
-                <Card>
-                  <CardContent className="pt-4 pb-3">
-                    <div className="flex items-center gap-2 mb-2">
-                      <Target className="h-4 w-4 text-blue-500" />
-                      <span className="text-xs font-medium text-muted-foreground">Win Rate</span>
-                    </div>
-                    <p className={`text-2xl font-bold ${
-                      insights.winRate >= 55 ? "text-green-500" :
-                      insights.winRate >= 45 ? "text-foreground" : "text-red-500"
-                    }`}>{insights.winRate}%</p>
-                    <p className="text-xs text-muted-foreground mt-1">
-                      {insights.totalWins.toLocaleString()} wins from {insights.totalBattlesThisWeek.toLocaleString()} battles this week
-                    </p>
-                  </CardContent>
-                </Card>
+            <SyncStatusCard
+              lastSyncTime={dashboardData.syncStatus.lastSyncTime}
+              intervalMinutes={dashboardData.syncStatus.intervalMinutes}
+            />
 
-                {/* Kick List */}
-                <Card>
-                  <CardContent className="pt-4 pb-3">
-                    <button
-                      type="button"
-                      onClick={scrollToInactiveMembers}
-                      disabled={insights.kickCount === 0}
-                      className="w-full text-left disabled:cursor-default"
-                    >
-                      <div className="flex items-center gap-2 mb-2">
-                        <UserX className="h-4 w-4 text-red-500" />
-                        <span className="text-xs font-medium text-muted-foreground">Inactive Members</span>
-                      </div>
-                      <p className="text-2xl font-bold">{insights.kickCount}</p>
-                      {insights.kickCount > 0 ? (
-                        <p className="text-xs text-muted-foreground mt-1">
-                          Members with no recent activity
-                        </p>
-                      ) : (
-                        <p className="text-xs text-green-500 mt-1 font-medium">No inactive members</p>
-                      )}
-                    </button>
-                  </CardContent>
-                </Card>
-
-                {/* Activity Trend */}
-                <Card>
-                  <CardContent className="pt-4 pb-3">
-                    <div className="flex items-center gap-2 mb-2">
-                      {insights.trendDirection === "up" ? (
-                        <TrendingUp className="h-4 w-4 text-green-500" />
-                      ) : insights.trendDirection === "down" ? (
-                        <TrendingDown className="h-4 w-4 text-red-500" />
-                      ) : (
-                        <Minus className="h-4 w-4 text-yellow-500" />
-                      )}
-                      <span className="text-xs font-medium text-muted-foreground">Battle Activity</span>
-                    </div>
-                    <p className={`text-2xl font-bold ${
-                      insights.trendDirection === "up" ? "text-green-500" :
-                      insights.trendDirection === "down" ? "text-red-500" : ""
-                    }`}>
-                      {insights.trendDiff > 0 ? "+" : ""}{insights.trendDiff}%
-                    </p>
-                    <p className="text-xs text-muted-foreground mt-1">
-                      {insights.thisWeekTotal.toLocaleString()} battles vs {insights.prevWeekTotal.toLocaleString()} previous week
-                    </p>
-                  </CardContent>
-                </Card>
-
-                {/* MVP of the Week */}
-                <Card>
-                  <CardContent className="pt-4 pb-3">
-                    <div className="flex items-center gap-2 mb-2">
-                      <Crown className="h-4 w-4 text-yellow-500" />
-                      <span className="text-xs font-medium text-muted-foreground">MVP of the Week</span>
-                    </div>
-                    <p className="text-lg font-bold truncate">{insights.mvpName || "---"}</p>
-                    {insights.mvpName && (
-                      <p className={`text-xs mt-1 font-medium flex items-center gap-1 ${
-                        insights.mvpTrophies >= 0 ? "text-green-500" : "text-red-500"
-                      }`}>
-                        <Trophy className="h-3 w-3" /> {insights.mvpTrophies > 0 ? "+" : ""}
-                        {insights.mvpTrophies.toLocaleString()} net trophies
-                      </p>
-                    )}
-                  </CardContent>
-                </Card>
-              </div>
-
-              {/* Kick List Details */}
-              {insights.kickCount > 0 && (
-                <div id="inactive-members" ref={inactiveMembersRef}>
-                  <Card>
-                    <CardContent className="pt-4 pb-4">
-                    <div className="flex items-center gap-2 mb-4">
-                      <UserX className="h-4 w-4 text-red-500" />
-                      <span className="text-sm font-medium">Inactive Members</span>
-                      <span className="text-xs text-muted-foreground ml-auto">Last Active</span>
-                    </div>
-                    <div className="space-y-0 divide-y divide-border/50">
-                      {insights.kickList.map((k) => {
-                        let inactiveLabel = "No records";
-                        let severity: "high" | "medium" | "low" = "low";
-                        if (k.lastActive) {
-                          const diff = Date.now() - new Date(k.lastActive).getTime();
-                          const days = Math.floor(diff / (1000 * 60 * 60 * 24));
-                          if (days === 0) inactiveLabel = "Today";
-                          else if (days === 1) inactiveLabel = "1 day ago";
-                          else if (days < 7) inactiveLabel = `${days} days ago`;
-                          else if (days < 14) inactiveLabel = "1 week ago";
-                          else if (days < 30) inactiveLabel = `${Math.floor(days / 7)} weeks ago`;
-                          else inactiveLabel = `${Math.floor(days / 30)}+ months ago`;
-                          
-                          if (days >= 14) severity = "high";
-                          else if (days >= 7) severity = "medium";
-                        } else {
-                          severity = "high";
-                        }
-                        return (
-                          <div key={k.tag} className="flex items-center justify-between py-2.5 first:pt-0 last:pb-0">
-                            <div className="flex items-center gap-2.5 min-w-0">
-                              <div className={`h-2 w-2 rounded-full shrink-0 ${
-                                severity === "high" ? "bg-red-500" :
-                                severity === "medium" ? "bg-orange-500" : "bg-yellow-500"
-                              }`} />
-                              <div className="min-w-0">
-                                <span className="text-sm font-medium truncate block">{k.name}</span>
-                                <div className="flex items-center gap-1.5">
-                                  <span className="text-xs text-muted-foreground">{k.tag}</span>
-                                  <Button
-                                    variant="ghost"
-                                    size="icon"
-                                    className="h-5 w-5"
-                                    onClick={() => handleCopyTag(k.tag)}
-                                    aria-label={`Copy tag ${k.tag}`}
-                                  >
-                                    {copiedTag === k.tag ? <Check className="h-3 w-3" /> : <Copy className="h-3 w-3" />}
-                                  </Button>
-                                </div>
-                              </div>
-                            </div>
-                            <span className={`text-xs whitespace-nowrap ml-3 ${
-                              severity === "high" ? "text-red-400" :
-                              severity === "medium" ? "text-orange-400" : "text-muted-foreground"
-                            }`}>{inactiveLabel}</span>
-                          </div>
-                        );
-                      })}
-                    </div>
-                    </CardContent>
-                  </Card>
-                </div>
-              )}
-            </>
-          )}
-
-          {/* Charts Row */}
-          <div className="grid gap-6 md:grid-cols-2">
-            <ActivityPieChart data={dashboardData.activityData} />
-            <MemberBarChart data={dashboardData.topMembers} />
+            <RecentChangesCard changeSummary={dashboardData.changeSummary} />
           </div>
 
-          {/* Members and Activity */}
-          <div className="grid gap-6 lg:grid-cols-3">
-            <div className="lg:col-span-2">
+          {isInsightsLoading && !insights ? (
+            <InsightsSkeleton />
+          ) : insights ? (
+            <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-5">
               <Card>
-                <CardHeader className="flex flex-row items-center justify-between">
-                  <CardTitle>Club Members</CardTitle>
-                  <Link href="/members" className="text-sm text-primary hover:underline">
-                    View All →
-                  </Link>
-                </CardHeader>
-                <CardContent>
-                  <MembersTable members={dashboardData.dashboardMembers} showPagination={false} />
+                <CardContent className="pt-4">
+                  <div className="mb-2 flex items-center gap-2">
+                    <Trophy className="h-4 w-4 text-yellow-500" />
+                    <span className="text-sm font-medium text-muted-foreground">Mega Pig Wins</span>
+                  </div>
+                  <p className="text-3xl font-bold">{insights.megaPig.totalWins.toLocaleString()}</p>
+                  <p className="mt-1 text-sm text-muted-foreground">
+                    {insights.megaPig.isTracked
+                      ? `${insights.megaPig.totalBattles.toLocaleString()} Mega Pig battles tracked`
+                      : "No Mega Pig battles found this week"}
+                  </p>
+                </CardContent>
+              </Card>
+
+              <Card>
+                <CardContent className="pt-4">
+                  <div className="mb-2 flex items-center gap-2">
+                    <Target className="h-4 w-4 text-blue-500" />
+                    <span className="text-sm font-medium text-muted-foreground">Win Rate</span>
+                  </div>
+                  <p
+                    className={`text-3xl font-bold ${
+                      insights.winRate >= 55
+                        ? "text-green-500"
+                        : insights.winRate >= 45
+                          ? "text-foreground"
+                          : "text-red-500"
+                    }`}
+                  >
+                    {insights.winRate}%
+                  </p>
+                  <p className="mt-1 text-sm text-muted-foreground">
+                    {insights.totalWins.toLocaleString()} wins / {insights.totalBattlesThisWeek.toLocaleString()} battles
+                  </p>
+                </CardContent>
+              </Card>
+
+              <Card>
+                <CardContent className="pt-4">
+                  <button
+                    type="button"
+                    onClick={scrollToAttentionMembers}
+                    disabled={insights.kickCount === 0}
+                    className="w-full text-left disabled:cursor-default"
+                  >
+                    <div className="mb-2 flex items-center gap-2">
+                      <UserX className="h-4 w-4 text-red-500" />
+                      <span className="text-sm font-medium text-muted-foreground">Inactive Members</span>
+                    </div>
+                    <p className="text-3xl font-bold">{insights.kickCount}</p>
+                    <p className={`mt-1 text-sm ${insights.kickCount > 0 ? "text-muted-foreground" : "font-medium text-green-500"}`}>
+                      {insights.kickCount > 0 ? "Need review" : "No inactive members"}
+                    </p>
+                  </button>
+                </CardContent>
+              </Card>
+
+              <Card>
+                <CardContent className="pt-4">
+                  <div className="mb-2 flex items-center gap-2">
+                    {insights.trendDirection === "up" ? (
+                      <TrendingUp className="h-4 w-4 text-green-500" />
+                    ) : insights.trendDirection === "down" ? (
+                      <TrendingDown className="h-4 w-4 text-red-500" />
+                    ) : (
+                      <Minus className="h-4 w-4 text-yellow-500" />
+                    )}
+                    <span className="text-sm font-medium text-muted-foreground">Weekly Battles</span>
+                  </div>
+                  <p className="text-3xl font-bold">{insights.thisWeekTotal.toLocaleString()}</p>
+                  <p
+                    className={`mt-1 text-sm ${
+                      insights.trendDirection === "up"
+                        ? "text-green-500"
+                        : insights.trendDirection === "down"
+                          ? "text-red-400"
+                          : "text-muted-foreground"
+                    }`}
+                  >
+                    {insights.trendDiff > 0 ? "+" : ""}
+                    {insights.trendDiff}% vs previous week
+                  </p>
+                </CardContent>
+              </Card>
+
+              <Card>
+                <CardContent className="pt-4">
+                  <div className="mb-2 flex items-center gap-2">
+                    <Crown className="h-4 w-4 text-yellow-500" />
+                    <span className="text-sm font-medium text-muted-foreground">MVP of the Week</span>
+                  </div>
+                  <p className="truncate text-2xl font-bold">{insights.mvpName || "---"}</p>
+                  {insights.mvpName ? (
+                    <p className={`mt-1 flex items-center gap-1 text-sm font-medium ${getDeltaClass(insights.mvpTrophies)}`}>
+                      <Trophy className="h-3.5 w-3.5" />
+                      {formatDelta(insights.mvpTrophies)} net trophies
+                    </p>
+                  ) : (
+                    <p className="mt-1 text-sm text-muted-foreground">No weekly trophy leader yet</p>
+                  )}
                 </CardContent>
               </Card>
             </div>
-            <div>
-              <ActivityTimeline events={dashboardData.recentEvents} />
-            </div>
+          ) : null}
+
+          <div ref={attentionMembersRef} className="grid gap-4 lg:grid-cols-3">
+            <Card>
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2 text-base">
+                  <ListChecks className="h-5 w-5 text-yellow-400" />
+                  Needs Attention
+                </CardTitle>
+                <p className="text-sm text-muted-foreground">Inactive, low-activity, or losing trophies</p>
+              </CardHeader>
+              <CardContent>
+                <MemberSignalList
+                  members={dashboardData.attentionMembers}
+                  mode="attention"
+                  emptyText="No urgent member issues found."
+                />
+              </CardContent>
+            </Card>
+
+            <Card>
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2 text-base">
+                  <ArrowUpRight className="h-5 w-5 text-green-400" />
+                  Top Gainers This Week
+                </CardTitle>
+                <p className="text-sm text-muted-foreground">Best 7-day trophy progress</p>
+              </CardHeader>
+              <CardContent>
+                <MemberSignalList
+                  members={dashboardData.topGainers}
+                  mode="gain"
+                  emptyText="No positive 7-day trophy changes yet."
+                />
+              </CardContent>
+            </Card>
+
+            <Card>
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2 text-base">
+                  <ArrowDownRight className="h-5 w-5 text-red-400" />
+                  Losing Trophies
+                </CardTitle>
+                <p className="text-sm text-muted-foreground">Negative 7-day trophy progress</p>
+              </CardHeader>
+              <CardContent>
+                <MemberSignalList
+                  members={dashboardData.trophyLosers}
+                  mode="loss"
+                  emptyText="No members are down over the last 7 days."
+                />
+              </CardContent>
+            </Card>
+          </div>
+
+          <div className="grid gap-6 lg:grid-cols-3">
+            <Card className="lg:col-span-2">
+              <CardHeader className="flex flex-row items-center justify-between gap-4">
+                <div>
+                  <CardTitle>Top Members</CardTitle>
+                  <p className="text-sm text-muted-foreground">Highest trophies with weekly movement</p>
+                </div>
+                <Link href="/members" className="shrink-0 text-sm font-medium text-primary hover:underline">
+                  Open Members
+                </Link>
+              </CardHeader>
+              <CardContent>
+                <MemberSignalList
+                  members={dashboardData.topMembers}
+                  mode="top"
+                  emptyText="No current members found."
+                />
+              </CardContent>
+            </Card>
+
+            <ActivityTimeline events={dashboardData.recentEvents} />
           </div>
         </div>
       )}
