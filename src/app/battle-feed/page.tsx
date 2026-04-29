@@ -1,16 +1,16 @@
 "use client";
 
 import { useEffect, useState, useCallback, useRef } from "react";
+import Image from "next/image";
 import Link from "next/link";
 import { supabase } from "@/lib/supabase";
 import { getBrawlerIconFromMap, normalizeBrawlerName } from "@/lib/brawl-assets";
 import { LayoutWrapper } from "@/components/layout-wrapper";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
   Swords,
-  Trophy,
   Star,
   ChevronDown,
   ChevronUp,
@@ -158,12 +158,13 @@ function BrawlerChip({ brawler, power, brawlerIconByName }: {
       <div className="relative h-7 w-7 overflow-visible">
         <div className="h-7 w-7 rounded-md overflow-hidden bg-muted/30 border border-border/70 shadow-sm">
           {iconUrl && !imgError ? (
-            <img
+            <Image
               src={iconUrl}
               alt={brawler}
+              width={28}
+              height={28}
               className="h-full w-full object-cover"
               onError={() => setImgError(true)}
-              loading="lazy"
             />
           ) : (
             <span className="absolute inset-0 flex items-center justify-center text-[9px] font-bold text-muted-foreground">

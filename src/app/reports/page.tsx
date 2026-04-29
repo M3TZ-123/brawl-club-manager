@@ -32,6 +32,15 @@ interface WeeklyReport {
   trophyTrend: { date: string; trophies: number }[];
 }
 
+function escapeHtml(value: unknown) {
+  return String(value)
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
+}
+
 export default function ReportsPage() {
   const [report, setReport] = useState<WeeklyReport | null>(null);
   const [isLoading, setIsLoading] = useState(true);
@@ -58,11 +67,14 @@ export default function ReportsPage() {
   const handleExportReport = () => {
     // For simplicity, we'll export as text/html that can be printed to PDF
     if (!report) return;
+    const generatedAt = escapeHtml(formatDate(report.generatedAt));
+    const periodStart = escapeHtml(formatDate(report.period.start));
+    const periodEnd = escapeHtml(formatDate(report.period.end));
 
     const content = `
       <html>
         <head>
-          <title>Club Weekly Report - ${formatDate(report.generatedAt)}</title>
+          <title>Club Weekly Report - ${generatedAt}</title>
           <style>
             body { font-family: Arial, sans-serif; padding: 20px; }
             h1 { color: #333; }
@@ -74,8 +86,8 @@ export default function ReportsPage() {
         </head>
         <body>
           <h1>Club Weekly Report</h1>
-          <p>Generated: ${formatDate(report.generatedAt)}</p>
-          <p>Period: ${formatDate(report.period.start)} - ${formatDate(report.period.end)}</p>
+          <p>Generated: ${generatedAt}</p>
+          <p>Period: ${periodStart} - ${periodEnd}</p>
           
           <h2>Summary</h2>
           <div class="stat">Total Members: ${report.summary.totalMembers}</div>
@@ -86,13 +98,13 @@ export default function ReportsPage() {
           <h2>Top Trophy Gainers</h2>
           <table>
             <tr><th>Player</th><th>Change</th></tr>
-            ${report.topGainers.map(p => `<tr><td>${p.playerName}</td><td>+${p.trophyChange}</td></tr>`).join('')}
+            ${report.topGainers.map((p) => `<tr><td>${escapeHtml(p.playerName)}</td><td>+${escapeHtml(formatNumber(p.trophyChange))}</td></tr>`).join("")}
           </table>
           
           <h2>Most Trophy Lost</h2>
           <table>
             <tr><th>Player</th><th>Change</th></tr>
-            ${report.topLosers.map(p => `<tr><td>${p.playerName}</td><td>${p.trophyChange}</td></tr>`).join('')}
+            ${report.topLosers.map((p) => `<tr><td>${escapeHtml(p.playerName)}</td><td>${escapeHtml(formatNumber(p.trophyChange))}</td></tr>`).join("")}
           </table>
         </body>
       </html>

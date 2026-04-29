@@ -1,11 +1,43 @@
 import { NextResponse } from "next/server";
 import { supabase } from "@/lib/supabase";
 
+function parseBoundedInt(value: string | null, fallback: number, min: number, max: number): number {
+  const parsed = Number.parseInt(value || "", 10);
+  if (!Number.isFinite(parsed)) return fallback;
+  return Math.min(Math.max(parsed, min), max);
+}
+
+type BattleModeRow = {
+  mode: string | null;
+};
+
+async function fetchAllBattleModes(playerTags: string[]): Promise<BattleModeRow[]> {
+  if (playerTags.length === 0) return [];
+
+  const pageSize = 1000;
+  const rows: BattleModeRow[] = [];
+
+  for (let from = 0; ; from += pageSize) {
+    const { data, error } = await supabase
+      .from("battle_history")
+      .select("mode")
+      .in("player_tag", playerTags)
+      .not("mode", "is", null)
+      .range(from, from + pageSize - 1);
+
+    if (error) throw error;
+    rows.push(...((data || []) as BattleModeRow[]));
+    if (!data || data.length < pageSize) break;
+  }
+
+  return rows;
+}
+
 export async function GET(request: Request) {
   try {
     const { searchParams } = new URL(request.url);
-    const limit = Math.min(parseInt(searchParams.get("limit") || "50"), 200);
-    const offset = parseInt(searchParams.get("offset") || "0");
+    const limit = parseBoundedInt(searchParams.get("limit"), 50, 1, 200);
+    const offset = parseBoundedInt(searchParams.get("offset"), 0, 0, Number.MAX_SAFE_INTEGER);
     const mode = searchParams.get("mode") || null;
     const player = searchParams.get("player") || null;
     const date = searchParams.get("date") || null; // YYYY-MM-DD
@@ -31,6 +63,7 @@ export async function GET(request: Request) {
     let query = supabase
       .from("battle_history")
       .select("*", { count: "exact" })
+      .in("player_tag", currentMemberTags.length > 0 ? currentMemberTags : [""])
       .order("battle_time", { ascending: false })
       .range(offset, offset + limit - 1);
 
@@ -278,12 +311,9 @@ export async function GET(request: Request) {
     }
 
     // Get distinct modes for filter
-    const { data: modes } = await supabase
-      .from("battle_history")
-      .select("mode")
-      .not("mode", "is", null);
+    const modes = await fetchAllBattleModes(currentMemberTags);
 
-    const uniqueModes = [...new Set((modes || []).map((m) => m.mode))].filter(Boolean).sort();
+    const uniqueModes = [...new Set(modes.map((m) => m.mode))].filter(Boolean).sort();
 
     // Build members list for filter dropdown
     const memberList = (members || []).map((m) => ({

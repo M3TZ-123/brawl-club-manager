@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { supabase } from "@/lib/supabase";
+import { rejectCrossOriginRequest } from "@/lib/request-security";
 
 function parseDate(value: string | null | undefined): Date | null {
   if (!value) return null;
@@ -8,23 +9,45 @@ function parseDate(value: string | null | undefined): Date | null {
   return parsed;
 }
 
+type MemberHistoryRow = Record<string, unknown> & {
+  first_seen?: string | null;
+  last_left_at?: string | null;
+  last_seen?: string | null;
+  is_current_member?: boolean | null;
+};
+
+async function fetchAllMemberHistory(): Promise<MemberHistoryRow[]> {
+  const pageSize = 1000;
+  const rows: MemberHistoryRow[] = [];
+
+  for (let from = 0; ; from += pageSize) {
+    const { data, error } = await supabase
+      .from("member_history")
+      .select("*")
+      .order("last_seen", { ascending: false })
+      .range(from, from + pageSize - 1);
+
+    if (error) throw error;
+    rows.push(...((data || []) as MemberHistoryRow[]));
+    if (!data || data.length < pageSize) break;
+  }
+
+  return rows;
+}
+
 export async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url);
     const daysParam = searchParams.get("days");
-    const days = daysParam && daysParam !== "all" ? Number(daysParam) : null;
-    const cutoffDate = days && Number.isFinite(days)
+    const parsedDays = daysParam && daysParam !== "all" ? Number(daysParam) : null;
+    const days = parsedDays != null && Number.isFinite(parsedDays) && parsedDays > 0 ? parsedDays : null;
+    const cutoffDate = days
       ? new Date(Date.now() - days * 24 * 60 * 60 * 1000)
       : null;
 
-    const { data: history, error } = await supabase
-      .from("member_history")
-      .select("*")
-      .order("last_seen", { ascending: false });
+    const history = await fetchAllMemberHistory();
 
-    if (error) throw error;
-
-    let filteredHistory = history || [];
+    let filteredHistory = history;
 
     if (cutoffDate) {
       filteredHistory = filteredHistory.filter((record) => {
@@ -51,20 +74,27 @@ export async function GET(request: NextRequest) {
 
 export async function PATCH(request: NextRequest) {
   try {
-    const body = await request.json();
+    const crossOriginResponse = rejectCrossOriginRequest(request);
+    if (crossOriginResponse) return crossOriginResponse;
+
+    const body = await request.json().catch(() => ({}));
     const { player_tag, notes } = body;
 
-    if (!player_tag) {
+    if (typeof player_tag !== "string" || player_tag.trim().length === 0) {
       return NextResponse.json(
         { error: "player_tag is required" },
         { status: 400 }
       );
     }
 
+    const sanitizedNotes = typeof notes === "string"
+      ? notes.trim().slice(0, 1000)
+      : null;
+
     const { error } = await supabase
       .from("member_history")
-      .update({ notes: notes || null })
-      .eq("player_tag", player_tag);
+      .update({ notes: sanitizedNotes || null })
+      .eq("player_tag", player_tag.trim());
 
     if (error) throw error;
 

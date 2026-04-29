@@ -57,7 +57,7 @@ export function useSidebarContext() {
 
 function SimpleSidebar() {
   const pathname = usePathname();
-  const { clubName, lastSyncTime, isSyncing, clubTag, apiKey, refreshInterval } = useAppStore();
+  const { clubName, lastSyncTime, isSyncing, clubTag, apiKeyConfigured, refreshInterval } = useAppStore();
   const { isOpen, close } = useSidebarContext();
   const autoSyncIntervalRef = useRef<NodeJS.Timeout | null>(null);
 
@@ -66,15 +66,15 @@ function SimpleSidebar() {
     useAppStore.getState().loadSettingsFromDB();
   }, []);
 
-  const handleSync = async (isAutoSync = false) => {
-    if (!clubTag || !apiKey) return;
+  const handleSync = useCallback(async (isAutoSync = false) => {
+    if (!clubTag || !apiKeyConfigured) return;
     
     try {
       useAppStore.getState().setIsSyncing(true);
       const response = await fetch("/api/sync", { 
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ clubTag, apiKey }),
+        body: JSON.stringify({ clubTag }),
       });
       const data = await response.json();
       if (!response.ok) {
@@ -122,11 +122,11 @@ function SimpleSidebar() {
     } finally {
       useAppStore.getState().setIsSyncing(false);
     }
-  };
+  }, [apiKeyConfigured, clubTag]);
 
   // Auto-sync based on refresh interval
   useEffect(() => {
-    if (!clubTag || !apiKey || refreshInterval <= 0) return;
+    if (!clubTag || !apiKeyConfigured || refreshInterval <= 0) return;
 
     const checkAndSync = () => {
       const lastSync = useAppStore.getState().lastSyncTime;
@@ -152,7 +152,7 @@ function SimpleSidebar() {
         clearInterval(autoSyncIntervalRef.current);
       }
     };
-  }, [clubTag, apiKey, refreshInterval]);
+  }, [clubTag, apiKeyConfigured, refreshInterval, handleSync]);
 
   return (
     <>
@@ -222,7 +222,7 @@ function SimpleSidebar() {
           <div className="border-t border-border px-3 py-4">
             <Button
               onClick={() => handleSync(false)}
-              disabled={isSyncing}
+              disabled={isSyncing || !clubTag || !apiKeyConfigured}
               variant="outline"
               className="w-full justify-center gap-2 border-border"
             >

@@ -1,6 +1,55 @@
 import { NextResponse } from "next/server";
 import { supabase } from "@/lib/supabase";
 
+type ActivitySnapshot = {
+  player_tag: string;
+  trophies: number;
+  trophy_change: number;
+  recorded_at: string;
+};
+
+async function fetchAllActivitySnapshots(playerTags: string[], sinceISO: string): Promise<ActivitySnapshot[]> {
+  if (playerTags.length === 0) return [];
+
+  const pageSize = 1000;
+  const rows: ActivitySnapshot[] = [];
+
+  for (let from = 0; ; from += pageSize) {
+    const { data, error } = await supabase
+      .from("activity_log")
+      .select("*")
+      .in("player_tag", playerTags)
+      .gte("recorded_at", sinceISO)
+      .order("recorded_at", { ascending: true })
+      .range(from, from + pageSize - 1);
+
+    if (error) throw error;
+    rows.push(...((data || []) as ActivitySnapshot[]));
+    if (!data || data.length < pageSize) break;
+  }
+
+  return rows;
+}
+
+function findNearestBaseline(
+  playerLogs: Array<{ trophies: number; recorded_at: string }>,
+  targetTime: Date,
+  maxDistanceMs: number
+) {
+  let nearest: { trophies: number; recorded_at: string } | null = null;
+  let nearestDistance = Number.POSITIVE_INFINITY;
+
+  for (const log of playerLogs) {
+    const distance = Math.abs(new Date(log.recorded_at).getTime() - targetTime.getTime());
+    if (distance <= maxDistanceMs && distance < nearestDistance) {
+      nearest = log;
+      nearestDistance = distance;
+    }
+  }
+
+  return nearest;
+}
+
 export async function GET() {
   try {
     // Get current member tags from member_history (same logic as /api/members)
@@ -24,11 +73,10 @@ export async function GET() {
     const weekAgo = new Date();
     weekAgo.setDate(weekAgo.getDate() - 7);
 
-    const { data: activityLogs } = await supabase
-      .from("activity_log")
-      .select("*")
-      .gte("recorded_at", new Date(weekAgo.getTime() - 24 * 60 * 60 * 1000).toISOString())
-      .order("recorded_at", { ascending: true });
+    const activityLogs = await fetchAllActivitySnapshots(
+      currentMemberTags,
+      new Date(weekAgo.getTime() - 24 * 60 * 60 * 1000).toISOString()
+    );
 
     const weekAgoDate = weekAgo.toISOString().slice(0, 10);
     const { data: weeklyStats } = await supabase
@@ -56,7 +104,7 @@ export async function GET() {
     const currentMemberTagSet = new Set((members || []).map((m) => m.player_tag));
     const logsByPlayer = new Map<string, { player_tag: string; trophies: number; recorded_at: string }[]>();
 
-    for (const log of activityLogs || []) {
+    for (const log of activityLogs) {
       if (!currentMemberTagSet.has(log.player_tag)) continue;
       if (!logsByPlayer.has(log.player_tag)) {
         logsByPlayer.set(log.player_tag, []);
@@ -73,8 +121,7 @@ export async function GET() {
       const playerLogs = logsByPlayer.get(member.player_tag) || [];
       if (playerLogs.length === 0) continue;
 
-      const logsBefore7d = playerLogs.filter((log) => new Date(log.recorded_at) <= weekAgo);
-      const baseline7d = logsBefore7d.length > 0 ? logsBefore7d[logsBefore7d.length - 1] : null;
+      const baseline7d = findNearestBaseline(playerLogs, weekAgo, 24 * 60 * 60 * 1000);
 
       if (!baseline7d) continue;
       playerTrophyChanges[member.player_tag] = member.trophies - baseline7d.trophies;
@@ -128,7 +175,7 @@ export async function GET() {
     
     // Group logs by date, then sum the latest trophy value for each player on that date
     const logsByDate: Record<string, Record<string, number>> = {};
-    activityLogs?.forEach((log) => {
+    activityLogs.forEach((log) => {
       const date = new Date(log.recorded_at).toISOString().slice(0, 10);
       if (!logsByDate[date]) {
         logsByDate[date] = {};
@@ -157,9 +204,9 @@ export async function GET() {
       summary: {
         totalMembers: members.length,
         totalTrophies,
-        avgTrophies: Math.round(totalTrophies / members.length),
+        avgTrophies: members.length > 0 ? Math.round(totalTrophies / members.length) : 0,
         activeMembers: activeCount,
-        activityRate: Math.round((activeCount / members.length) * 100),
+        activityRate: members.length > 0 ? Math.round((activeCount / members.length) * 100) : 0,
         weeklyWins,
         weeklyBattles,
         weeklyWinRate,

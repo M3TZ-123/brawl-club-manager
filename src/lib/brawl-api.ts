@@ -15,9 +15,17 @@ const brawlApi = axios.create({
   },
 });
 
-// Add API key to requests
+let defaultApiKey = "";
+
 export function setApiKey(apiKey: string) {
-  brawlApi.defaults.headers.common["Authorization"] = `Bearer ${apiKey}`;
+  defaultApiKey = apiKey;
+}
+
+function getAuthConfig(apiKey?: string) {
+  const key = apiKey || defaultApiKey;
+  return key
+    ? { headers: { Authorization: `Bearer ${key}` } }
+    : {};
 }
 
 export interface BrawlStarsClub {
@@ -129,6 +137,39 @@ export interface BrawlStarsBattle {
   };
 }
 
+function normalizeTagForCompare(tag: string | null | undefined): string {
+  if (!tag) return "";
+  const decoded = /^%23/i.test(tag) ? `#${tag.slice(3)}` : tag;
+  return (decoded.startsWith("#") ? decoded : `#${decoded}`).toUpperCase();
+}
+
+function tagsMatch(a: string | null | undefined, b: string | null | undefined): boolean {
+  return normalizeTagForCompare(a) === normalizeTagForCompare(b);
+}
+
+function getBattleMode(battle: BrawlStarsBattle): string {
+  return (battle.battle?.mode || battle.event?.mode || "").toLowerCase();
+}
+
+function getRankWinThreshold(battle: BrawlStarsBattle): number {
+  const mode = getBattleMode(battle);
+  if (mode.includes("duo")) return 2;
+  if (mode.includes("solo") || mode.includes("showdown")) return 4;
+
+  const teamCount = battle.battle?.teams?.length || 0;
+  if (teamCount > 0) return Math.max(1, Math.floor(teamCount / 2));
+
+  const playerCount = battle.battle?.players?.length || 0;
+  if (playerCount > 0 && playerCount <= 5) return 2;
+
+  return 4;
+}
+
+function isRankBattleVictory(battle: BrawlStarsBattle): boolean {
+  const rank = battle.battle?.rank;
+  return rank != null && rank <= getRankWinThreshold(battle);
+}
+
 // Helper to handle API errors with detailed logging
 function handleApiError(error: unknown, endpoint: string): never {
   if (axios.isAxiosError(error)) {
@@ -179,10 +220,10 @@ async function apiCallWithRetry<T>(fn: () => Promise<T>, label: string, maxRetri
 }
 
 // API Functions
-export async function getClub(clubTag: string): Promise<BrawlStarsClub> {
+export async function getClub(clubTag: string, apiKey?: string): Promise<BrawlStarsClub> {
   try {
     return await apiCallWithRetry(
-      () => brawlApi.get(`/clubs/${encodeTag(clubTag)}`).then(r => r.data),
+      () => brawlApi.get(`/clubs/${encodeTag(clubTag)}`, getAuthConfig(apiKey)).then(r => r.data),
       `getClub(${clubTag})`
     );
   } catch (error) {
@@ -190,10 +231,10 @@ export async function getClub(clubTag: string): Promise<BrawlStarsClub> {
   }
 }
 
-export async function getPlayer(playerTag: string): Promise<BrawlStarsPlayer> {
+export async function getPlayer(playerTag: string, apiKey?: string): Promise<BrawlStarsPlayer> {
   try {
     return await apiCallWithRetry(
-      () => brawlApi.get(`/players/${encodeTag(playerTag)}`).then(r => r.data),
+      () => brawlApi.get(`/players/${encodeTag(playerTag)}`, getAuthConfig(apiKey)).then(r => r.data),
       `getPlayer(${playerTag})`
     );
   } catch (error) {
@@ -201,10 +242,10 @@ export async function getPlayer(playerTag: string): Promise<BrawlStarsPlayer> {
   }
 }
 
-export async function getPlayerBattleLog(playerTag: string): Promise<BrawlStarsBattleLog> {
+export async function getPlayerBattleLog(playerTag: string, apiKey?: string): Promise<BrawlStarsBattleLog> {
   try {
     return await apiCallWithRetry(
-      () => brawlApi.get(`/players/${encodeTag(playerTag)}/battlelog`).then(r => r.data),
+      () => brawlApi.get(`/players/${encodeTag(playerTag)}/battlelog`, getAuthConfig(apiKey)).then(r => r.data),
       `getPlayerBattleLog(${playerTag})`
     );
   } catch (error) {
@@ -327,13 +368,13 @@ export async function getPlayerRankedData(playerTag: string): Promise<{
 
 // Calculate win rate from battle log
 // Counts ALL battles including Map Maker, special events, and friendly games
-export async function getPlayerWinRate(playerTag: string): Promise<{
+export async function getPlayerWinRate(playerTag: string, apiKey?: string): Promise<{
   winRate: number | null;
   totalBattles: number;
   wins: number;
 }> {
   try {
-    const battleLog = await getPlayerBattleLog(playerTag);
+    const battleLog = await getPlayerBattleLog(playerTag, apiKey);
     return calculateWinRateFromBattleLog(battleLog);
   } catch (error) {
     console.error(`Error fetching battle log for ${playerTag}:`, error);
@@ -367,11 +408,10 @@ export function calculateWinRateFromBattleLog(battleLog: BrawlStarsBattleLog | n
       continue;
     }
     
-    // Count Showdown modes (have rank instead of result)
+    // Count ranked placement modes. Solo Showdown wins are top 4; Duo Showdown wins are top 2.
     if (battleData.rank != null) {
       validBattles++;
-      // Top 4 in Solo (out of 10) or Top 2 in Duo (out of 5) = win
-      if (battleData.rank <= 4) {
+      if (isRankBattleVictory(battle)) {
         wins++;
       }
     }
@@ -386,21 +426,17 @@ export function calculateWinRateFromBattleLog(battleLog: BrawlStarsBattleLog | n
 }
 
 // Get last battle time from battle log
-export async function getLastBattleTime(playerTag: string): Promise<string | null> {
+export async function getLastBattleTime(playerTag: string, apiKey?: string): Promise<string | null> {
   try {
-    console.log(`[getLastBattleTime] Fetching for ${playerTag}`);
-    const battleLog = await getPlayerBattleLog(playerTag);
-    console.log(`[getLastBattleTime] Battle log items:`, battleLog?.items?.length || 0);
+    const battleLog = await getPlayerBattleLog(playerTag, apiKey);
     
     if (!battleLog?.items || battleLog.items.length === 0) {
-      console.log(`[getLastBattleTime] No battles found`);
       return null;
     }
     
     // The first battle in the list is the most recent
     const lastBattle = battleLog.items[0];
     const bt = lastBattle?.battleTime;
-    console.log(`[getLastBattleTime] Raw battleTime:`, bt, `(length: ${bt?.length})`);
     
     if (bt) {
       // Battle time format from API: "20260127T203456.000Z" (length 20)
@@ -414,9 +450,6 @@ export async function getLastBattleTime(playerTag: string): Promise<string | nul
       const sec = bt.slice(13, 15);
       
       const isoDate = `${year}-${month}-${day}T${hour}:${min}:${sec}.000Z`;
-      console.log(`[getLastBattleTime] Parsed: year=${year}, month=${month}, day=${day}, hour=${hour}, min=${min}, sec=${sec}`);
-      console.log(`[getLastBattleTime] Converted ISO date:`, isoDate);
-      console.log(`[getLastBattleTime] As Date object:`, new Date(isoDate).toISOString());
       return isoDate;
     }
     
@@ -439,7 +472,7 @@ function parseBattleTime(bt: string): string {
 }
 
 // Get detailed battle statistics
-export async function getPlayerBattleStats(playerTag: string): Promise<{
+export async function getPlayerBattleStats(playerTag: string, apiKey?: string): Promise<{
   battles: number;
   wins: number;
   losses: number;
@@ -450,7 +483,7 @@ export async function getPlayerBattleStats(playerTag: string): Promise<{
   battlesByDay: Map<string, number>;
 }> {
   try {
-    const battleLog = await getPlayerBattleLog(playerTag);
+    const battleLog = await getPlayerBattleLog(playerTag, apiKey);
     
     const stats = {
       battles: 0,
@@ -485,8 +518,7 @@ export async function getPlayerBattleStats(playerTag: string): Promise<{
       }
 
       // Track star player
-      if (battleData.starPlayer?.tag === playerTag || 
-          battleData.starPlayer?.tag === playerTag.replace('#', '%23')) {
+      if (tagsMatch(battleData.starPlayer?.tag, playerTag)) {
         stats.starPlayer++;
       }
 
@@ -498,8 +530,7 @@ export async function getPlayerBattleStats(playerTag: string): Promise<{
           stats.losses++;
         }
       } else if (battleData.rank != null) {
-        // Showdown: Top 4 = win
-        if (battleData.rank <= 4) {
+        if (isRankBattleVictory(battle)) {
           stats.wins++;
         } else {
           stats.losses++;
@@ -591,12 +622,11 @@ export function processBattleLog(playerTag: string, battleLog: BrawlStarsBattleL
     if (battleData.result) {
       result = battleData.result;
     } else if (battleData.rank != null) {
-      result = battleData.rank <= 4 ? "victory" : "defeat";
+      result = isRankBattleVictory(battle) ? "victory" : "defeat";
     }
 
     // Check if star player
-    const isStarPlayer = battleData.starPlayer?.tag === playerTag || 
-                         battleData.starPlayer?.tag === playerTag.replace('#', '%23');
+    const isStarPlayer = tagsMatch(battleData.starPlayer?.tag, playerTag);
 
     // Find player's brawler in teams
     let brawlerName: string | null = null;
@@ -604,13 +634,14 @@ export function processBattleLog(playerTag: string, battleLog: BrawlStarsBattleL
     let brawlerTrophies: number | null = null;
 
     if (battleData.teams) {
+      teamsLoop:
       for (const team of battleData.teams) {
         for (const player of team) {
-          if (player.tag === playerTag || player.tag === playerTag.replace('#', '%23')) {
+          if (tagsMatch(player.tag, playerTag)) {
             brawlerName = player.brawler?.name || null;
             brawlerPower = player.brawler?.power || null;
             brawlerTrophies = player.brawler?.trophies || null;
-            break;
+            break teamsLoop;
           }
         }
       }
@@ -618,7 +649,7 @@ export function processBattleLog(playerTag: string, battleLog: BrawlStarsBattleL
       // Showdown / Duels: players is a flat array
       // Duels uses brawlers[] (plural), Showdown uses brawler (singular)
       for (const player of battleData.players) {
-        if (player.tag === playerTag || player.tag === playerTag.replace('#', '%23')) {
+        if (tagsMatch(player.tag, playerTag)) {
           const b = player.brawler || player.brawlers?.[0];
           brawlerName = b?.name || null;
           brawlerPower = b?.power || null;
@@ -704,9 +735,10 @@ export function calculateEnhancedStats(
 ): EnhancedTrackingStats {
   const now = new Date();
   const twentyEightDaysAgo = new Date(now.getTime() - 28 * 24 * 60 * 60 * 1000);
+  const cutoffDate = twentyEightDaysAgo.toISOString().slice(0, 10);
   
   // Filter to last 28 days
-  const recentStats = dailyStats.filter(s => new Date(s.date) >= twentyEightDaysAgo);
+  const recentStats = dailyStats.filter(s => s.date >= cutoffDate);
   
   // Calculate totals
   let totalBattles = 0;

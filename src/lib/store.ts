@@ -6,6 +6,7 @@ interface AppState {
   clubTag: string;
   clubName: string;
   apiKey: string;
+  apiKeyConfigured: boolean;
   
   // UI State
   lastSyncTime: string | null;
@@ -20,6 +21,7 @@ interface AppState {
   refreshInterval: number; // minutes
   notificationsEnabled: boolean;
   discordWebhook: string;
+  discordWebhookConfigured: boolean;
   requiredTrophies: number | null;
   
   // Actions
@@ -41,6 +43,17 @@ interface AppState {
   saveSettingsToDB: () => Promise<void>;
 }
 
+function parseIntegerSetting(value: unknown, fallback: number, min = 1, max = Number.MAX_SAFE_INTEGER): number {
+  const parsed = typeof value === "string" ? Number.parseInt(value, 10) : Number.NaN;
+  if (!Number.isFinite(parsed)) return fallback;
+  return Math.min(Math.max(parsed, min), max);
+}
+
+function parseNullableIntegerSetting(value: unknown, fallback: number | null): number | null {
+  const parsed = typeof value === "string" ? Number.parseInt(value, 10) : Number.NaN;
+  return Number.isFinite(parsed) ? parsed : fallback;
+}
+
 export const useAppStore = create<AppState>()(
   persist(
     (set, get) => ({
@@ -48,6 +61,7 @@ export const useAppStore = create<AppState>()(
       clubTag: "",
       clubName: "",
       apiKey: "",
+      apiKeyConfigured: false,
       lastSyncTime: null,
       isSyncing: false,
       isLoadingSettings: true,
@@ -58,6 +72,7 @@ export const useAppStore = create<AppState>()(
       refreshInterval: 60, // 1 hour
       notificationsEnabled: true,
       discordWebhook: "",
+      discordWebhookConfigured: false,
       requiredTrophies: null,
       
       // Actions
@@ -90,12 +105,18 @@ export const useAppStore = create<AppState>()(
             set({
               clubTag: settings.club_tag || get().clubTag || "",
               clubName: settings.club_name || get().clubName || "",
-              apiKey: settings.api_key || get().apiKey || "",
-              inactivityThreshold: settings.inactivity_threshold ? parseInt(settings.inactivity_threshold) : get().inactivityThreshold,
-              refreshInterval: settings.refresh_interval ? parseInt(settings.refresh_interval) : get().refreshInterval,
-              notificationsEnabled: settings.notifications_enabled === "true",
-              discordWebhook: settings.discord_webhook || get().discordWebhook || "",
-              requiredTrophies: settings.required_trophies ? parseInt(settings.required_trophies) : get().requiredTrophies,
+              apiKey: "",
+              apiKeyConfigured: settings.api_key_configured === "true" || get().apiKeyConfigured,
+              inactivityThreshold: parseIntegerSetting(settings.inactivity_threshold, get().inactivityThreshold, 1, 168),
+              refreshInterval: parseIntegerSetting(settings.refresh_interval, get().refreshInterval, 60, 1440),
+              notificationsEnabled: settings.notifications_enabled == null
+                ? get().notificationsEnabled
+                : settings.notifications_enabled === "true",
+              discordWebhook: "",
+              discordWebhookConfigured: settings.discord_webhook_configured === "true" || get().discordWebhookConfigured,
+              requiredTrophies: settings.required_trophies != null
+                ? parseNullableIntegerSetting(settings.required_trophies, get().requiredTrophies)
+                : get().requiredTrophies,
               lastSyncTime: settings.last_sync_time || get().lastSyncTime,
             });
           }
@@ -110,28 +131,48 @@ export const useAppStore = create<AppState>()(
       saveSettingsToDB: async () => {
         const state = get();
         try {
+          const apiKey = state.apiKey.trim();
+          const discordWebhook = state.discordWebhook.trim();
           const payload: Record<string, string> = {
             club_tag: state.clubTag,
             club_name: state.clubName,
-            api_key: state.apiKey,
             inactivity_threshold: String(state.inactivityThreshold),
             refresh_interval: String(state.refreshInterval),
             notifications_enabled: String(state.notificationsEnabled),
-            discord_webhook: state.discordWebhook,
             last_sync_time: state.lastSyncTime || "",
           };
+
+          if (apiKey) {
+            payload.api_key = apiKey;
+          }
+
+          if (discordWebhook) {
+            payload.discord_webhook = discordWebhook;
+          }
 
           if (state.requiredTrophies != null && Number.isFinite(state.requiredTrophies)) {
             payload.required_trophies = String(state.requiredTrophies);
           }
 
-          await fetch("/api/settings", {
+          const response = await fetch("/api/settings", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify(payload),
           });
+          if (!response.ok) {
+            const data = await response.json().catch(() => ({}));
+            throw new Error(data.error || "Failed to save settings");
+          }
+
+          set({
+            apiKey: "",
+            discordWebhook: "",
+            apiKeyConfigured: apiKey ? true : state.apiKeyConfigured,
+            discordWebhookConfigured: discordWebhook ? true : state.discordWebhookConfigured,
+          });
         } catch (error) {
           console.error("Failed to save settings to DB:", error);
+          throw error;
         }
       },
     }),

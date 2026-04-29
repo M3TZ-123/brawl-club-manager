@@ -1,6 +1,64 @@
 import { NextResponse } from "next/server";
 import { supabase } from "@/lib/supabase";
 
+type ActivitySnapshot = {
+  player_tag: string;
+  trophies: number;
+  recorded_at: string;
+};
+
+type BattleSnapshot = {
+  player_tag: string;
+  battle_time: string;
+  trophy_change: number;
+};
+
+async function fetchAllActivitySnapshots(playerTags: string[], sinceISO: string): Promise<ActivitySnapshot[]> {
+  if (playerTags.length === 0) return [];
+
+  const pageSize = 1000;
+  const rows: ActivitySnapshot[] = [];
+
+  for (let from = 0; ; from += pageSize) {
+    const { data, error } = await supabase
+      .from("activity_log")
+      .select("player_tag, trophies, recorded_at")
+      .in("player_tag", playerTags)
+      .gte("recorded_at", sinceISO)
+      .order("recorded_at", { ascending: true })
+      .range(from, from + pageSize - 1);
+
+    if (error) throw error;
+    rows.push(...((data || []) as ActivitySnapshot[]));
+    if (!data || data.length < pageSize) break;
+  }
+
+  return rows;
+}
+
+async function fetchAllBattleSnapshots(playerTags: string[], sinceISO: string): Promise<BattleSnapshot[]> {
+  if (playerTags.length === 0) return [];
+
+  const pageSize = 1000;
+  const rows: BattleSnapshot[] = [];
+
+  for (let from = 0; ; from += pageSize) {
+    const { data, error } = await supabase
+      .from("battle_history")
+      .select("player_tag, battle_time, trophy_change")
+      .in("player_tag", playerTags)
+      .gte("battle_time", sinceISO)
+      .order("battle_time", { ascending: false })
+      .range(from, from + pageSize - 1);
+
+    if (error) throw error;
+    rows.push(...((data || []) as BattleSnapshot[]));
+    if (!data || data.length < pageSize) break;
+  }
+
+  return rows;
+}
+
 export async function GET() {
   try {
     // Get current member tags from member_history
@@ -32,15 +90,14 @@ export async function GET() {
     const sevenDaysAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
 
     // Get activity logs from the last 7 days (plus a small buffer for baseline)
-    const { data: activityLogs } = await supabase
-      .from("activity_log")
-      .select("player_tag, trophies, recorded_at")
-      .gte("recorded_at", new Date(sevenDaysAgo.getTime() - 24 * 60 * 60 * 1000).toISOString())
-      .order("recorded_at", { ascending: true });
+    const activityLogs = await fetchAllActivitySnapshots(
+      currentMemberTags,
+      new Date(sevenDaysAgo.getTime() - 24 * 60 * 60 * 1000).toISOString()
+    );
 
     // Pre-group logs by player_tag for O(1) lookups instead of O(n) per member
-    const logsByPlayer = new Map<string, typeof activityLogs>();
-    for (const log of activityLogs || []) {
+    const logsByPlayer = new Map<string, ActivitySnapshot[]>();
+    for (const log of activityLogs) {
       if (!logsByPlayer.has(log.player_tag)) {
         logsByPlayer.set(log.player_tag, []);
       }
@@ -48,17 +105,12 @@ export async function GET() {
     }
 
     // Build battle recency map from real battles (captures activity even when trophy change is 0)
-    const { data: recentBattles } = await supabase
-      .from("battle_history")
-      .select("player_tag, battle_time, trophy_change")
-      .in("player_tag", currentMemberTags.length > 0 ? currentMemberTags : [''])
-      .gte("battle_time", sevenDaysAgo.toISOString())
-      .order("battle_time", { ascending: false });
+    const recentBattles = await fetchAllBattleSnapshots(currentMemberTags, sevenDaysAgo.toISOString());
 
     const latestBattleByPlayer = new Map<string, Date>();
     const battleDelta24hByPlayer = new Map<string, number>();
     const battleDelta7dByPlayer = new Map<string, number>();
-    for (const battle of recentBattles || []) {
+    for (const battle of recentBattles) {
       if (!latestBattleByPlayer.has(battle.player_tag)) {
         latestBattleByPlayer.set(battle.player_tag, new Date(battle.battle_time));
       }

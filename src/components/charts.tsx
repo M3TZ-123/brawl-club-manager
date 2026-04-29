@@ -111,26 +111,26 @@ export function TrophyStatistics({ data, currentTrophies }: TrophyStatisticsProp
   const oneWeekAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
   const oneMonthAgo = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
 
-  // Find baseline trophies for each period
-  const findBaseline = (cutoffDate: Date) => {
-    // Get logs before the cutoff date
-    const logsBefore = data.filter(log => new Date(log.recorded_at) <= cutoffDate);
-    // Get logs after the cutoff date  
-    const logsAfter = data.filter(log => new Date(log.recorded_at) > cutoffDate);
-    
-    if (logsAfter.length > 0) {
-      // Use the oldest log after cutoff (first entry in the period)
-      return logsAfter[0].trophies;
-    } else if (logsBefore.length > 0) {
-      // Fallback to most recent log before cutoff
-      return logsBefore[logsBefore.length - 1].trophies;
+  // Find the closest snapshot around each target. A stale baseline can make gains look
+  // much larger than the selected period, so require a reasonable window.
+  const findBaseline = (cutoffDate: Date, maxDistanceMs: number) => {
+    let nearest: { trophies: number; recorded_at: string } | null = null;
+    let nearestDistance = Number.POSITIVE_INFINITY;
+
+    for (const log of data) {
+      const distance = Math.abs(new Date(log.recorded_at).getTime() - cutoffDate.getTime());
+      if (distance <= maxDistanceMs && distance < nearestDistance) {
+        nearest = log;
+        nearestDistance = distance;
+      }
     }
-    return null;
+
+    return nearest?.trophies ?? null;
   };
 
-  const baseline24h = findBaseline(oneDayAgo);
-  const baseline7d = findBaseline(oneWeekAgo);
-  const baseline30d = findBaseline(oneMonthAgo);
+  const baseline24h = findBaseline(oneDayAgo, 12 * 60 * 60 * 1000);
+  const baseline7d = findBaseline(oneWeekAgo, 24 * 60 * 60 * 1000);
+  const baseline30d = findBaseline(oneMonthAgo, 48 * 60 * 60 * 1000);
 
   const todayGain = baseline24h !== null ? currentTrophies - baseline24h : null;
   const weekGain = baseline7d !== null ? currentTrophies - baseline7d : null;
@@ -405,7 +405,6 @@ export function ActivityCalendar({ battlesByDay }: ActivityCalendarProps) {
   };
 
   const weekDays = ["S", "M", "T", "W", "T", "F", "S"];
-  const monthName = now.toLocaleDateString("en-US", { month: "long", year: "numeric" });
 
   // Build calendar grid
   const calendarDays: (number | null)[] = [];

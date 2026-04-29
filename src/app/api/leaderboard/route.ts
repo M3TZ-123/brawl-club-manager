@@ -1,21 +1,53 @@
 import { NextResponse } from "next/server";
 import { supabase } from "@/lib/supabase";
 
+type DailyStatsRow = {
+  player_tag: string;
+  date: string;
+  battles: number | null;
+  wins: number | null;
+  losses: number | null;
+  star_player: number | null;
+  trophies_gained: number | null;
+  trophies_lost: number | null;
+};
+
+async function fetchAllDailyStats(playerTags: string[]): Promise<DailyStatsRow[]> {
+  if (playerTags.length === 0) return [];
+
+  const pageSize = 1000;
+  const rows: DailyStatsRow[] = [];
+
+  for (let from = 0; ; from += pageSize) {
+    const { data, error } = await supabase
+      .from("daily_stats")
+      .select("player_tag, date, battles, wins, losses, star_player, trophies_gained, trophies_lost")
+      .in("player_tag", playerTags)
+      .range(from, from + pageSize - 1);
+
+    if (error) throw error;
+    rows.push(...((data || []) as DailyStatsRow[]));
+    if (!data || data.length < pageSize) break;
+  }
+
+  return rows;
+}
+
 export async function GET() {
   try {
     const now = new Date();
     const sevenDaysAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
 
-    // Fetch all data in parallel
-    const [membersRes, allDailyStatsRes, currentMembersRes] = await Promise.all([
+    // Fetch current members first, then load only their stat rows.
+    const [membersRes, currentMembersRes] = await Promise.all([
       supabase.from("members").select("player_tag, player_name, trophies, highest_trophies, role, win_rate, solo_victories, duo_victories, trio_victories, brawlers_count, rank_current, rank_highest, exp_level"),
-      supabase.from("daily_stats").select("player_tag, date, battles, wins, losses, star_player, trophies_gained, trophies_lost").limit(5000),
       supabase.from("member_history").select("player_tag").eq("is_current_member", true),
     ]);
 
     const currentTags = new Set((currentMembersRes.data || []).map((m) => m.player_tag));
+    const currentTagList = [...currentTags];
     const members = (membersRes.data || []).filter((m) => currentTags.has(m.player_tag));
-    const allDailyStats = allDailyStatsRes.data || [];
+    const allDailyStats = await fetchAllDailyStats(currentTagList);
 
     const weekAgoStr = sevenDaysAgo.toISOString().split("T")[0];
 

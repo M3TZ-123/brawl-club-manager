@@ -1,7 +1,7 @@
 "use client";
 
-import { useEffect, useState, use } from "react";
-import { useAppStore } from "@/lib/store";
+import { useCallback, useEffect, useState, use } from "react";
+import Image from "next/image";
 import { LayoutWrapper } from "@/components/layout-wrapper";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -93,7 +93,6 @@ interface PageProps {
 
 export default function MemberDetailPage({ params }: PageProps) {
   const resolvedParams = use(params);
-  const { apiKey } = useAppStore();
   const [member, setMember] = useState<Member | null>(null);
   const [activityHistory, setActivityHistory] = useState<ActivityLog[]>([]);
   const [memberHistory, setMemberHistory] = useState<MemberHistory | null>(null);
@@ -111,13 +110,9 @@ export default function MemberDetailPage({ params }: PageProps) {
 
   const playerTag = decodeURIComponent(resolvedParams.tag);
 
-  useEffect(() => {
-    loadMemberData();
-  }, [playerTag, apiKey]);
-
-  const loadMemberData = async () => {
+  const loadMemberData = useCallback(async () => {
     try {
-      const url = `/api/members/${encodeURIComponent(playerTag)}${apiKey ? `?apiKey=${encodeURIComponent(apiKey)}` : ''}`;
+      const url = `/api/members/${encodeURIComponent(playerTag)}`;
       const response = await fetch(url);
       if (response.ok) {
         const data = await response.json();
@@ -138,7 +133,11 @@ export default function MemberDetailPage({ params }: PageProps) {
     } finally {
       setIsLoading(false);
     }
-  };
+  }, [playerTag]);
+
+  useEffect(() => {
+    loadMemberData();
+  }, [loadMemberData]);
 
   const handleRefresh = async () => {
     setIsRefreshing(true);
@@ -146,12 +145,10 @@ export default function MemberDetailPage({ params }: PageProps) {
       const response = await fetch(`/api/members/${encodeURIComponent(playerTag)}`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ apiKey }),
       });
 
       if (response.ok) {
-        const data = await response.json();
-        setMember(data.member);
+        await loadMemberData();
       }
     } catch (error) {
       console.error("Error refreshing member:", error);
@@ -231,6 +228,8 @@ export default function MemberDetailPage({ params }: PageProps) {
     );
   }
 
+  const profileIconUrl = getProfileIconUrl(member.icon_id);
+
   return (
     <LayoutWrapper>
       {/* Back Button */}
@@ -245,10 +244,12 @@ export default function MemberDetailPage({ params }: PageProps) {
           <CardContent className="pt-6">
             <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
               <div className="flex items-center gap-4">
-                {getProfileIconUrl(member.icon_id) && !avatarError ? (
-                  <img
-                    src={getProfileIconUrl(member.icon_id) || undefined}
+                {profileIconUrl && !avatarError ? (
+                  <Image
+                    src={profileIconUrl}
                     alt={`${member.player_name} icon`}
+                    width={64}
+                    height={64}
                     className="h-16 w-16 rounded-md border border-border/70 bg-muted/30 shadow-sm"
                     onError={() => setAvatarError(true)}
                   />
@@ -389,11 +390,12 @@ export default function MemberDetailPage({ params }: PageProps) {
                     {topBrawlers.map((brawler) => (
                       <div key={brawler.id} className="rounded-md border border-border/70 bg-card/50 p-3">
                         <div className="flex items-center gap-2 mb-2">
-                          <img
+                          <Image
                             src={brawler.icon_url}
                             alt={brawler.name}
+                            width={36}
+                            height={36}
                             className="h-9 w-9 rounded-md border border-border/70 bg-muted/30"
-                            loading="lazy"
                           />
                           <div className="min-w-0">
                             <p className="text-sm font-semibold truncate">{brawler.name}</p>

@@ -1,8 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getClub, setApiKey } from "@/lib/brawl-api";
+import { getClub } from "@/lib/brawl-api";
+import { rejectCrossOriginRequest } from "@/lib/request-security";
 
 export async function POST(request: NextRequest) {
   try {
+    const crossOriginResponse = rejectCrossOriginRequest(request);
+    if (crossOriginResponse) return crossOriginResponse;
+
     const { clubTag, apiKey } = await request.json();
 
     if (!clubTag || !apiKey) {
@@ -12,11 +16,8 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Set the API key for the request
-    setApiKey(apiKey);
-
     // Try to fetch the club
-    const club = await getClub(clubTag);
+    const club = await getClub(clubTag, apiKey);
 
     return NextResponse.json({
       success: true,

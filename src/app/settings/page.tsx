@@ -24,12 +24,12 @@ import {
 export default function SettingsPage() {
   const {
     clubTag,
-    apiKey,
+    apiKeyConfigured,
     theme,
     inactivityThreshold,
     refreshInterval,
     notificationsEnabled,
-    discordWebhook,
+    discordWebhookConfigured,
     setClubTag,
     setApiKey,
     setTheme,
@@ -43,8 +43,8 @@ export default function SettingsPage() {
   } = useAppStore();
 
   const [localClubTag, setLocalClubTag] = useState<string | null>(null);
-  const [localApiKey, setLocalApiKey] = useState<string | null>(null);
-  const [localDiscordWebhook, setLocalDiscordWebhook] = useState<string | null>(null);
+  const [localApiKey, setLocalApiKey] = useState("");
+  const [localDiscordWebhook, setLocalDiscordWebhook] = useState("");
   const [localInactivityThreshold, setLocalInactivityThreshold] = useState<number | null>(null);
   const [localRefreshInterval, setLocalRefreshInterval] = useState<number | null>(null);
   const [generalStatus, setGeneralStatus] = useState<"idle" | "saving" | "saved">("idle");
@@ -58,35 +58,63 @@ export default function SettingsPage() {
   }, [hasLoadedSettings, loadSettingsFromDB]);
 
   const effectiveClubTag = localClubTag ?? clubTag;
-  const effectiveApiKey = localApiKey ?? apiKey;
-  const effectiveDiscordWebhook = localDiscordWebhook ?? discordWebhook;
   const effectiveInactivityThreshold = localInactivityThreshold ?? inactivityThreshold;
   const effectiveRefreshInterval = localRefreshInterval ?? refreshInterval;
 
+  const parseBoundedInput = (value: string, fallback: number, min: number, max: number) => {
+    const parsed = Number.parseInt(value, 10);
+    if (!Number.isFinite(parsed)) return fallback;
+    return Math.min(Math.max(parsed, min), max);
+  };
+
   const handleSaveGeneral = async () => {
     setGeneralStatus("saving");
-    setClubTag(effectiveClubTag);
-    setApiKey(effectiveApiKey);
-    await saveSettingsToDB();
-    setGeneralStatus("saved");
-    setTimeout(() => setGeneralStatus("idle"), 2000);
+    try {
+      setClubTag(effectiveClubTag);
+      if (localApiKey.trim()) {
+        setApiKey(localApiKey);
+      }
+      await saveSettingsToDB();
+      setLocalApiKey("");
+      setGeneralStatus("saved");
+      setTimeout(() => setGeneralStatus("idle"), 2000);
+    } catch (error) {
+      console.error("Failed to save general settings:", error);
+      alert("Failed to save settings. Please try again.");
+      setGeneralStatus("idle");
+    }
   };
 
   const handleSaveNotifications = async () => {
     setNotifStatus("saving");
-    setDiscordWebhook(effectiveDiscordWebhook);
-    await saveSettingsToDB();
-    setNotifStatus("saved");
-    setTimeout(() => setNotifStatus("idle"), 2000);
+    try {
+      if (localDiscordWebhook.trim()) {
+        setDiscordWebhook(localDiscordWebhook);
+      }
+      await saveSettingsToDB();
+      setLocalDiscordWebhook("");
+      setNotifStatus("saved");
+      setTimeout(() => setNotifStatus("idle"), 2000);
+    } catch (error) {
+      console.error("Failed to save notification settings:", error);
+      alert("Failed to save notification settings. Please try again.");
+      setNotifStatus("idle");
+    }
   };
 
   const handleSaveActivity = async () => {
     setActivityStatus("saving");
-    setInactivityThreshold(effectiveInactivityThreshold);
-    setRefreshInterval(effectiveRefreshInterval);
-    await saveSettingsToDB();
-    setActivityStatus("saved");
-    setTimeout(() => setActivityStatus("idle"), 2000);
+    try {
+      setInactivityThreshold(effectiveInactivityThreshold);
+      setRefreshInterval(effectiveRefreshInterval);
+      await saveSettingsToDB();
+      setActivityStatus("saved");
+      setTimeout(() => setActivityStatus("idle"), 2000);
+    } catch (error) {
+      console.error("Failed to save activity settings:", error);
+      alert("Failed to save activity settings. Please try again.");
+      setActivityStatus("idle");
+    }
   };
 
   const handleClearData = () => {
@@ -166,11 +194,13 @@ export default function SettingsPage() {
                       <label className="text-sm font-medium">API Key</label>
                       <Input
                         type="password"
-                        placeholder="Enter your API key"
-                        value={effectiveApiKey}
+                        placeholder={apiKeyConfigured ? "Stored API key configured" : "Enter your API key"}
+                        value={localApiKey}
                         onChange={(e) => setLocalApiKey(e.target.value)}
+                        autoComplete="off"
                       />
                       <p className="text-xs text-muted-foreground">
+                        {apiKeyConfigured ? "Leave blank to keep the saved key. " : ""}
                         Get your API key from{" "}
                         <a
                           href="https://developer.brawlstars.com"
@@ -226,7 +256,7 @@ export default function SettingsPage() {
                         max="168"
                         value={effectiveInactivityThreshold}
                         onChange={(e) =>
-                          setLocalInactivityThreshold(parseInt(e.target.value) || 24)
+                          setLocalInactivityThreshold(parseBoundedInput(e.target.value, 24, 1, 168))
                         }
                       />
                       <p className="text-xs text-muted-foreground">
@@ -245,7 +275,7 @@ export default function SettingsPage() {
                         step="60"
                         value={effectiveRefreshInterval}
                         onChange={(e) =>
-                          setLocalRefreshInterval(parseInt(e.target.value) || 240)
+                          setLocalRefreshInterval(parseBoundedInput(e.target.value, 240, 60, 1440))
                         }
                       />
                       <p className="text-xs text-muted-foreground">
@@ -311,12 +341,14 @@ export default function SettingsPage() {
                       <label className="text-sm font-medium">Discord Webhook URL</label>
                       <Input
                         type="url"
-                        placeholder="https://discord.com/api/webhooks/..."
-                        value={effectiveDiscordWebhook}
+                        placeholder={discordWebhookConfigured ? "Stored webhook configured" : "https://discord.com/api/webhooks/..."}
+                        value={localDiscordWebhook}
                         onChange={(e) => setLocalDiscordWebhook(e.target.value)}
+                        autoComplete="off"
                       />
                       <p className="text-xs text-muted-foreground">
-                        Optional: Send notifications to a Discord channel
+                        Optional: Send notifications to a Discord channel.
+                        {discordWebhookConfigured ? " Leave blank to keep the saved webhook." : ""}
                       </p>
                     </div>
 

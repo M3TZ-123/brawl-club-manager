@@ -38,7 +38,7 @@ interface ClubInsights {
 export default function DashboardPage() {
   const {
     clubTag,
-    apiKey,
+    apiKeyConfigured,
     requiredTrophies,
     isLoadingSettings,
     hasLoadedSettings,
@@ -65,7 +65,7 @@ export default function DashboardPage() {
   useEffect(() => {
     if (!mounted || isLoadingSettings) return;
     
-    if (clubTag && apiKey) {
+    if (clubTag && apiKeyConfigured) {
       setIsSetupComplete(true);
       if (!dataLoaded) {
         loadData();
@@ -73,7 +73,7 @@ export default function DashboardPage() {
     } else {
       setIsLoading(false);
     }
-  }, [clubTag, apiKey, mounted, isLoadingSettings, dataLoaded]);
+  }, [clubTag, apiKeyConfigured, mounted, isLoadingSettings, dataLoaded]);
 
   const loadData = async () => {
     try {

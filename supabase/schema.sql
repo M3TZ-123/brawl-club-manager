@@ -189,8 +189,7 @@ CREATE TABLE IF NOT EXISTS brawler_snapshots (
   gadgets_count INT DEFAULT 0,
   star_powers_count INT DEFAULT 0,
   gears_count INT DEFAULT 0,
-  recorded_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
-  UNIQUE(player_tag, brawler_id, recorded_at::date)
+  recorded_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
 
 -- Daily stats aggregation (for historical tracking)
@@ -211,6 +210,8 @@ CREATE TABLE IF NOT EXISTS daily_stats (
 CREATE INDEX IF NOT EXISTS idx_battle_history_player ON battle_history(player_tag);
 CREATE INDEX IF NOT EXISTS idx_battle_history_time ON battle_history(battle_time DESC);
 CREATE INDEX IF NOT EXISTS idx_brawler_snapshots_player ON brawler_snapshots(player_tag);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_brawler_snapshots_player_brawler_day
+  ON brawler_snapshots (player_tag, brawler_id, ((recorded_at AT TIME ZONE 'UTC')::date));
 CREATE INDEX IF NOT EXISTS idx_daily_stats_player_date ON daily_stats(player_tag, date DESC);
 
 -- Function to clean old battle history (keep last 60 days)

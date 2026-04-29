@@ -1,6 +1,34 @@
 import { NextResponse } from "next/server";
 import { supabase } from "@/lib/supabase";
 
+type BattleSummary = {
+  battle_time: string;
+  mode: string | null;
+  result: string | null;
+};
+
+async function fetchAllBattleSummaries(playerTags: string[], sinceDate: string): Promise<BattleSummary[]> {
+  if (playerTags.length === 0) return [];
+
+  const pageSize = 1000;
+  const rows: BattleSummary[] = [];
+
+  for (let from = 0; ; from += pageSize) {
+    const { data, error } = await supabase
+      .from("battle_history")
+      .select("battle_time, mode, result")
+      .in("player_tag", playerTags)
+      .gte("battle_time", sinceDate)
+      .range(from, from + pageSize - 1);
+
+    if (error) throw error;
+    rows.push(...((data || []) as BattleSummary[]));
+    if (!data || data.length < pageSize) break;
+  }
+
+  return rows;
+}
+
 export async function GET() {
   try {
     const now = new Date();
@@ -25,20 +53,19 @@ export async function GET() {
       nameMap.set(m.player_tag.replace("#", ""), m.player_name);
       if (!m.player_tag.startsWith("#")) nameMap.set(`#${m.player_tag}`, m.player_name);
     }
-    const thisWeekStats = thisWeekStatsRes.data || [];
-    const prevWeekStats = prevWeekStatsRes.data || [];
+    const thisWeekStats = (thisWeekStatsRes.data || []).filter((s) => currentTags.has(s.player_tag));
+    const prevWeekStats = (prevWeekStatsRes.data || []).filter((s) => currentTags.has(s.player_tag));
 
     // ============================
     // 0. MEGA PIG STATUS — derived from tracked battle_history
     // Note: Official API does not currently expose a direct club Mega Pig rank field.
     // ============================
-    const { data: recentBattles } = await supabase
-      .from("battle_history")
-      .select("battle_time, mode, result")
-      .in("player_tag", members.map((m) => m.player_tag))
-      .gte("battle_time", weekAgoStr);
+    const recentBattles = await fetchAllBattleSummaries(
+      members.map((m) => m.player_tag),
+      weekAgoStr
+    );
 
-    const megaPigBattles = (recentBattles || []).filter((battle) => {
+    const megaPigBattles = recentBattles.filter((battle) => {
       const mode = (battle.mode || "").toLowerCase();
       return mode.includes("mega") || mode.includes("pig");
     });

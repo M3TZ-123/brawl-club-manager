@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { LayoutWrapper } from "@/components/layout-wrapper";
 import { MembersTable } from "@/components/members-table";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -11,7 +11,6 @@ import { Search, RefreshCw, Download } from "lucide-react";
 
 export default function MembersPage() {
   const [members, setMembers] = useState<Member[]>([]);
-  const [filteredMembers, setFilteredMembers] = useState<Member[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
@@ -21,19 +20,18 @@ export default function MembersPage() {
     loadMembers();
   }, []);
 
-  useEffect(() => {
+  const filteredMembers = useMemo(() => {
     let filtered = [...members];
+    const normalizedSearch = searchQuery.trim().toLowerCase();
 
-    // Search filter
-    if (searchQuery) {
+    if (normalizedSearch) {
       filtered = filtered.filter(
         (m) =>
-          m.player_name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-          m.player_tag.toLowerCase().includes(searchQuery.toLowerCase())
+          m.player_name.toLowerCase().includes(normalizedSearch) ||
+          m.player_tag.toLowerCase().includes(normalizedSearch)
       );
     }
 
-    // Sort
     filtered.sort((a, b) => {
       switch (sortBy) {
         case "trophies":
@@ -42,16 +40,15 @@ export default function MembersPage() {
           return a.player_name.localeCompare(b.player_name);
         case "role":
           const roleOrder = ["president", "vicepresident", "senior", "member"];
-          return (
-            roleOrder.indexOf(a.role.toLowerCase()) -
-            roleOrder.indexOf(b.role.toLowerCase())
-          );
+          const aIndex = roleOrder.indexOf(a.role.toLowerCase());
+          const bIndex = roleOrder.indexOf(b.role.toLowerCase());
+          return (aIndex === -1 ? roleOrder.length : aIndex) - (bIndex === -1 ? roleOrder.length : bIndex);
         default:
           return 0;
       }
     });
 
-    setFilteredMembers(filtered);
+    return filtered;
   }, [members, searchQuery, sortBy]);
 
   const loadMembers = async () => {
@@ -75,7 +72,10 @@ export default function MembersPage() {
       ["Tag", "Name", "Role", "Trophies", "Highest", "3v3 Wins", "Active"].join(","),
       ...members.map((m) => {
         const sanitize = (v: string | number | boolean) => {
-          const s = String(v);
+          let s = String(v);
+          if (/^[=+\-@]/.test(s)) {
+            s = `'${s}`;
+          }
           if (s.includes(',') || s.includes('"') || s.includes('\n')) {
             return `"${s.replace(/"/g, '""')}"`;
           }

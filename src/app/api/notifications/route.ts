@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createHash } from "crypto";
 import { supabase } from "@/lib/supabase";
+import { rejectCrossOriginRequest } from "@/lib/request-security";
 
 function buildNotificationDedupeKey(
   type: string,
@@ -25,12 +26,18 @@ function isMissingNotificationsTable(error: unknown): boolean {
   );
 }
 
+function parseBoundedInt(value: string | null, fallback: number, min: number, max: number): number {
+  const parsed = Number.parseInt(value || "", 10);
+  if (!Number.isFinite(parsed)) return fallback;
+  return Math.min(Math.max(parsed, min), max);
+}
+
 // GET — Fetch notifications (with optional ?unreadOnly=true and ?limit=50)
 export async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url);
     const unreadOnly = searchParams.get("unreadOnly") === "true";
-    const limit = Math.min(parseInt(searchParams.get("limit") || "50"), 100);
+    const limit = parseBoundedInt(searchParams.get("limit"), 50, 1, 100);
     const typesParam = searchParams.get("types");
     const types = typesParam
       ? typesParam.split(",").map((t) => t.trim()).filter(Boolean)
@@ -142,7 +149,10 @@ export async function GET(request: NextRequest) {
 // Body: { ids: number[] } to mark specific ones, or { all: true } to mark all
 export async function PATCH(request: NextRequest) {
   try {
-    const body = await request.json();
+    const crossOriginResponse = rejectCrossOriginRequest(request);
+    if (crossOriginResponse) return crossOriginResponse;
+
+    const body = await request.json().catch(() => ({}));
 
     if (body.all === true) {
       const { error } = await supabase
@@ -156,10 +166,22 @@ export async function PATCH(request: NextRequest) {
         throw error;
       }
     } else if (Array.isArray(body.ids) && body.ids.length > 0) {
+      const ids = body.ids
+        .map((id: unknown) => Number.parseInt(String(id), 10))
+        .filter((id: number) => Number.isFinite(id) && id > 0)
+        .slice(0, 100);
+
+      if (ids.length === 0) {
+        return NextResponse.json(
+          { error: "Provide valid notification ids" },
+          { status: 400 }
+        );
+      }
+
       const { error } = await supabase
         .from("notifications")
         .update({ is_read: true })
-        .in("id", body.ids);
+        .in("id", ids);
       if (error) {
         if (isMissingNotificationsTable(error)) {
           return NextResponse.json({ success: true, tableMissing: true });
@@ -184,8 +206,11 @@ export async function PATCH(request: NextRequest) {
 }
 
 // DELETE — Delete old read notifications (cleanup)
-export async function DELETE() {
+export async function DELETE(request: NextRequest) {
   try {
+    const crossOriginResponse = rejectCrossOriginRequest(request);
+    if (crossOriginResponse) return crossOriginResponse;
+
     const { error } = await supabase
       .from("notifications")
       .delete()

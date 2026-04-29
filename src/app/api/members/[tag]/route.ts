@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { supabase } from "@/lib/supabase";
-import { getPlayer, setApiKey, getPlayerRankedData, getLastBattleTime, getPlayerBattleStats, getBrawlerPowerDistribution, calculateEnhancedStats, calculateWinRateFromBattleLog, getPlayerBattleLog } from "@/lib/brawl-api";
+import { getPlayer, getPlayerRankedData, getLastBattleTime, getPlayerBattleStats, getBrawlerPowerDistribution, calculateEnhancedStats, calculateWinRateFromBattleLog, getPlayerBattleLog, processBattleLog, BrawlStarsBattleLog } from "@/lib/brawl-api";
+import { rejectCrossOriginRequest } from "@/lib/request-security";
 
 type RecentMatch = {
   battle_time: string;
@@ -13,21 +14,186 @@ type RecentMatch = {
   brawler_power: number | null;
 };
 
+type ActivityHistoryRow = {
+  id: number;
+  player_tag: string;
+  trophies: number;
+  trophy_change: number;
+  activity_type: string;
+  recorded_at: string;
+};
+
+type StoredBattleForStats = {
+  player_tag: string;
+  battle_time: string;
+  result: string | null;
+  trophy_change: number | null;
+  is_star_player: boolean | null;
+};
+
+async function fetchActivityHistorySince(playerTag: string, sinceISO: string): Promise<ActivityHistoryRow[]> {
+  const pageSize = 1000;
+  const rows: ActivityHistoryRow[] = [];
+
+  for (let from = 0; ; from += pageSize) {
+    const { data, error } = await supabase
+      .from("activity_log")
+      .select("*")
+      .eq("player_tag", playerTag)
+      .gte("recorded_at", sinceISO)
+      .order("recorded_at", { ascending: false })
+      .range(from, from + pageSize - 1);
+
+    if (error) throw error;
+    rows.push(...((data || []) as ActivityHistoryRow[]));
+    if (!data || data.length < pageSize) break;
+  }
+
+  return rows;
+}
+
+async function fetchStoredBattlesForDailyStats(
+  playerTag: string,
+  fromISO: string,
+  toISO: string
+): Promise<StoredBattleForStats[]> {
+  const pageSize = 1000;
+  const rows: StoredBattleForStats[] = [];
+
+  for (let from = 0; ; from += pageSize) {
+    const { data, error } = await supabase
+      .from("battle_history")
+      .select("player_tag, battle_time, result, trophy_change, is_star_player")
+      .eq("player_tag", playerTag)
+      .gte("battle_time", fromISO)
+      .lt("battle_time", toISO)
+      .range(from, from + pageSize - 1);
+
+    if (error) throw error;
+    rows.push(...((data || []) as StoredBattleForStats[]));
+    if (!data || data.length < pageSize) break;
+  }
+
+  return rows;
+}
+
+function adjustFutureBattleTimes<T extends { battle_time: string }>(battles: T[]) {
+  if (battles.length === 0) return;
+
+  const serverNow = Date.now();
+  const maxBattleTime = battles.reduce(
+    (max, battle) => Math.max(max, new Date(battle.battle_time).getTime()),
+    0
+  );
+
+  if (maxBattleTime > serverNow + 60000) {
+    const rawOffsetMs = maxBattleTime - serverNow;
+    const offsetHours = Math.ceil(rawOffsetMs / 3600000);
+    const offsetMs = offsetHours * 3600000;
+    for (const battle of battles) {
+      battle.battle_time = new Date(new Date(battle.battle_time).getTime() - offsetMs).toISOString();
+    }
+  }
+}
+
+async function rebuildDailyStatsForBattles(playerTag: string, battleTimes: string[]) {
+  const affectedDates = [...new Set(battleTimes.map((battleTime) => battleTime.slice(0, 10)))].sort();
+  if (affectedDates.length === 0) return;
+
+  const firstDate = affectedDates[0];
+  const lastDate = affectedDates[affectedDates.length - 1];
+  const affectedKeys = new Set(affectedDates.map((date) => `${playerTag}_${date}`));
+  const rangeEnd = new Date(`${lastDate}T00:00:00.000Z`);
+  rangeEnd.setUTCDate(rangeEnd.getUTCDate() + 1);
+
+  const storedBattles = await fetchStoredBattlesForDailyStats(
+    playerTag,
+    `${firstDate}T00:00:00.000Z`,
+    rangeEnd.toISOString()
+  );
+
+  const dailyStatsMap = new Map<string, {
+    player_tag: string;
+    date: string;
+    battles: number;
+    wins: number;
+    losses: number;
+    star_player: number;
+    trophies_gained: number;
+    trophies_lost: number;
+  }>();
+
+  for (const battle of storedBattles) {
+    const date = String(battle.battle_time).slice(0, 10);
+    const key = `${battle.player_tag}_${date}`;
+    if (!affectedKeys.has(key)) continue;
+
+    if (!dailyStatsMap.has(key)) {
+      dailyStatsMap.set(key, {
+        player_tag: battle.player_tag,
+        date,
+        battles: 0,
+        wins: 0,
+        losses: 0,
+        star_player: 0,
+        trophies_gained: 0,
+        trophies_lost: 0,
+      });
+    }
+
+    const stats = dailyStatsMap.get(key)!;
+    stats.battles++;
+    if (battle.result === "victory") stats.wins++;
+    if (battle.result === "defeat") stats.losses++;
+    if (battle.is_star_player) stats.star_player++;
+    if ((battle.trophy_change || 0) > 0) stats.trophies_gained += battle.trophy_change || 0;
+    if ((battle.trophy_change || 0) < 0) stats.trophies_lost += Math.abs(battle.trophy_change || 0);
+  }
+
+  const dailyStatsArray = Array.from(dailyStatsMap.values());
+  if (dailyStatsArray.length > 0) {
+    const { error } = await supabase
+      .from("daily_stats")
+      .upsert(dailyStatsArray, { onConflict: "player_tag,date" });
+    if (error) throw error;
+  }
+}
+
+async function getInactivityThresholdHours(): Promise<number> {
+  const { data } = await supabase
+    .from("settings")
+    .select("value")
+    .eq("key", "inactivity_threshold")
+    .single();
+
+  const parsed = Number.parseInt(data?.value || "", 10);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : 48;
+}
+
+async function getConfiguredApiKey(): Promise<string | undefined> {
+  const { data, error } = await supabase
+    .from("settings")
+    .select("value")
+    .eq("key", "api_key")
+    .maybeSingle();
+
+  if (error) {
+    console.error("Error loading API key setting:", error);
+  }
+
+  const storedApiKey = typeof data?.value === "string" ? data.value.trim() : "";
+  return storedApiKey || process.env.BRAWL_API_KEY;
+}
+
 export async function GET(
-  request: NextRequest,
+  _request: NextRequest,
   { params }: { params: Promise<{ tag: string }> }
 ) {
   try {
     const { tag } = await params;
     const playerTag = decodeURIComponent(tag);
 
-    // Get API key from query params or environment
-    const { searchParams } = new URL(request.url);
-    const apiKey = searchParams.get('apiKey') || process.env.BRAWL_API_KEY;
-    console.log(`[Member API] API key found: ${apiKey ? 'Yes' : 'No'}`);
-    if (apiKey) {
-      setApiKey(apiKey);
-    }
+    const apiKey = await getConfiguredApiKey();
 
     // Get member from database
     const { data: member, error } = await supabase
@@ -43,13 +209,15 @@ export async function GET(
       );
     }
 
-    // Get activity history
-    const { data: activityHistory } = await supabase
+    const activitySince = new Date(Date.now() - 32 * 24 * 60 * 60 * 1000).toISOString();
+    const activityHistory = await fetchActivityHistorySince(playerTag, activitySince);
+
+    const { data: firstActivityRows } = await supabase
       .from("activity_log")
-      .select("*")
+      .select("recorded_at")
       .eq("player_tag", playerTag)
-      .order("recorded_at", { ascending: false })
-      .limit(30);
+      .order("recorded_at", { ascending: true })
+      .limit(1);
 
     // Get recent matches for this player (mini battle feed)
     const { data: recentMatches } = await supabase
@@ -110,9 +278,9 @@ export async function GET(
       try {
         // Run API calls in parallel
         const [battleTimeResult, battleStatsResult, playerData] = await Promise.all([
-          getLastBattleTime(playerTag),
-          getPlayerBattleStats(playerTag),
-          getPlayer(playerTag),
+          getLastBattleTime(playerTag, apiKey),
+          getPlayerBattleStats(playerTag, apiKey),
+          getPlayer(playerTag, apiKey),
         ]);
 
         lastBattleTime = battleTimeResult;
@@ -176,9 +344,9 @@ export async function GET(
 
     // Calculate tracked days from first activity log or member creation
     let trackedDays = 1;
-    if (activityHistory && activityHistory.length > 0) {
-      const oldest = activityHistory[activityHistory.length - 1]; // oldest (sorted desc)
-      const firstDate = new Date(oldest.recorded_at);
+    const firstActivity = firstActivityRows?.[0];
+    if (firstActivity) {
+      const firstDate = new Date(firstActivity.recorded_at);
       trackedDays = Math.max(1, Math.floor((Date.now() - firstDate.getTime()) / (24 * 60 * 60 * 1000)));
     }
 
@@ -265,10 +433,12 @@ export async function POST(
   { params }: { params: Promise<{ tag: string }> }
 ) {
   try {
+    const crossOriginResponse = rejectCrossOriginRequest(request);
+    if (crossOriginResponse) return crossOriginResponse;
+
     const { tag } = await params;
     const playerTag = decodeURIComponent(tag);
-    const body = await request.json();
-    const apiKey = body.apiKey || process.env.BRAWL_API_KEY;
+    const apiKey = await getConfiguredApiKey();
 
     if (!apiKey) {
       return NextResponse.json(
@@ -276,53 +446,69 @@ export async function POST(
         { status: 400 }
       );
     }
-
-    setApiKey(apiKey);
-    
     // Fetch player data, ranked data, and battle log in parallel
     const [player, rankedData, battleLog] = await Promise.all([
-      getPlayer(playerTag),
+      getPlayer(playerTag, apiKey),
       getPlayerRankedData(playerTag),
-      getPlayerBattleLog(playerTag),
+      getPlayerBattleLog(playerTag, apiKey).catch((err) => {
+        console.warn(`Battle log unavailable for ${playerTag}: ${err.message}`);
+        return { items: [] } as BrawlStarsBattleLog;
+      }),
     ]);
     
     // Calculate win rate from battle log
     const winRateData = calculateWinRateFromBattleLog(battleLog);
 
-    // Get previous trophies
+    // Get previous data so refresh does not wipe good rank/icon values when a side API is unavailable.
     const { data: existingMember } = await supabase
       .from("members")
-      .select("trophies")
+      .select("trophies, rank_current, rank_highest, icon_id")
       .eq("player_tag", playerTag)
-      .single() as { data: { trophies: number } | null };
+      .single() as { data: { trophies: number; rank_current: string | null; rank_highest: string | null; icon_id: number | null } | null };
 
     const trophyChange = existingMember
       ? player.trophies - existingMember.trophies
       : 0;
 
+    const processedBattles = processBattleLog(playerTag, battleLog);
+    adjustFutureBattleTimes(processedBattles);
+    const inactivityThreshold = await getInactivityThresholdHours();
+    const thresholdTimeMs = Date.now() - inactivityThreshold * 60 * 60 * 1000;
+    const hasRecentBattle = processedBattles.some(
+      (battle) => new Date(battle.battle_time).getTime() >= thresholdTimeMs
+    );
+
     let activityType = "inactive";
     if (Math.abs(trophyChange) >= 20) {
       activityType = "active";
-    } else if (Math.abs(trophyChange) > 0) {
+    } else if (Math.abs(trophyChange) > 0 || hasRecentBattle) {
       activityType = "minimal";
     }
+
+    const resolvedCurrentRank = rankedData.currentRank !== "Unranked"
+      ? rankedData.currentRank
+      : (existingMember?.rank_current || "Unranked");
+    const resolvedHighestRank = rankedData.highestRank !== "Unranked"
+      ? rankedData.highestRank
+      : (existingMember?.rank_highest || "Unranked");
 
     // Update member
     const { data: updatedMember, error } = await supabase
       .from("members")
       .update({
         player_name: player.name,
+        icon_id: player.icon?.id || existingMember?.icon_id || null,
         trophies: player.trophies,
         highest_trophies: player.highestTrophies,
         exp_level: player.expLevel,
-        rank_current: rankedData.currentRank,
-        rank_highest: rankedData.highestRank,
+        rank_current: resolvedCurrentRank,
+        rank_highest: resolvedHighestRank,
         win_rate: winRateData.winRate,
         brawlers_count: player.brawlers.length,
         solo_victories: player.soloVictories,
         duo_victories: player.duoVictories,
         trio_victories: player["3vs3Victories"],
-        is_active: activityType === "active",
+        is_active: activityType !== "inactive",
         last_updated: new Date().toISOString(),
       })
       .eq("player_tag", playerTag)
@@ -338,6 +524,55 @@ export async function POST(
       trophy_change: trophyChange,
       activity_type: activityType,
     });
+
+    if (processedBattles.length > 0) {
+      const { error: battleError } = await supabase
+        .from("battle_history")
+        .upsert(processedBattles, {
+          onConflict: "player_tag,battle_time",
+          ignoreDuplicates: false,
+        });
+
+      if (battleError) throw battleError;
+      await rebuildDailyStatsForBattles(
+        playerTag,
+        processedBattles.map((battle) => battle.battle_time)
+      );
+    }
+
+    if (player.brawlers.length > 0) {
+      const today = new Date();
+      const todayStart = new Date(Date.UTC(today.getUTCFullYear(), today.getUTCMonth(), today.getUTCDate()));
+      const tomorrowStart = new Date(todayStart);
+      tomorrowStart.setUTCDate(tomorrowStart.getUTCDate() + 1);
+
+      const { error: deleteSnapshotsError } = await supabase
+        .from("brawler_snapshots")
+        .delete()
+        .eq("player_tag", playerTag)
+        .gte("recorded_at", todayStart.toISOString())
+        .lt("recorded_at", tomorrowStart.toISOString());
+
+      if (deleteSnapshotsError) throw deleteSnapshotsError;
+
+      const snapshotRows = player.brawlers.map((brawler) => ({
+        player_tag: playerTag,
+        brawler_id: brawler.id,
+        brawler_name: brawler.name,
+        power_level: brawler.power,
+        trophies: brawler.trophies,
+        rank: brawler.rank,
+        gadgets_count: brawler.gadgets?.length || 0,
+        star_powers_count: brawler.starPowers?.length || 0,
+        gears_count: brawler.gears?.length || 0,
+      }));
+
+      const { error: insertSnapshotsError } = await supabase
+        .from("brawler_snapshots")
+        .insert(snapshotRows);
+
+      if (insertSnapshotsError) throw insertSnapshotsError;
+    }
 
     return NextResponse.json({
       success: true,

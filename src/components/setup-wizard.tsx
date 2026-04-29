@@ -50,6 +50,7 @@ export function SetupWizard({ onComplete }: SetupWizardProps) {
       
       // Save to database
       await saveSettingsToDB();
+      setApiKey("");
       
       setStep(3);
     } catch (err) {
@@ -61,17 +62,23 @@ export function SetupWizard({ onComplete }: SetupWizardProps) {
 
   const handleComplete = async () => {
     setIsLoading(true);
+    setError("");
     try {
       // Trigger initial sync with credentials
       const state = useAppStore.getState();
-      await fetch("/api/sync", {
+      const response = await fetch("/api/sync", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ clubTag: state.clubTag, apiKey: state.apiKey, initialSetup: true }),
+        body: JSON.stringify({ clubTag: state.clubTag, initialSetup: true }),
       });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        throw new Error(data.error || data.message || "Initial sync failed");
+      }
       onComplete();
     } catch (err) {
       console.error(err);
+      setError(err instanceof Error ? err.message : "Initial sync failed");
     } finally {
       setIsLoading(false);
     }
@@ -179,6 +186,9 @@ export function SetupWizard({ onComplete }: SetupWizardProps) {
               >
                 {isLoading ? "Starting sync..." : "Start Using App"}
               </Button>
+              {error && (
+                <p className="text-sm text-destructive text-center">{error}</p>
+              )}
             </>
           )}
 

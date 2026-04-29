@@ -1,5 +1,6 @@
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import { supabase } from "@/lib/supabase";
+import { rejectCrossOriginRequest } from "@/lib/request-security";
 
 export async function GET() {
   try {
@@ -22,8 +23,11 @@ export async function GET() {
 }
 
 // DELETE endpoint to clear all events and reset tracking from today
-export async function DELETE() {
+export async function DELETE(request: NextRequest) {
   try {
+    const crossOriginResponse = rejectCrossOriginRequest(request);
+    if (crossOriginResponse) return crossOriginResponse;
+
     // Clear all club events
     const { error: eventsError } = await supabase
       .from("club_events")

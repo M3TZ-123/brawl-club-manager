@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { LayoutWrapper } from "@/components/layout-wrapper";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -39,9 +39,24 @@ export default function HistoryPage() {
   const [editingNote, setEditingNote] = useState("");
   const [savingNote, setSavingNote] = useState(false);
 
+  const loadHistory = useCallback(async () => {
+    try {
+      const query = timeRange === "all" ? "" : `?days=${timeRange}`;
+      const response = await fetch(`/api/history${query}`);
+      if (response.ok) {
+        const data = await response.json();
+        setHistory(data.history || []);
+      }
+    } catch (error) {
+      console.error("Error loading history:", error);
+    } finally {
+      setIsLoading(false);
+    }
+  }, [timeRange]);
+
   useEffect(() => {
     loadHistory();
-  }, [timeRange]);
+  }, [loadHistory]);
 
   useEffect(() => {
     let filtered = [...history];
@@ -64,21 +79,6 @@ export default function HistoryPage() {
 
     setFilteredHistory(filtered);
   }, [history, searchQuery, filter]);
-
-  const loadHistory = async () => {
-    try {
-      const query = timeRange === "all" ? "" : `?days=${timeRange}`;
-      const response = await fetch(`/api/history${query}`);
-      if (response.ok) {
-        const data = await response.json();
-        setHistory(data.history || []);
-      }
-    } catch (error) {
-      console.error("Error loading history:", error);
-    } finally {
-      setIsLoading(false);
-    }
-  };
 
   const getMemberBadge = (h: MemberHistory) => {
     if (!h.is_current_member) {

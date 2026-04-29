@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createHash } from "crypto";
-import { getClub, getPlayer, setApiKey, getPlayerRankedData, getPlayerBattleLog, processBattleLog, calculateWinRateFromBattleLog, BrawlStarsBattleLog } from "@/lib/brawl-api";
+import { getClub, getPlayer, getPlayerRankedData, getPlayerBattleLog, processBattleLog, calculateWinRateFromBattleLog, BrawlStarsBattleLog } from "@/lib/brawl-api";
 import { supabase } from "@/lib/supabase";
+import { rejectCrossOriginRequest } from "@/lib/request-security";
 
 function buildNotificationDedupeKey(
   type: string,
@@ -15,6 +16,160 @@ function buildNotificationDedupeKey(
   return createHash("sha256")
     .update(`${type}|${playerTag || ""}|${title}|${message}|${secondIso}`)
     .digest("hex");
+}
+
+type RecentActivityRow = {
+  player_tag: string;
+  trophy_change: number | null;
+  activity_type: string | null;
+  recorded_at: string;
+};
+
+type StoredBattleForStats = {
+  player_tag: string;
+  battle_time: string;
+  result: string | null;
+  trophy_change: number | null;
+  is_star_player: boolean | null;
+};
+
+type PreviousBrawlerSnapshot = {
+  player_tag: string;
+  brawler_id: number;
+  power_level: number;
+  recorded_at: string;
+};
+
+type ExistingMemberRow = {
+  player_tag: string;
+  player_name: string;
+  icon_id: number | null;
+  role: string | null;
+  trophies: number | null;
+  rank_current: string | null;
+  rank_highest: string | null;
+};
+
+type MemberHistoryRow = {
+  player_tag: string;
+  player_name: string;
+  first_seen: string;
+  last_seen: string;
+  last_left_at: string | null;
+  times_joined: number;
+  times_left: number;
+  is_current_member: boolean;
+  role_at_leave: string | null;
+  trophies_at_leave: number | null;
+  notes?: string | null;
+};
+
+async function fetchAllExistingMembers(): Promise<ExistingMemberRow[]> {
+  const pageSize = 1000;
+  const rows: ExistingMemberRow[] = [];
+
+  for (let from = 0; ; from += pageSize) {
+    const { data, error } = await supabase
+      .from("members")
+      .select("player_tag, player_name, icon_id, role, trophies, rank_current, rank_highest")
+      .range(from, from + pageSize - 1);
+
+    if (error) throw error;
+    rows.push(...((data || []) as ExistingMemberRow[]));
+    if (!data || data.length < pageSize) break;
+  }
+
+  return rows;
+}
+
+async function fetchAllMemberHistory(): Promise<MemberHistoryRow[]> {
+  const pageSize = 1000;
+  const rows: MemberHistoryRow[] = [];
+
+  for (let from = 0; ; from += pageSize) {
+    const { data, error } = await supabase
+      .from("member_history")
+      .select("*")
+      .range(from, from + pageSize - 1);
+
+    if (error) throw error;
+    rows.push(...((data || []) as MemberHistoryRow[]));
+    if (!data || data.length < pageSize) break;
+  }
+
+  return rows;
+}
+
+async function fetchRecentActivity(playerTags: string[], sinceISO: string): Promise<RecentActivityRow[]> {
+  if (playerTags.length === 0) return [];
+
+  const pageSize = 1000;
+  const rows: RecentActivityRow[] = [];
+
+  for (let from = 0; ; from += pageSize) {
+    const { data, error } = await supabase
+      .from("activity_log")
+      .select("player_tag, trophy_change, activity_type, recorded_at")
+      .in("player_tag", playerTags)
+      .gte("recorded_at", sinceISO)
+      .range(from, from + pageSize - 1);
+
+    if (error) throw error;
+    rows.push(...((data || []) as RecentActivityRow[]));
+    if (!data || data.length < pageSize) break;
+  }
+
+  return rows;
+}
+
+async function fetchStoredBattlesForDailyStats(
+  playerTags: string[],
+  fromISO: string,
+  toISO: string
+): Promise<StoredBattleForStats[]> {
+  if (playerTags.length === 0) return [];
+
+  const pageSize = 1000;
+  const rows: StoredBattleForStats[] = [];
+
+  for (let from = 0; ; from += pageSize) {
+    const { data, error } = await supabase
+      .from("battle_history")
+      .select("player_tag, battle_time, result, trophy_change, is_star_player")
+      .in("player_tag", playerTags)
+      .gte("battle_time", fromISO)
+      .lt("battle_time", toISO)
+      .range(from, from + pageSize - 1);
+
+    if (error) throw error;
+    rows.push(...((data || []) as StoredBattleForStats[]));
+    if (!data || data.length < pageSize) break;
+  }
+
+  return rows;
+}
+
+async function fetchPreviousBrawlerSnapshots(playerTags: string[], sinceISO: string): Promise<PreviousBrawlerSnapshot[]> {
+  if (playerTags.length === 0) return [];
+
+  const pageSize = 1000;
+  const rows: PreviousBrawlerSnapshot[] = [];
+
+  for (let from = 0; ; from += pageSize) {
+    const { data, error } = await supabase
+      .from("brawler_snapshots")
+      .select("player_tag, brawler_id, power_level, recorded_at")
+      .in("player_tag", playerTags)
+      .gte("recorded_at", sinceISO)
+      .order("recorded_at", { ascending: true })
+      .range(from, from + pageSize - 1);
+
+    if (error) throw error;
+    rows.push(...((data || []) as PreviousBrawlerSnapshot[]));
+    if (!data || data.length < pageSize) break;
+  }
+
+  return rows;
 }
 
 // GET handler for Vercel Cron Jobs and GitHub Actions
@@ -47,9 +202,12 @@ export async function GET(request: NextRequest) {
 
 export async function POST(request: NextRequest) {
   try {
+    const crossOriginResponse = rejectCrossOriginRequest(request);
+    if (crossOriginResponse) return crossOriginResponse;
+
     // Get settings from request body
     const body = await request.json().catch(() => ({}));
-    return await syncClubData(body.clubTag, body.apiKey, body.initialSetup === true);
+    return await syncClubData(body.clubTag, undefined, body.initialSetup === true);
   } catch (error) {
     console.error("POST sync error:", error);
     const errorMessage = error instanceof Error ? error.message : "Unknown error";
@@ -94,7 +252,12 @@ async function syncClubData(providedClubTag?: string, providedApiKey?: string, i
           if (setting.key === "api_key" && !apiKey) apiKey = setting.value;
           if (setting.key === "discord_webhook") discordWebhook = setting.value;
           if (setting.key === "notifications_enabled") notificationsEnabled = setting.value === "true";
-          if (setting.key === "inactivity_threshold") inactivityThreshold = parseInt(setting.value) || 48;
+          if (setting.key === "inactivity_threshold") {
+            const parsedThreshold = Number.parseInt(setting.value, 10);
+            inactivityThreshold = Number.isFinite(parsedThreshold) && parsedThreshold > 0
+              ? parsedThreshold
+              : 48;
+          }
         }
       } else {
         console.log("No settings found in database");
@@ -124,19 +287,18 @@ async function syncClubData(providedClubTag?: string, providedApiKey?: string, i
     console.log("Using clubTag:", clubTag);
     console.log("API key configured: yes, length:", apiKey.length);
     
-    setApiKey(apiKey);
-    console.log("API key set, fetching club data...");
+    console.log("Fetching club data...");
 
     // inactivityThreshold already loaded from settings above (default 48 hours)
 
     // Fetch club data
-    const club = await getClub(clubTag);
-    const currentMemberTags = new Set(club.members.map((m) => m.tag));
+    const club = await getClub(clubTag, apiKey);
+    const currentMemberTagList = club.members.map((m) => m.tag);
+    const currentMemberTags = new Set(currentMemberTagList);
 
-    // Get existing members from database
-    const { data: existingMembers } = await supabase
-      .from("members")
-      .select("player_tag, player_name, icon_id, role, trophies, rank_current, rank_highest");
+    // Get existing rows from database. These tables can grow beyond PostgREST's
+    // default page size over time, so page them explicitly.
+    const existingMembers = await fetchAllExistingMembers();
 
     const existingMemberMap = new Map(
       existingMembers?.map((m) => [m.player_tag, m]) || []
@@ -144,19 +306,17 @@ async function syncClubData(providedClubTag?: string, providedApiKey?: string, i
 
     // Get last activity for each member (to check inactivity threshold)
     const thresholdTime = new Date(Date.now() - inactivityThreshold * 60 * 60 * 1000).toISOString();
-    const { data: recentActivity } = await supabase
-      .from("activity_log")
-      .select("player_tag, trophy_change, recorded_at")
-      .gte("recorded_at", thresholdTime)
-      .neq("trophy_change", 0);
+    const thresholdTimeMs = new Date(thresholdTime).getTime();
+    const recentActivity = await fetchRecentActivity(currentMemberTagList, thresholdTime);
     
     // Map of players who had activity in the threshold period
-    const activePlayersSet = new Set(recentActivity?.map((a) => a.player_tag) || []);
+    const activePlayersSet = new Set(
+      (recentActivity || [])
+        .filter((a) => (a.trophy_change || 0) !== 0 || a.activity_type !== "inactive")
+        .map((a) => a.player_tag)
+    );
 
-    // Get member history
-    const { data: memberHistory } = await supabase
-      .from("member_history")
-      .select("*");
+    const memberHistory = await fetchAllMemberHistory();
 
     const historyMap = new Map(
       memberHistory?.map((h) => [h.player_tag, h]) || []
@@ -217,9 +377,9 @@ async function syncClubData(providedClubTag?: string, providedApiKey?: string, i
             // RNT API: getPlayerRankedData
             // battleLog can 404 for new/private accounts — catch gracefully
             const [player, rankedData, battleLog] = await Promise.all([
-              getPlayer(member.tag),
+              getPlayer(member.tag, apiKey),
               getPlayerRankedData(member.tag),
-              getPlayerBattleLog(member.tag).catch((err) => {
+              getPlayerBattleLog(member.tag, apiKey).catch((err) => {
                 console.warn(`Battle log unavailable for ${member.tag}: ${err.message}`);
                 return { items: [] } as BrawlStarsBattleLog;
               }),
@@ -229,25 +389,28 @@ async function syncClubData(providedClubTag?: string, providedApiKey?: string, i
             const winRateData = calculateWinRateFromBattleLog(battleLog);
 
             const existingMember = existingMemberMap.get(member.tag);
-            const trophyChange = existingMember
+            const trophyChange = typeof existingMember?.trophies === "number"
               ? player.trophies - existingMember.trophies
               : 0;
 
-            // Determine activity type based on current trophy change
+            // Process battle log for storage and activity detection
+            const processedBattles = processBattleLog(member.tag, battleLog);
+            const hasRecentBattle = processedBattles.some(
+              (battle) => new Date(battle.battle_time).getTime() >= thresholdTimeMs
+            );
+
+            // Determine activity type based on current trophy change and battle recency
             let activityType = "inactive";
             if (Math.abs(trophyChange) >= 20) {
               activityType = "active";
-            } else if (Math.abs(trophyChange) > 0) {
+            } else if (Math.abs(trophyChange) > 0 || hasRecentBattle) {
               activityType = "minimal";
             }
             
             // Check if player had any activity in the threshold period
             // If they had activity before (in activePlayersSet) OR have activity now, they're active
             const hadRecentActivity = activePlayersSet.has(member.tag);
-            const isActive = hadRecentActivity || Math.abs(trophyChange) > 0;
-
-            // Process battle log for storage
-            const processedBattles = processBattleLog(member.tag, battleLog);
+            const isActive = hadRecentActivity || activityType !== "inactive";
 
             return {
               member,
@@ -541,20 +704,20 @@ async function syncClubData(providedClubTag?: string, providedApiKey?: string, i
     }
 
     if (allBattles.length > 0) {
-      // Insert battles, ignore duplicates
-      secondaryDbWrites.push(
-        supabase
-          .from("battle_history")
-          .upsert(allBattles, {
-            onConflict: "player_tag,battle_time",
-            ignoreDuplicates: false,
-          })
-          .then(({ error }) => {
-            if (error) console.error("Error storing battle history:", error);
-          })
-      );
+      // Store battles before rebuilding daily stats so repeat syncs aggregate from full history,
+      // not just the latest API battle-log window.
+      const { error: battleHistoryError } = await supabase
+        .from("battle_history")
+        .upsert(allBattles, {
+          onConflict: "player_tag,battle_time",
+          ignoreDuplicates: false,
+        });
 
-      // Build daily stats from battles
+      if (battleHistoryError) {
+        console.error("Error storing battle history:", battleHistoryError);
+      }
+
+      // Rebuild daily stats for affected player/date pairs from stored battle history.
       const dailyStatsMap = new Map<string, {
         player_tag: string;
         date: string;
@@ -566,30 +729,53 @@ async function syncClubData(providedClubTag?: string, providedApiKey?: string, i
         trophies_lost: number;
       }>();
 
-      for (const battle of allBattles) {
-        const date = battle.battle_time.slice(0, 10); // YYYY-MM-DD
-        const key = `${battle.player_tag}_${date}`;
-        
-        if (!dailyStatsMap.has(key)) {
-          dailyStatsMap.set(key, {
-            player_tag: battle.player_tag,
-            date,
-            battles: 0,
-            wins: 0,
-            losses: 0,
-            star_player: 0,
-            trophies_gained: 0,
-            trophies_lost: 0,
-          });
+      if (!battleHistoryError) {
+        const affectedPlayerTags = [...new Set(allBattles.map((battle) => battle.player_tag))];
+        const affectedKeys = new Set(
+          allBattles.map((battle) => `${battle.player_tag}_${battle.battle_time.slice(0, 10)}`)
+        );
+        const affectedDates = [...new Set(allBattles.map((battle) => battle.battle_time.slice(0, 10)))].sort();
+        const firstDate = affectedDates[0];
+        const lastDate = affectedDates[affectedDates.length - 1];
+        const rangeEnd = new Date(`${lastDate}T00:00:00.000Z`);
+        rangeEnd.setUTCDate(rangeEnd.getUTCDate() + 1);
+
+        try {
+          const storedBattles = await fetchStoredBattlesForDailyStats(
+            affectedPlayerTags,
+            `${firstDate}T00:00:00.000Z`,
+            rangeEnd.toISOString()
+          );
+
+          for (const battle of storedBattles) {
+            const date = String(battle.battle_time).slice(0, 10);
+            const key = `${battle.player_tag}_${date}`;
+            if (!affectedKeys.has(key)) continue;
+
+            if (!dailyStatsMap.has(key)) {
+              dailyStatsMap.set(key, {
+                player_tag: battle.player_tag,
+                date,
+                battles: 0,
+                wins: 0,
+                losses: 0,
+                star_player: 0,
+                trophies_gained: 0,
+                trophies_lost: 0,
+              });
+            }
+
+            const stats = dailyStatsMap.get(key)!;
+            stats.battles++;
+            if (battle.result === "victory") stats.wins++;
+            if (battle.result === "defeat") stats.losses++;
+            if (battle.is_star_player) stats.star_player++;
+            if ((battle.trophy_change || 0) > 0) stats.trophies_gained += battle.trophy_change || 0;
+            if ((battle.trophy_change || 0) < 0) stats.trophies_lost += Math.abs(battle.trophy_change || 0);
+          }
+        } catch (storedBattlesError) {
+          console.error("Error loading stored battles for daily stats:", storedBattlesError);
         }
-        
-        const stats = dailyStatsMap.get(key)!;
-        stats.battles++;
-        if (battle.result === "victory") stats.wins++;
-        if (battle.result === "defeat") stats.losses++;
-        if (battle.is_star_player) stats.star_player++;
-        if (battle.trophy_change > 0) stats.trophies_gained += battle.trophy_change;
-        if (battle.trophy_change < 0) stats.trophies_lost += Math.abs(battle.trophy_change);
       }
 
       const dailyStatsArray = Array.from(dailyStatsMap.values());
@@ -612,21 +798,34 @@ async function syncClubData(providedClubTag?: string, providedApiKey?: string, i
       yesterday.setDate(yesterday.getDate() - 1);
       const yesterdayStr = yesterday.toISOString().slice(0, 10);
 
-      const { data: allPrevSnapshots } = await supabase
-        .from("brawler_snapshots")
-        .select("player_tag, brawler_id, power_level")
-        .in("player_tag", playerTags)
-        .gte("recorded_at", yesterdayStr);
+      const [allPrevSnapshots, existingTrackingRes] = await Promise.all([
+        fetchPreviousBrawlerSnapshots(playerTags, yesterdayStr).catch((prevSnapshotsError) => {
+          console.error("Error loading previous brawler snapshots:", prevSnapshotsError);
+          return [] as PreviousBrawlerSnapshot[];
+        }),
+        supabase
+          .from("player_tracking")
+          .select("player_tag, power_ups, unlocks")
+          .in("player_tag", playerTags),
+      ]);
 
       const prevByPlayer = new Map<string, Map<number, number>>();
       const playersWithPrevData = new Set<string>();
-      for (const snap of allPrevSnapshots || []) {
+      for (const snap of allPrevSnapshots) {
         playersWithPrevData.add(snap.player_tag);
         if (!prevByPlayer.has(snap.player_tag)) {
           prevByPlayer.set(snap.player_tag, new Map());
         }
         prevByPlayer.get(snap.player_tag)!.set(snap.brawler_id, snap.power_level);
       }
+
+      if (existingTrackingRes.error) {
+        console.error("Error loading existing player tracking:", existingTrackingRes.error);
+      }
+      const canUpdateTrackingTotals = !existingTrackingRes.error;
+      const trackingTotalsByPlayer = new Map(
+        (existingTrackingRes.data || []).map((row) => [row.player_tag, row])
+      );
 
       const trackingUpdates: Array<{ player_tag: string; power_ups: number; unlocks: number; last_updated: string }> = [];
 
@@ -647,11 +846,12 @@ async function syncClubData(providedClubTag?: string, providedApiKey?: string, i
           }
         }
         
-        if (powerUps > 0 || unlocks > 0) {
+        if ((powerUps > 0 || unlocks > 0) && canUpdateTrackingTotals) {
+          const existingTracking = trackingTotalsByPlayer.get(playerTag);
           trackingUpdates.push({
             player_tag: playerTag,
-            power_ups: powerUps,
-            unlocks: unlocks,
+            power_ups: (existingTracking?.power_ups || 0) + powerUps,
+            unlocks: (existingTracking?.unlocks || 0) + unlocks,
             last_updated: new Date().toISOString(),
           });
         }
@@ -666,14 +866,17 @@ async function syncClubData(providedClubTag?: string, providedApiKey?: string, i
       // Delete today's existing snapshots for these players, then insert fresh ones
       // (avoids the functional unique constraint issue with recorded_at::date)
       const snapshotPlayerTags = [...new Set(brawlerSnapshots.map(s => s.player_tag))];
-      const todayStr = new Date().toISOString().slice(0, 10);
+      const today = new Date();
+      const todayStart = new Date(Date.UTC(today.getUTCFullYear(), today.getUTCMonth(), today.getUTCDate()));
+      const tomorrowStart = new Date(todayStart);
+      tomorrowStart.setUTCDate(tomorrowStart.getUTCDate() + 1);
       secondaryDbWrites.push(
         supabase
           .from("brawler_snapshots")
           .delete()
           .in("player_tag", snapshotPlayerTags)
-          .gte("recorded_at", todayStr)
-          .lt("recorded_at", todayStr + "T23:59:59.999Z")
+          .gte("recorded_at", todayStart.toISOString())
+          .lt("recorded_at", tomorrowStart.toISOString())
           .then(() => 
             supabase
               .from("brawler_snapshots")

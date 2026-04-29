@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import Image from "next/image";
 import { Member } from "@/types/database";
 import { formatDateTime, formatNumber, formatRelativeTime, getActivityEmoji, getRankColor } from "@/lib/utils";
 import { getFallbackInitial, getProfileIconUrl, getRankIconUrl } from "@/lib/brawl-assets";
@@ -43,11 +44,12 @@ function ProfileAvatar({ playerName, iconId }: { playerName: string; iconId: num
   }
 
   return (
-    <img
+    <Image
       src={iconUrl}
       alt={`${playerName} icon`}
+      width={28}
+      height={28}
       className="h-7 w-7 rounded-md border border-border/70 bg-muted/30 shadow-sm"
-      loading="lazy"
       onError={() => setImageError(true)}
     />
   );
@@ -68,11 +70,12 @@ function RankIcon({ rank }: { rank: string | null }) {
 
   if (rankIconUrl) {
     return (
-      <img
+      <Image
         src={rankIconUrl}
         alt={rank || "Rank"}
+        width={20}
+        height={20}
         className="h-5 w-5 object-contain"
-        loading="lazy"
         onError={() => setImageError(true)}
       />
     );
@@ -91,9 +94,11 @@ export function MembersTable({ members, pageSize = 10, showPagination = true }: 
   const [copiedTag, setCopiedTag] = useState<string | null>(null);
   const [currentPage, setCurrentPage] = useState(1);
 
-  const totalPages = Math.max(1, Math.ceil(members.length / pageSize));
-  const startIndex = (currentPage - 1) * pageSize;
-  const paginatedMembers = showPagination ? members.slice(startIndex, startIndex + pageSize) : members;
+  const normalizedPageSize = Math.max(1, pageSize);
+  const totalPages = Math.max(1, Math.ceil(members.length / normalizedPageSize));
+  const safeCurrentPage = Math.min(currentPage, totalPages);
+  const startIndex = (safeCurrentPage - 1) * normalizedPageSize;
+  const paginatedMembers = showPagination ? members.slice(startIndex, startIndex + normalizedPageSize) : members;
 
   const copyToClipboard = async (text: string, tag: string) => {
     try {
@@ -138,7 +143,14 @@ export function MembersTable({ members, pageSize = 10, showPagination = true }: 
           </TableRow>
         </TableHeader>
         <TableBody>
-        {paginatedMembers.map((member, index) => (
+        {paginatedMembers.length === 0 ? (
+          <TableRow>
+            <TableCell colSpan={11} className="py-10 text-center text-muted-foreground">
+              No members found
+            </TableCell>
+          </TableRow>
+        ) : (
+          paginatedMembers.map((member, index) => (
           <TableRow key={member.player_tag}>
             <TableCell className="font-medium">{startIndex + index + 1}</TableCell>
             <TableCell>
@@ -157,6 +169,7 @@ export function MembersTable({ members, pageSize = 10, showPagination = true }: 
                   onClick={() => copyToClipboard(member.player_tag, member.player_tag)}
                   className="p-1 rounded hover:bg-muted transition-colors hidden sm:block"
                   title="Copy player tag"
+                  aria-label={`Copy tag ${member.player_tag}`}
                 >
                   {copiedTag === member.player_tag ? (
                     <Check className="h-3.5 w-3.5 text-green-500" />
@@ -232,7 +245,8 @@ export function MembersTable({ members, pageSize = 10, showPagination = true }: 
               {getActivityEmoji(member.activity_status || (member.is_active ? "minimal" : "inactive"))}
             </TableCell>
           </TableRow>
-        ))}
+          ))
+        )}
       </TableBody>
     </Table>
     </div>
@@ -241,20 +255,22 @@ export function MembersTable({ members, pageSize = 10, showPagination = true }: 
           <Button
             variant="outline"
             size="sm"
-            onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
-            disabled={currentPage === 1}
+            onClick={() => setCurrentPage(Math.max(1, safeCurrentPage - 1))}
+            disabled={safeCurrentPage === 1}
+            aria-label="Previous members page"
           >
             <ChevronLeft className="h-4 w-4" />
             Prev
           </Button>
           <span className="text-sm font-medium px-2">
-            {currentPage} / {totalPages}
+            {safeCurrentPage} / {totalPages}
           </span>
           <Button
             variant="outline"
             size="sm"
-            onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
-            disabled={currentPage === totalPages}
+            onClick={() => setCurrentPage(Math.min(totalPages, safeCurrentPage + 1))}
+            disabled={safeCurrentPage === totalPages}
+            aria-label="Next members page"
           >
             Next
             <ChevronRight className="h-4 w-4" />
