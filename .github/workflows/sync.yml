@@ -1,25 +1,49 @@
 name: Auto Sync Club Data
 
 on:
-  # Schedule disabled — now using cron-job.org for reliable 30-min sync
-  # schedule:
-  #   - cron: '7,37 * * * *'
-  workflow_dispatch: # Allow manual trigger from GitHub if needed
+  schedule:
+    - cron: "7,37 * * * *"
+  workflow_dispatch:
 
 jobs:
   sync:
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - name: Trigger Sync
+        env:
+          CRON_SECRET: ${{ secrets.CRON_SECRET }}
+          VERCEL_APP_URL: ${{ secrets.VERCEL_APP_URL }}
         run: |
-          echo "Triggering sync at ${{ secrets.VERCEL_APP_URL }}/api/sync"
-          RESPONSE=$(curl -s -w "\n%{http_code}" -X GET "${{ secrets.VERCEL_APP_URL }}/api/sync")
-          HTTP_CODE=$(echo "$RESPONSE" | tail -n1)
-          BODY=$(echo "$RESPONSE" | head -n -1)
-          echo "Response: $BODY"
+          if [ -z "$CRON_SECRET" ]; then
+            echo "Missing GitHub secret: CRON_SECRET"
+            exit 1
+          fi
+
+          APP_URL="${VERCEL_APP_URL:-https://brawlstatz.vercel.app}"
+          APP_URL="${APP_URL%/}"
+          SYNC_URL="$APP_URL/api/sync"
+
+          echo "Triggering sync at $SYNC_URL"
+          HTTP_CODE=$(curl \
+            --silent \
+            --show-error \
+            --max-time 300 \
+            --retry 2 \
+            --retry-delay 10 \
+            --output response.json \
+            --write-out "%{http_code}" \
+            -X GET \
+            -H "Authorization: Bearer $CRON_SECRET" \
+            "$SYNC_URL")
+
+          echo "Response:"
+          cat response.json
           echo "HTTP Code: $HTTP_CODE"
+
           if [ "$HTTP_CODE" -ge 200 ] && [ "$HTTP_CODE" -lt 300 ]; then
-            echo "✅ Sync successful!"
+            echo "Sync successful."
           else
-            echo "⚠️ Sync returned non-2xx status, but workflow continues"
+            echo "Sync failed."
+            exit 1
           fi

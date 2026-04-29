@@ -114,22 +114,25 @@ Open [http://localhost:3000](http://localhost:3000) to see the app.
 4. Add environment variables
 5. Deploy!
 
-### Setup Auto-Sync (Vercel Cron)
+### Setup Auto-Sync
 
-Create `vercel.json`:
+The app supports two automatic sync paths:
 
-```json
-{
-  "crons": [
-    {
-      "path": "/api/sync",
-      "schedule": "0 */4 * * *"
-    }
-  ]
-}
+1. **Vercel Cron** runs `/api/sync` once per day from `vercel.json`. This is useful as a backup on the Hobby plan, where Vercel cron jobs are limited to daily runs.
+2. **GitHub Actions** runs `.github/workflows/sync.yml` every 30 minutes. This is the recommended frequent sync path for this app.
+
+For GitHub Actions, add these repository secrets in GitHub:
+
+- `CRON_SECRET` - must be exactly the same value as the Vercel `CRON_SECRET`
+- `VERCEL_APP_URL` - your production URL, for example `https://brawlstatz.vercel.app`
+
+The workflow calls `/api/sync` with:
+
+```http
+Authorization: Bearer <CRON_SECRET>
 ```
 
-This syncs data every 4 hours automatically.
+The in-app refresh interval is only a browser/admin fallback. It works while an admin has the app open, but production auto-sync should rely on GitHub Actions or another external scheduler.
 
 ## 📁 Project Structure
 
