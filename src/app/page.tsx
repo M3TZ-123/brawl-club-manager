@@ -327,17 +327,17 @@ export default function DashboardPage() {
                   <CardContent className="pt-4 pb-3">
                     <div className="flex items-center gap-2 mb-2">
                       <Trophy className="h-4 w-4 text-yellow-500" />
-                      <span className="text-xs font-medium text-muted-foreground">Mega Pig Wins</span>
+                      <span className="text-xs font-medium text-muted-foreground">Mega Pig Battles</span>
                     </div>
-                    <p className="text-2xl font-bold">{insights.megaPig.totalWins.toLocaleString()}W</p>
+                    <p className="text-2xl font-bold">{insights.megaPig.totalWins.toLocaleString()} wins</p>
                     {insights.megaPig.isTracked ? (
                       <p className="text-xs text-muted-foreground mt-1">
-                        {insights.megaPig.totalBattles.toLocaleString()} tracked battles
+                        Out of {insights.megaPig.totalBattles.toLocaleString()} member battles this week
                         {insights.megaPig.rankReached ? ` · Rank ${insights.megaPig.rankReached}` : ""}
                       </p>
                     ) : (
                       <p className="text-xs text-muted-foreground mt-1">
-                        No Mega Pig battles detected this week
+                        No Mega Pig battles found this week
                       </p>
                     )}
                   </CardContent>
@@ -355,7 +355,7 @@ export default function DashboardPage() {
                       insights.winRate >= 45 ? "text-foreground" : "text-red-500"
                     }`}>{insights.winRate}%</p>
                     <p className="text-xs text-muted-foreground mt-1">
-                      {insights.totalWins.toLocaleString()}W / {insights.totalBattlesThisWeek.toLocaleString()} battles
+                      {insights.totalWins.toLocaleString()} wins from {insights.totalBattlesThisWeek.toLocaleString()} battles this week
                     </p>
                   </CardContent>
                 </Card>
@@ -371,15 +371,15 @@ export default function DashboardPage() {
                     >
                       <div className="flex items-center gap-2 mb-2">
                         <UserX className="h-4 w-4 text-red-500" />
-                        <span className="text-xs font-medium text-muted-foreground">Kick List</span>
+                        <span className="text-xs font-medium text-muted-foreground">Inactive Members</span>
                       </div>
                       <p className="text-2xl font-bold">{insights.kickCount}</p>
                       {insights.kickCount > 0 ? (
                         <p className="text-xs text-muted-foreground mt-1">
-                          Click to jump to inactive members
+                          Members with no recent activity
                         </p>
                       ) : (
-                        <p className="text-xs text-green-500 mt-1 font-medium">All members active</p>
+                        <p className="text-xs text-green-500 mt-1 font-medium">No inactive members</p>
                       )}
                     </button>
                   </CardContent>
@@ -396,7 +396,7 @@ export default function DashboardPage() {
                       ) : (
                         <Minus className="h-4 w-4 text-yellow-500" />
                       )}
-                      <span className="text-xs font-medium text-muted-foreground">Activity Trend</span>
+                      <span className="text-xs font-medium text-muted-foreground">Battle Activity</span>
                     </div>
                     <p className={`text-2xl font-bold ${
                       insights.trendDirection === "up" ? "text-green-500" :
@@ -405,7 +405,7 @@ export default function DashboardPage() {
                       {insights.trendDiff > 0 ? "+" : ""}{insights.trendDiff}%
                     </p>
                     <p className="text-xs text-muted-foreground mt-1">
-                      {insights.thisWeekTotal.toLocaleString()} vs {insights.prevWeekTotal.toLocaleString()} last week
+                      {insights.thisWeekTotal.toLocaleString()} battles vs {insights.prevWeekTotal.toLocaleString()} previous week
                     </p>
                   </CardContent>
                 </Card>
