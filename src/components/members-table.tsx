@@ -143,12 +143,12 @@ export const MembersTable = memo(function MembersTable({ members, pageSize = 10,
 
   return (
     <>
-    <div className="overflow-x-auto -mx-4 sm:mx-0">
-      <Table className="min-w-[600px] sm:min-w-full">
+    <div className="w-full overflow-x-auto">
+      <Table className="min-w-[1120px]">
         <TableHeader>
           <TableRow>
             <TableHead className="w-10 sm:w-12">#</TableHead>
-            <TableHead>Player</TableHead>
+            <TableHead className="w-[240px]">Player</TableHead>
             <TableHead className="hidden sm:table-cell">Role</TableHead>
             <TableHead className="text-right">Trophies</TableHead>
             <TableHead className="hidden lg:table-cell text-right">Highest</TableHead>
@@ -171,14 +171,14 @@ export const MembersTable = memo(function MembersTable({ members, pageSize = 10,
           paginatedMembers.map((member, index) => (
           <TableRow key={member.player_tag}>
             <TableCell className="font-medium">{startIndex + index + 1}</TableCell>
-            <TableCell>
+            <TableCell className="w-[240px]">
               <div className="flex items-center gap-2 sm:gap-2">
                 <ProfileAvatar playerName={member.player_name} iconId={member.icon_id} />
                 <Link
                   href={`/members/${encodeURIComponent(member.player_tag)}`}
                   className="flex flex-col hover:underline min-w-0"
                 >
-                  <span className="font-medium truncate max-w-[100px] sm:max-w-none">{member.player_name}</span>
+                  <span className="max-w-[170px] truncate font-medium">{member.player_name}</span>
                   <span className="text-xs text-muted-foreground hidden sm:block">
                     {member.player_tag}
                   </span>

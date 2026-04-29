@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabase-admin";
 import { ClubEvent, Member } from "@/types/database";
+import { appendMemberActivityMetrics } from "@/lib/member-activity-metrics";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -54,10 +55,12 @@ export async function GET() {
       avgTrophies: members.length > 0 ? Math.round(totalTrophies / members.length) : 0,
     };
 
+    const topMembers = await appendMemberActivityMetrics(members.slice(0, 10));
+
     return NextResponse.json(
       {
         summary,
-        topMembers: members.slice(0, 10),
+        topMembers,
         recentEvents: (eventsRes.data || []) as ClubEvent[],
         generatedAt: new Date().toISOString(),
       },
