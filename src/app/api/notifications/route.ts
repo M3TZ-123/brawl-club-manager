@@ -2,6 +2,18 @@ import { NextRequest, NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabase-admin";
 import { rejectUnauthorizedAdminMutation } from "@/lib/admin-auth";
 
+const ALLOWED_NOTIFICATION_TYPES = new Set([
+  "join",
+  "leave",
+  "inactive",
+  "promotion",
+  "demotion",
+  "role_change",
+  "name_change",
+  "sync_error",
+  "milestone",
+]);
+
 function isMissingNotificationsTable(error: unknown): boolean {
   if (!error || typeof error !== "object") return false;
   const maybeError = error as { code?: string; message?: string };
@@ -17,6 +29,26 @@ function parseBoundedInt(value: string | null, fallback: number, min: number, ma
   return Math.min(Math.max(parsed, min), max);
 }
 
+function notificationResponse(body: unknown, init?: ResponseInit) {
+  const headers = new Headers(init?.headers);
+  headers.set("Cache-Control", "no-store");
+
+  return NextResponse.json(body, {
+    ...init,
+    headers,
+  });
+}
+
+async function getUnreadCount() {
+  const { count, error } = await supabaseAdmin
+    .from("notifications")
+    .select("*", { count: "exact", head: true })
+    .eq("is_read", false);
+
+  if (error) throw error;
+  return count || 0;
+}
+
 // GET — Fetch notifications (with optional ?unreadOnly=true and ?limit=50)
 export async function GET(request: NextRequest) {
   try {
@@ -24,13 +56,26 @@ export async function GET(request: NextRequest) {
     const unreadOnly = searchParams.get("unreadOnly") === "true";
     const limit = parseBoundedInt(searchParams.get("limit"), 50, 1, 100);
     const typesParam = searchParams.get("types");
-    const types = typesParam
-      ? typesParam.split(",").map((t) => t.trim()).filter(Boolean)
+    const hasTypeFilter = typesParam != null && typesParam.trim().length > 0;
+    const types = hasTypeFilter
+      ? [...new Set(
+          typesParam
+            .split(",")
+            .map((t) => t.trim())
+            .filter((type) => ALLOWED_NOTIFICATION_TYPES.has(type))
+        )].slice(0, ALLOWED_NOTIFICATION_TYPES.size)
       : [];
+
+    if (hasTypeFilter && types.length === 0) {
+      return notificationResponse({
+        notifications: [],
+        unreadCount: await getUnreadCount(),
+      });
+    }
 
     let query = supabaseAdmin
       .from("notifications")
-      .select("*")
+      .select("id, type, title, message, player_tag, player_name, is_read, created_at")
       .order("created_at", { ascending: false })
       .limit(limit);
 
@@ -44,33 +89,26 @@ export async function GET(request: NextRequest) {
 
     const [notificationsRes, unreadCountRes] = await Promise.all([
       query,
-      supabaseAdmin
-        .from("notifications")
-        .select("*", { count: "exact", head: true })
-        .eq("is_read", false),
+      getUnreadCount(),
     ]);
 
     if (notificationsRes.error) {
       if (isMissingNotificationsTable(notificationsRes.error)) {
-        return NextResponse.json({ notifications: [], unreadCount: 0, tableMissing: true });
+        return notificationResponse({ notifications: [], unreadCount: 0, tableMissing: true });
       }
       throw notificationsRes.error;
     }
 
-    if (unreadCountRes.error) {
-      if (isMissingNotificationsTable(unreadCountRes.error)) {
-        return NextResponse.json({ notifications: notificationsRes.data || [], unreadCount: 0, tableMissing: true });
-      }
-      throw unreadCountRes.error;
-    }
-
-    return NextResponse.json({
+    return notificationResponse({
       notifications: notificationsRes.data || [],
-      unreadCount: unreadCountRes.count || 0,
+      unreadCount: unreadCountRes,
     });
   } catch (error) {
+    if (isMissingNotificationsTable(error)) {
+      return notificationResponse({ notifications: [], unreadCount: 0, tableMissing: true });
+    }
     console.error("Error fetching notifications:", error);
-    return NextResponse.json(
+    return notificationResponse(
       { error: "Failed to fetch notifications" },
       { status: 500 }
     );
@@ -93,7 +131,7 @@ export async function PATCH(request: NextRequest) {
         .eq("is_read", false);
       if (error) {
         if (isMissingNotificationsTable(error)) {
-          return NextResponse.json({ success: true, tableMissing: true });
+          return notificationResponse({ success: true, unreadCount: 0, tableMissing: true });
         }
         throw error;
       }
@@ -104,7 +142,7 @@ export async function PATCH(request: NextRequest) {
         .slice(0, 100);
 
       if (ids.length === 0) {
-        return NextResponse.json(
+        return notificationResponse(
           { error: "Provide valid notification ids" },
           { status: 400 }
         );
@@ -116,21 +154,24 @@ export async function PATCH(request: NextRequest) {
         .in("id", ids);
       if (error) {
         if (isMissingNotificationsTable(error)) {
-          return NextResponse.json({ success: true, tableMissing: true });
+          return notificationResponse({ success: true, unreadCount: 0, tableMissing: true });
         }
         throw error;
       }
     } else {
-      return NextResponse.json(
+      return notificationResponse(
         { error: "Provide { all: true } or { ids: [1,2,3] }" },
         { status: 400 }
       );
     }
 
-    return NextResponse.json({ success: true });
+    return notificationResponse({ success: true, unreadCount: await getUnreadCount() });
   } catch (error) {
+    if (isMissingNotificationsTable(error)) {
+      return notificationResponse({ success: true, unreadCount: 0, tableMissing: true });
+    }
     console.error("Error updating notifications:", error);
-    return NextResponse.json(
+    return notificationResponse(
       { error: "Failed to update notifications" },
       { status: 500 }
     );
@@ -151,14 +192,17 @@ export async function DELETE(request: NextRequest) {
 
     if (error) {
       if (isMissingNotificationsTable(error)) {
-        return NextResponse.json({ success: true, tableMissing: true });
+        return notificationResponse({ success: true, unreadCount: 0, tableMissing: true });
       }
       throw error;
     }
-    return NextResponse.json({ success: true });
+    return notificationResponse({ success: true, unreadCount: await getUnreadCount() });
   } catch (error) {
+    if (isMissingNotificationsTable(error)) {
+      return notificationResponse({ success: true, unreadCount: 0, tableMissing: true });
+    }
     console.error("Error deleting notifications:", error);
-    return NextResponse.json(
+    return notificationResponse(
       { error: "Failed to delete notifications" },
       { status: 500 }
     );

@@ -912,7 +912,8 @@ async function syncClubData(providedClubTag?: string, providedApiKey?: string, i
         }),
     ]);
 
-    // Insert DB notifications for the notification panel
+    // Insert DB notifications for the notification panel when alerts are enabled.
+    if (notificationsEnabled) {
       const notifRows: Array<{
         type: string;
         title: string;
@@ -1045,6 +1046,7 @@ async function syncClubData(providedClubTag?: string, providedApiKey?: string, i
           else console.log(`Inserted ${notifRowsToInsert.length} notification(s) into DB`);
         }
       }
+    }
 
     // Send Discord webhook notifications for joins/leaves/inactivity
     if (notificationsEnabled && discordWebhook && discordWebhook.startsWith("https://discord.com/api/webhooks/")) {

@@ -31,6 +31,11 @@ interface Notification {
   created_at: string;
 }
 
+type NotificationMutationResponse = {
+  unreadCount?: number;
+  error?: string;
+};
+
 function getDateHeading(date: Date) {
   const today = new Date();
   const yesterday = new Date();
@@ -82,22 +87,33 @@ export default function NotificationsPage() {
       loadNotifications(true);
     };
     window.addEventListener("club-data-updated", handleClubDataUpdated);
-    return () => window.removeEventListener("club-data-updated", handleClubDataUpdated);
+    window.addEventListener("notifications-updated", handleClubDataUpdated);
+    return () => {
+      window.removeEventListener("club-data-updated", handleClubDataUpdated);
+      window.removeEventListener("notifications-updated", handleClubDataUpdated);
+    };
   }, [loadNotifications]);
 
   const markAsRead = async (id: number) => {
     if (!isAdmin) return;
     try {
-      await fetch("/api/notifications", {
+      const response = await fetch("/api/notifications", {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ ids: [id] }),
       });
+      const data = await response.json().catch(() => ({})) as NotificationMutationResponse;
+      if (!response.ok) {
+        throw new Error(data.error || "Failed to mark notification as read");
+      }
       invalidateJsonCache("/api/notifications");
       setNotifications((prev) =>
         prev.map((n) => (n.id === id ? { ...n, is_read: true } : n))
       );
-      setUnreadCount((c) => Math.max(0, c - 1));
+      setUnreadCount((c) =>
+        typeof data.unreadCount === "number" ? data.unreadCount : Math.max(0, c - 1)
+      );
+      window.dispatchEvent(new CustomEvent("notifications-updated"));
     } catch (error) {
       console.error("Error marking as read:", error);
     }
@@ -106,14 +122,19 @@ export default function NotificationsPage() {
   const markAllAsRead = async () => {
     if (!isAdmin) return;
     try {
-      await fetch("/api/notifications", {
+      const response = await fetch("/api/notifications", {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ all: true }),
       });
+      const data = await response.json().catch(() => ({})) as NotificationMutationResponse;
+      if (!response.ok) {
+        throw new Error(data.error || "Failed to mark all notifications as read");
+      }
       invalidateJsonCache("/api/notifications");
       setNotifications((prev) => prev.map((n) => ({ ...n, is_read: true })));
-      setUnreadCount(0);
+      setUnreadCount(typeof data.unreadCount === "number" ? data.unreadCount : 0);
+      window.dispatchEvent(new CustomEvent("notifications-updated"));
     } catch (error) {
       console.error("Error marking all as read:", error);
     }

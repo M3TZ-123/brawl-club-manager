@@ -61,7 +61,7 @@ export function useSidebarContext() {
 
 function SimpleSidebar() {
   const pathname = usePathname();
-  const { clubName, lastSyncTime, isSyncing, clubTag, apiKeyConfigured, refreshInterval } = useAppStore();
+  const { clubName, lastSyncTime, isSyncing, clubTag, apiKeyConfigured, refreshInterval, notificationsEnabled } = useAppStore();
   const { isOpen, close } = useSidebarContext();
   const { isAdmin, isLoading: isAdminLoading } = useAdminSession();
   const autoSyncIntervalRef = useRef<NodeJS.Timeout | null>(null);
@@ -108,7 +108,7 @@ function SimpleSidebar() {
         window.dispatchEvent(new CustomEvent("club-data-updated", {
           detail: { changes: data.changes, syncTime },
         }));
-        if (hasChanges) {
+        if (hasChanges && notificationsEnabled) {
           // Show browser notification if permitted
           if (Notification.permission === "granted") {
             const joins = data.changes?.joins?.length || 0;
@@ -129,7 +129,7 @@ function SimpleSidebar() {
     } finally {
       useAppStore.getState().setIsSyncing(false);
     }
-  }, [apiKeyConfigured, clubTag, isAdmin]);
+  }, [apiKeyConfigured, clubTag, isAdmin, notificationsEnabled]);
 
   // Auto-sync based on refresh interval
   useEffect(() => {
@@ -261,6 +261,11 @@ interface NotificationItem {
   created_at: string;
 }
 
+type NotificationMutationResponse = {
+  unreadCount?: number;
+  error?: string;
+};
+
 function SimpleHeader() {
   const { clubName, theme, setTheme } = useAppStore();
   const { toggle } = useSidebarContext();
@@ -289,7 +294,11 @@ function SimpleHeader() {
   useEffect(() => {
     const handleUpdate = () => loadNotifications(true);
     window.addEventListener("club-data-updated", handleUpdate);
-    return () => window.removeEventListener("club-data-updated", handleUpdate);
+    window.addEventListener("notifications-updated", handleUpdate);
+    return () => {
+      window.removeEventListener("club-data-updated", handleUpdate);
+      window.removeEventListener("notifications-updated", handleUpdate);
+    };
   }, [loadNotifications]);
 
   useEffect(() => {
@@ -323,16 +332,23 @@ function SimpleHeader() {
   const markAsRead = async (id: number) => {
     if (!isAdmin) return;
     try {
-      await fetch("/api/notifications", {
+      const response = await fetch("/api/notifications", {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ ids: [id] }),
       });
+      const data = await response.json().catch(() => ({})) as NotificationMutationResponse;
+      if (!response.ok) {
+        throw new Error(data.error || "Failed to mark notification as read");
+      }
       invalidateJsonCache("/api/notifications");
       setNotifications((prev) =>
         prev.map((n) => (n.id === id ? { ...n, is_read: true } : n))
       );
-      setUnreadCount((c) => Math.max(0, c - 1));
+      setUnreadCount((c) =>
+        typeof data.unreadCount === "number" ? data.unreadCount : Math.max(0, c - 1)
+      );
+      window.dispatchEvent(new CustomEvent("notifications-updated"));
     } catch (error) {
       console.error("Error marking notification as read:", error);
     }
@@ -341,14 +357,19 @@ function SimpleHeader() {
   const markAllAsRead = async () => {
     if (!isAdmin) return;
     try {
-      await fetch("/api/notifications", {
+      const response = await fetch("/api/notifications", {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ all: true }),
       });
+      const data = await response.json().catch(() => ({})) as NotificationMutationResponse;
+      if (!response.ok) {
+        throw new Error(data.error || "Failed to mark all notifications as read");
+      }
       invalidateJsonCache("/api/notifications");
       setNotifications((prev) => prev.map((n) => ({ ...n, is_read: true })));
-      setUnreadCount(0);
+      setUnreadCount(typeof data.unreadCount === "number" ? data.unreadCount : 0);
+      window.dispatchEvent(new CustomEvent("notifications-updated"));
     } catch (error) {
       console.error("Error marking all as read:", error);
     }
