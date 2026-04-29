@@ -11,6 +11,16 @@
 			],
 			"isBackground": true,
 			"group": "build"
+		},
+		{
+			"label": "Run Next.js dev server",
+			"type": "shell",
+			"command": "npm",
+			"args": [
+				"run",
+				"dev"
+			],
+			"isBackground": true
 		}
 	]
 }
