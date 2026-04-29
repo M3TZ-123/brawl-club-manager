@@ -1,8 +1,9 @@
 "use client";
 
-import { ReactNode, useEffect, useState } from "react";
+import { ReactNode, useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { cn } from "@/lib/utils";
+import { fetchJsonCached, invalidateJsonCache } from "@/lib/client-data-cache";
 import { LayoutWrapper } from "@/components/layout-wrapper";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -29,6 +30,21 @@ interface Notification {
   created_at: string;
 }
 
+function getDateHeading(date: Date) {
+  const today = new Date();
+  const yesterday = new Date();
+  yesterday.setDate(today.getDate() - 1);
+
+  if (date.toDateString() === today.toDateString()) return "Today";
+  if (date.toDateString() === yesterday.toDateString()) return "Yesterday";
+
+  return new Intl.DateTimeFormat("en-US", {
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+  }).format(date);
+}
+
 export default function NotificationsPage() {
   const [notifications, setNotifications] = useState<Notification[]>([]);
   const [unreadCount, setUnreadCount] = useState(0);
@@ -36,25 +52,36 @@ export default function NotificationsPage() {
   const [filter, setFilter] = useState<"all" | "unread">("all");
   const [category, setCategory] = useState<"all" | "join" | "leave" | "inactive" | "promotion" | "name_change">("all");
 
-  useEffect(() => {
-    loadNotifications();
-  }, []);
-
-  const loadNotifications = async () => {
+  const loadNotifications = useCallback(async (force = false) => {
     try {
       setLoading(true);
-      const res = await fetch("/api/notifications?limit=100");
-      if (res.ok) {
-        const data = await res.json();
-        setNotifications(data.notifications || []);
-        setUnreadCount(data.unreadCount || 0);
-      }
+      const data = await fetchJsonCached<{
+        notifications?: Notification[];
+        unreadCount?: number;
+      }>("/api/notifications?limit=100", {
+        staleMs: 30_000,
+        force,
+      });
+      setNotifications(data.notifications || []);
+      setUnreadCount(data.unreadCount || 0);
     } catch (error) {
       console.error("Failed to load notifications:", error);
     } finally {
       setLoading(false);
     }
-  };
+  }, []);
+
+  useEffect(() => {
+    loadNotifications();
+  }, [loadNotifications]);
+
+  useEffect(() => {
+    const handleClubDataUpdated = () => {
+      loadNotifications(true);
+    };
+    window.addEventListener("club-data-updated", handleClubDataUpdated);
+    return () => window.removeEventListener("club-data-updated", handleClubDataUpdated);
+  }, [loadNotifications]);
 
   const markAsRead = async (id: number) => {
     try {
@@ -63,6 +90,7 @@ export default function NotificationsPage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ ids: [id] }),
       });
+      invalidateJsonCache("/api/notifications");
       setNotifications((prev) =>
         prev.map((n) => (n.id === id ? { ...n, is_read: true } : n))
       );
@@ -79,6 +107,7 @@ export default function NotificationsPage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ all: true }),
       });
+      invalidateJsonCache("/api/notifications");
       setNotifications((prev) => prev.map((n) => ({ ...n, is_read: true })));
       setUnreadCount(0);
     } catch (error) {
@@ -139,46 +168,34 @@ export default function NotificationsPage() {
     return parts;
   };
 
-  const getDateHeading = (date: Date) => {
-    const today = new Date();
-    const yesterday = new Date();
-    yesterday.setDate(today.getDate() - 1);
-
-    if (date.toDateString() === today.toDateString()) return "Today";
-    if (date.toDateString() === yesterday.toDateString()) return "Yesterday";
-
-    return new Intl.DateTimeFormat("en-US", {
-      month: "short",
-      day: "numeric",
-      year: "numeric",
-    }).format(date);
-  };
-
-  const filtered = notifications.filter((n) => {
+  const filtered = useMemo(() => notifications.filter((n) => {
     if (filter === "unread" && n.is_read) return false;
     if (category === "all") return true;
     if (category === "promotion") return n.type === "promotion" || n.type === "demotion";
     return n.type === category;
-  });
+  }), [category, filter, notifications]);
 
-  const groupedByDate = filtered.reduce<Array<{ key: string; label: string; items: Notification[] }>>(
-    (groups, notif) => {
-      const date = new Date(notif.created_at);
-      const key = date.toDateString();
-      const existing = groups.find((group) => group.key === key);
-      if (existing) {
-        existing.items.push(notif);
+  const groupedByDate = useMemo(
+    () => filtered.reduce<Array<{ key: string; label: string; items: Notification[] }>>(
+      (groups, notif) => {
+        const date = new Date(notif.created_at);
+        const key = date.toDateString();
+        const existing = groups.find((group) => group.key === key);
+        if (existing) {
+          existing.items.push(notif);
+          return groups;
+        }
+
+        groups.push({
+          key,
+          label: getDateHeading(date),
+          items: [notif],
+        });
         return groups;
-      }
-
-      groups.push({
-        key,
-        label: getDateHeading(date),
-        items: [notif],
-      });
-      return groups;
-    },
-    []
+      },
+      []
+    ),
+    [filtered]
   );
 
   return (

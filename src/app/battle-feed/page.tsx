@@ -1,9 +1,10 @@
 "use client";
 
-import { useEffect, useState, useCallback, useRef } from "react";
+import { useEffect, useState, useCallback, useMemo, useRef } from "react";
 import Image from "next/image";
 import Link from "next/link";
 import { supabase } from "@/lib/supabase";
+import { fetchJsonCached } from "@/lib/client-data-cache";
 import { getBrawlerIconFromMap, normalizeBrawlerName } from "@/lib/brawl-assets";
 import { LayoutWrapper } from "@/components/layout-wrapper";
 import { Card, CardContent } from "@/components/ui/card";
@@ -77,6 +78,14 @@ const MODE_ICONS: Record<string, string> = {
 interface MemberOption {
   tag: string;
   name: string;
+}
+
+interface BattleFeedResponse {
+  serverTime?: string;
+  matches?: Match[];
+  modes?: string[];
+  members?: MemberOption[];
+  total?: number;
 }
 
 function formatMode(mode: string | null): string {
@@ -466,7 +475,7 @@ export default function BattleFeedPage() {
   const PAGE_SIZE = 50;
 
   const loadMatches = useCallback(
-    async (offset = 0, append = false) => {
+    async (offset = 0, append = false, force = false) => {
       try {
         if (!append) setIsLoading(true);
         else setIsLoadingMore(true);
@@ -479,33 +488,37 @@ export default function BattleFeedPage() {
         if (filterPlayer) params.set("player", filterPlayer);
         if (filterDate) params.set("date", filterDate);
 
-        const [feedRes, membersRes] = await Promise.all([
-          fetch(`/api/battles/feed?${params}`),
-          !append ? fetch("/api/members") : Promise.resolve(null),
+        const [data, membersData] = await Promise.all([
+          fetchJsonCached<BattleFeedResponse>(`/api/battles/feed?${params}`, {
+            staleMs: 15_000,
+            force,
+          }),
+          !append
+            ? fetchJsonCached<{ members?: { player_tag: string }[] }>("/api/members", {
+                staleMs: 30_000,
+                force,
+              })
+            : Promise.resolve(null),
         ]);
 
-        if (feedRes.ok) {
-          const data = await feedRes.json();
-          // Compute clock delta: difference between client clock and server clock.
-          // This corrects any timezone or clock discrepancy.
-          if (data.serverTime) {
-            const delta = Date.now() - new Date(data.serverTime).getTime();
-            setClockDelta(delta);
-          }
-          if (append) {
-            setMatches((prev) => [...prev, ...(data.matches || [])]);
-          } else {
-            setMatches(data.matches || []);
-            setModes(data.modes || []);
-            if (data.members) setMemberList(data.members);
-          }
-          setTotal(data.total || 0);
-          setRawOffset(offset + PAGE_SIZE);
+        // Compute clock delta: difference between client clock and server clock.
+        // This corrects any timezone or clock discrepancy.
+        if (data.serverTime) {
+          const delta = Date.now() - new Date(data.serverTime).getTime();
+          setClockDelta(delta);
         }
+        if (append) {
+          setMatches((prev) => [...prev, ...(data.matches || [])]);
+        } else {
+          setMatches(data.matches || []);
+          setModes(data.modes || []);
+          if (data.members) setMemberList(data.members);
+        }
+        setTotal(data.total || 0);
+        setRawOffset(offset + PAGE_SIZE);
 
-        if (membersRes && (membersRes as Response).ok) {
-          const data = await (membersRes as Response).json();
-          const tags = new Set<string>((data.members || []).map((m: { player_tag: string }) => normalizeTag(m.player_tag)));
+        if (membersData) {
+          const tags = new Set<string>((membersData.members || []).map((m) => normalizeTag(m.player_tag)));
           setClubTags(tags);
         }
       } catch (err) {
@@ -523,9 +536,11 @@ export default function BattleFeedPage() {
 
     async function loadBrawlerIcons() {
       try {
-        const response = await fetch("https://api.brawlapi.com/v1/brawlers");
-        if (!response.ok) return;
-        const data = await response.json();
+        const data = await fetchJsonCached<{
+          list?: Array<{ name?: unknown; imageUrl2?: unknown }>;
+        }>("https://api.brawlapi.com/v1/brawlers", {
+          staleMs: 24 * 60 * 60 * 1000,
+        });
         const list = Array.isArray(data?.list) ? data.list : [];
         const iconMap: Record<string, string> = {};
         for (const item of list) {
@@ -579,6 +594,14 @@ export default function BattleFeedPage() {
     };
   }, []);
 
+  useEffect(() => {
+    const handleClubDataUpdated = () => {
+      loadMatchesRef.current(0, false, true);
+    };
+    window.addEventListener("club-data-updated", handleClubDataUpdated);
+    return () => window.removeEventListener("club-data-updated", handleClubDataUpdated);
+  }, []);
+
   // Close member dropdown on outside click
   useEffect(() => {
     function handleClickOutside(e: MouseEvent) {
@@ -590,13 +613,35 @@ export default function BattleFeedPage() {
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, []);
 
-  const filteredMembers = memberList.filter(
-    (m) =>
-      m.name.toLowerCase().includes(memberSearch.toLowerCase()) ||
-      m.tag.toLowerCase().includes(memberSearch.toLowerCase())
+  const filteredMembers = useMemo(
+    () => memberList.filter(
+      (m) =>
+        m.name.toLowerCase().includes(memberSearch.toLowerCase()) ||
+        m.tag.toLowerCase().includes(memberSearch.toLowerCase())
+    ),
+    [memberList, memberSearch]
   );
 
-  const selectedMemberName = memberList.find((m) => m.tag === filterPlayer)?.name || "";
+  const selectedMemberName = useMemo(
+    () => memberList.find((m) => m.tag === filterPlayer)?.name || "",
+    [filterPlayer, memberList]
+  );
+
+  const dateOptions = useMemo(() => {
+    const days: { label: string; value: string }[] = [];
+    const now = new Date();
+    for (let i = 0; i < 14; i++) {
+      const d = new Date(now);
+      d.setDate(d.getDate() - i);
+      const value = d.toISOString().slice(0, 10);
+      let label: string;
+      if (i === 0) label = "Today";
+      else if (i === 1) label = "Yesterday";
+      else label = d.toLocaleDateString("en-US", { month: "short", day: "numeric" });
+      days.push({ label, value });
+    }
+    return days;
+  }, []);
 
   return (
     <LayoutWrapper>
@@ -697,23 +742,9 @@ export default function BattleFeedPage() {
               className="h-9 rounded-md border border-border bg-background px-2 text-sm"
             >
               <option value="">All Days</option>
-              {(() => {
-                const days: { label: string; value: string }[] = [];
-                const now = new Date();
-                for (let i = 0; i < 14; i++) {
-                  const d = new Date(now);
-                  d.setDate(d.getDate() - i);
-                  const value = d.toISOString().slice(0, 10);
-                  let label: string;
-                  if (i === 0) label = "Today";
-                  else if (i === 1) label = "Yesterday";
-                  else label = d.toLocaleDateString("en-US", { month: "short", day: "numeric" });
-                  days.push({ label, value });
-                }
-                return days.map((d) => (
-                  <option key={d.value} value={d.value}>{d.label}</option>
-                ));
-              })()}
+              {dateOptions.map((d) => (
+                <option key={d.value} value={d.value}>{d.label}</option>
+              ))}
             </select>
             {(filterMode || filterPlayer || filterDate) && (
               <Button variant="ghost" size="sm" className="h-9 px-2" onClick={() => { setFilterMode(""); setFilterPlayer(""); setFilterDate(""); setMemberSearch(""); }}>

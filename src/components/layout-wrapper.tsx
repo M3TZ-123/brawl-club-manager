@@ -5,6 +5,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useAppStore } from "@/lib/store";
 import { cn, formatDateTime } from "@/lib/utils";
+import { fetchJsonCached, invalidateJsonCache } from "@/lib/client-data-cache";
 import {
   LayoutDashboard,
   Users,
@@ -84,6 +85,7 @@ function SimpleSidebar() {
         }
       } else {
         const syncTime = new Date().toISOString();
+        invalidateJsonCache();
         useAppStore.getState().setLastSyncTime(syncTime);
         // Persist last_sync_time to DB immediately (before potential reload)
         fetch("/api/settings", {
@@ -93,9 +95,10 @@ function SimpleSidebar() {
         }).catch(() => {});
         // Check if there were any member changes (joins/leaves)
         const hasChanges = data.changes?.joins?.length > 0 || data.changes?.leaves?.length > 0;
+        window.dispatchEvent(new CustomEvent("club-data-updated", {
+          detail: { changes: data.changes, syncTime },
+        }));
         if (hasChanges) {
-          // Dispatch custom event so all components can refresh their data
-          window.dispatchEvent(new CustomEvent("club-data-updated", { detail: data.changes }));
           // Show browser notification if permitted
           if (Notification.permission === "granted") {
             const joins = data.changes?.joins?.length || 0;
@@ -106,12 +109,6 @@ function SimpleSidebar() {
             if (leaves > 0) message += `${leaves} member(s) left`;
             new Notification("Club Update", { body: message, icon: "/favicon.ico" });
           }
-        }
-        if (!isAutoSync) {
-          window.location.reload();
-        } else if (hasChanges) {
-          // Refresh page data when member changes detected during auto-sync
-          window.location.reload();
         }
       }
     } catch (error) {
@@ -260,21 +257,24 @@ function SimpleHeader() {
   const [unreadCount, setUnreadCount] = useState(0);
   const panelRef = useRef<HTMLDivElement>(null);
 
-  const loadNotifications = useCallback(async () => {
+  const loadNotifications = useCallback(async (force = false) => {
     try {
-      const response = await fetch("/api/notifications?limit=5");
-      if (response.ok) {
-        const data = await response.json();
-        setNotifications(data.notifications || []);
-        setUnreadCount(data.unreadCount || 0);
-      }
+      const data = await fetchJsonCached<{
+        notifications: NotificationItem[];
+        unreadCount?: number;
+      }>("/api/notifications?limit=5", {
+        staleMs: 30_000,
+        force,
+      });
+      setNotifications(data.notifications || []);
+      setUnreadCount(data.unreadCount || 0);
     } catch (error) {
       console.error("Error loading notifications:", error);
     }
   }, []);
 
   useEffect(() => {
-    const handleUpdate = () => loadNotifications();
+    const handleUpdate = () => loadNotifications(true);
     window.addEventListener("club-data-updated", handleUpdate);
     return () => window.removeEventListener("club-data-updated", handleUpdate);
   }, [loadNotifications]);
@@ -306,6 +306,7 @@ function SimpleHeader() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ ids: [id] }),
       });
+      invalidateJsonCache("/api/notifications");
       setNotifications((prev) =>
         prev.map((n) => (n.id === id ? { ...n, is_read: true } : n))
       );
@@ -322,6 +323,7 @@ function SimpleHeader() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ all: true }),
       });
+      invalidateJsonCache("/api/notifications");
       setNotifications((prev) => prev.map((n) => ({ ...n, is_read: true })));
       setUnreadCount(0);
     } catch (error) {

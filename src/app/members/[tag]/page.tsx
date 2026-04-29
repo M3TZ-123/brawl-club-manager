@@ -1,12 +1,13 @@
 "use client";
 
-import { useCallback, useEffect, useState, use } from "react";
+import dynamic from "next/dynamic";
+import { use, useCallback, useEffect, useMemo, useState } from "react";
 import Image from "next/image";
 import { LayoutWrapper } from "@/components/layout-wrapper";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { TrophyStatistics, ActivityCalendar, PowerLevelChart, TrackingStats, EnhancedTrackingStats } from "@/components/charts";
+import { fetchJsonCached, invalidateJsonCache } from "@/lib/client-data-cache";
 import { Member, ActivityLog, MemberHistory } from "@/types/database";
 import {
   formatNumber,
@@ -29,6 +30,70 @@ import {
   Clock3,
 } from "lucide-react";
 import Link from "next/link";
+
+function DetailChartSkeleton() {
+  return (
+    <Card>
+      <CardContent className="h-[300px] animate-pulse p-6">
+        <div className="h-5 w-36 rounded bg-muted" />
+        <div className="mt-6 h-52 rounded bg-muted/60" />
+      </CardContent>
+    </Card>
+  );
+}
+
+function MemberDetailSkeleton() {
+  return (
+    <LayoutWrapper>
+      <div className="space-y-6">
+        <Card>
+          <CardContent className="flex items-center gap-4 p-6">
+            <div className="h-16 w-16 animate-pulse rounded-md bg-muted" />
+            <div className="space-y-3">
+              <div className="h-6 w-44 animate-pulse rounded bg-muted" />
+              <div className="h-4 w-28 animate-pulse rounded bg-muted/60" />
+            </div>
+          </CardContent>
+        </Card>
+        <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
+          {Array.from({ length: 4 }).map((_, index) => (
+            <Card key={index}>
+              <CardContent className="h-28 animate-pulse p-6">
+                <div className="h-4 w-24 rounded bg-muted" />
+                <div className="mt-5 h-7 w-20 rounded bg-muted/70" />
+              </CardContent>
+            </Card>
+          ))}
+        </div>
+      </div>
+    </LayoutWrapper>
+  );
+}
+
+const TrophyStatistics = dynamic(
+  () => import("@/components/charts").then((mod) => mod.TrophyStatistics),
+  { ssr: false, loading: () => <DetailChartSkeleton /> }
+);
+
+const ActivityCalendar = dynamic(
+  () => import("@/components/charts").then((mod) => mod.ActivityCalendar),
+  { ssr: false, loading: () => <DetailChartSkeleton /> }
+);
+
+const PowerLevelChart = dynamic(
+  () => import("@/components/charts").then((mod) => mod.PowerLevelChart),
+  { ssr: false, loading: () => <DetailChartSkeleton /> }
+);
+
+const TrackingStats = dynamic(
+  () => import("@/components/charts").then((mod) => mod.TrackingStats),
+  { ssr: false, loading: () => <DetailChartSkeleton /> }
+);
+
+const EnhancedTrackingStats = dynamic(
+  () => import("@/components/charts").then((mod) => mod.EnhancedTrackingStats),
+  { ssr: false, loading: () => <DetailChartSkeleton /> }
+);
 
 interface BattleStats {
   battles: number;
@@ -91,6 +156,20 @@ interface PageProps {
   params: Promise<{ tag: string }>;
 }
 
+interface MemberDetailResponse {
+  member: Member;
+  activityHistory?: ActivityLog[];
+  memberHistory?: MemberHistory | null;
+  lastBattleTime?: string | null;
+  battleStats?: BattleStats | null;
+  powerDistribution?: PowerDistribution | null;
+  enhancedStats?: EnhancedStats | null;
+  calendarBattlesByDay?: Record<string, number>;
+  topBrawlers?: TopBrawler[];
+  recentMatches?: RecentMatch[];
+  playerTags?: string[];
+}
+
 export default function MemberDetailPage({ params }: PageProps) {
   const resolvedParams = use(params);
   const [member, setMember] = useState<Member | null>(null);
@@ -108,35 +187,43 @@ export default function MemberDetailPage({ params }: PageProps) {
   const [isLoading, setIsLoading] = useState(true);
   const [isRefreshing, setIsRefreshing] = useState(false);
 
-  const playerTag = decodeURIComponent(resolvedParams.tag);
+  const playerTag = useMemo(() => decodeURIComponent(resolvedParams.tag), [resolvedParams.tag]);
+  const memberApiUrl = useMemo(() => `/api/members/${encodeURIComponent(playerTag)}`, [playerTag]);
 
-  const loadMemberData = useCallback(async () => {
+  const loadMemberData = useCallback(async (force = false) => {
     try {
-      const url = `/api/members/${encodeURIComponent(playerTag)}`;
-      const response = await fetch(url);
-      if (response.ok) {
-        const data = await response.json();
-        setMember(data.member);
-        setActivityHistory(data.activityHistory || []);
-        setMemberHistory(data.memberHistory);
-        setLastBattleTime(data.lastBattleTime || null);
-        setBattleStats(data.battleStats || null);
-        setPowerDistribution(data.powerDistribution || null);
-        setEnhancedStats(data.enhancedStats || null);
-        setCalendarBattlesByDay(data.calendarBattlesByDay || {});
-        setTopBrawlers(data.topBrawlers || []);
-        setRecentMatches(data.recentMatches || []);
-        setPlayerTags(data.playerTags || []);
-      }
+      const data = await fetchJsonCached<MemberDetailResponse>(memberApiUrl, {
+        staleMs: 30_000,
+        force,
+      });
+      setMember(data.member);
+      setActivityHistory(data.activityHistory || []);
+      setMemberHistory(data.memberHistory || null);
+      setLastBattleTime(data.lastBattleTime || null);
+      setBattleStats(data.battleStats || null);
+      setPowerDistribution(data.powerDistribution || null);
+      setEnhancedStats(data.enhancedStats || null);
+      setCalendarBattlesByDay(data.calendarBattlesByDay || {});
+      setTopBrawlers(data.topBrawlers || []);
+      setRecentMatches(data.recentMatches || []);
+      setPlayerTags(data.playerTags || []);
     } catch (error) {
       console.error("Error loading member:", error);
     } finally {
       setIsLoading(false);
     }
-  }, [playerTag]);
+  }, [memberApiUrl]);
 
   useEffect(() => {
     loadMemberData();
+  }, [loadMemberData]);
+
+  useEffect(() => {
+    const handleClubDataUpdated = () => {
+      loadMemberData(true);
+    };
+    window.addEventListener("club-data-updated", handleClubDataUpdated);
+    return () => window.removeEventListener("club-data-updated", handleClubDataUpdated);
   }, [loadMemberData]);
 
   const handleRefresh = async () => {
@@ -148,7 +235,8 @@ export default function MemberDetailPage({ params }: PageProps) {
       });
 
       if (response.ok) {
-        await loadMemberData();
+        invalidateJsonCache(memberApiUrl);
+        await loadMemberData(true);
       }
     } catch (error) {
       console.error("Error refreshing member:", error);
@@ -168,7 +256,7 @@ export default function MemberDetailPage({ params }: PageProps) {
     return <Badge variant="success">⭐ Original Member</Badge>;
   };
 
-  const trophyChartData = activityHistory
+  const trophyChartData = useMemo(() => activityHistory
     .slice()
     .reverse()
     .map((log) => ({
@@ -178,18 +266,19 @@ export default function MemberDetailPage({ params }: PageProps) {
       }),
       trophies: log.trophies,
       recorded_at: log.recorded_at,
-    }));
+    })), [activityHistory]);
 
-  const totalPowerTracked = powerDistribution
+  const totalPowerTracked = useMemo(() => powerDistribution
     ? powerDistribution.distribution.reduce((sum, count) => sum + count, 0)
-    : 0;
-  const dominantPower = powerDistribution
+    : 0, [powerDistribution]);
+  const dominantPower = useMemo(() => powerDistribution
     ? powerDistribution.distribution.reduce(
         (best, count, index) => (count > best.count ? { level: index + 1, count } : best),
         { level: 1, count: 0 }
       )
-    : { level: 1, count: 0 };
+    : { level: 1, count: 0 }, [powerDistribution]);
   const hasDominantPower = totalPowerTracked > 0 && dominantPower.count / totalPowerTracked >= 0.8;
+  const profileIconUrl = member ? getProfileIconUrl(member.icon_id) : null;
 
   const formatBattleResult = (result: string | null) => {
     if (!result) return { label: "Unknown", className: "text-muted-foreground" };
@@ -199,13 +288,7 @@ export default function MemberDetailPage({ params }: PageProps) {
   };
 
   if (isLoading) {
-    return (
-      <LayoutWrapper>
-        <div className="flex-1 flex items-center justify-center">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary"></div>
-        </div>
-      </LayoutWrapper>
-    );
+    return <MemberDetailSkeleton />;
   }
 
   if (!member) {
@@ -227,8 +310,6 @@ export default function MemberDetailPage({ params }: PageProps) {
       </LayoutWrapper>
     );
   }
-
-  const profileIconUrl = getProfileIconUrl(member.icon_id);
 
   return (
     <LayoutWrapper>

@@ -1,8 +1,9 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { LayoutWrapper } from "@/components/layout-wrapper";
 import { MembersTable } from "@/components/members-table";
+import { fetchJsonCached, invalidateJsonCache } from "@/lib/client-data-cache";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
@@ -15,10 +16,6 @@ export default function MembersPage() {
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
   const [sortBy, setSortBy] = useState<"trophies" | "name" | "role">("trophies");
-
-  useEffect(() => {
-    loadMembers();
-  }, []);
 
   const filteredMembers = useMemo(() => {
     let filtered = [...members];
@@ -51,21 +48,36 @@ export default function MembersPage() {
     return filtered;
   }, [members, searchQuery, sortBy]);
 
-  const loadMembers = async () => {
+  const loadMembers = useCallback(async (force = false) => {
     try {
       setIsRefreshing(true);
-      const response = await fetch("/api/members");
-      if (response.ok) {
-        const data = await response.json();
-        setMembers(data.members || []);
+      if (force) {
+        invalidateJsonCache("/api/members");
       }
+      const data = await fetchJsonCached<{ members: Member[] }>("/api/members", {
+        staleMs: 30_000,
+        force,
+      });
+      setMembers(data.members || []);
     } catch (error) {
       console.error("Error loading members:", error);
     } finally {
       setIsLoading(false);
       setIsRefreshing(false);
     }
-  };
+  }, []);
+
+  useEffect(() => {
+    loadMembers();
+  }, [loadMembers]);
+
+  useEffect(() => {
+    const handleClubDataUpdated = () => {
+      loadMembers(true);
+    };
+    window.addEventListener("club-data-updated", handleClubDataUpdated);
+    return () => window.removeEventListener("club-data-updated", handleClubDataUpdated);
+  }, [loadMembers]);
 
   const handleExport = () => {
     const csv = [
@@ -127,7 +139,7 @@ export default function MembersPage() {
                 <option value="name">Sort by Name</option>
                 <option value="role">Sort by Role</option>
               </select>
-              <Button variant="outline" onClick={loadMembers} size="sm" className="sm:size-default" disabled={isRefreshing}>
+              <Button variant="outline" onClick={() => loadMembers(true)} size="sm" className="sm:size-default" disabled={isRefreshing}>
                 <RefreshCw className={`h-4 w-4 sm:mr-2 ${isRefreshing ? "animate-spin" : ""}`} />
                 <span className="hidden sm:inline">{isRefreshing ? "Refreshing..." : "Refresh"}</span>
               </Button>

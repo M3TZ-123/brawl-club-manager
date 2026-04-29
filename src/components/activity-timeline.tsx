@@ -1,5 +1,6 @@
 "use client";
 
+import { memo } from "react";
 import { ClubEvent } from "@/types/database";
 import { formatDateTime } from "@/lib/utils";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -10,7 +11,7 @@ interface ActivityTimelineProps {
   events: ClubEvent[];
 }
 
-export function ActivityTimeline({ events }: ActivityTimelineProps) {
+export const ActivityTimeline = memo(function ActivityTimeline({ events }: ActivityTimelineProps) {
   const getEventIcon = (type: string) => {
     switch (type) {
       case "join":
@@ -80,4 +81,4 @@ export function ActivityTimeline({ events }: ActivityTimelineProps) {
       </CardContent>
     </Card>
   );
-}
+});

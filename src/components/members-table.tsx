@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { memo, useEffect, useMemo, useRef, useState } from "react";
 import Image from "next/image";
 import { Member } from "@/types/database";
 import { formatDateTime, formatNumber, formatRelativeTime, getActivityEmoji, getRankColor } from "@/lib/utils";
@@ -90,21 +90,39 @@ function RankIcon({ rank }: { rank: string | null }) {
   return <Shield className="h-5 w-5" />;
 }
 
-export function MembersTable({ members, pageSize = 10, showPagination = true }: MembersTableProps) {
+export const MembersTable = memo(function MembersTable({ members, pageSize = 10, showPagination = true }: MembersTableProps) {
   const [copiedTag, setCopiedTag] = useState<string | null>(null);
   const [currentPage, setCurrentPage] = useState(1);
+  const copyResetTimeoutRef = useRef<number | null>(null);
 
   const normalizedPageSize = Math.max(1, pageSize);
   const totalPages = Math.max(1, Math.ceil(members.length / normalizedPageSize));
   const safeCurrentPage = Math.min(currentPage, totalPages);
   const startIndex = (safeCurrentPage - 1) * normalizedPageSize;
-  const paginatedMembers = showPagination ? members.slice(startIndex, startIndex + normalizedPageSize) : members;
+  const paginatedMembers = useMemo(
+    () => showPagination ? members.slice(startIndex, startIndex + normalizedPageSize) : members,
+    [members, normalizedPageSize, showPagination, startIndex]
+  );
+
+  useEffect(() => {
+    return () => {
+      if (copyResetTimeoutRef.current) {
+        window.clearTimeout(copyResetTimeoutRef.current);
+      }
+    };
+  }, []);
 
   const copyToClipboard = async (text: string, tag: string) => {
     try {
       await navigator.clipboard.writeText(text);
       setCopiedTag(tag);
-      setTimeout(() => setCopiedTag(null), 2000);
+      if (copyResetTimeoutRef.current) {
+        window.clearTimeout(copyResetTimeoutRef.current);
+      }
+      copyResetTimeoutRef.current = window.setTimeout(() => {
+        setCopiedTag(null);
+        copyResetTimeoutRef.current = null;
+      }, 2000);
     } catch (err) {
       console.error("Failed to copy:", err);
     }
@@ -279,4 +297,4 @@ export function MembersTable({ members, pageSize = 10, showPagination = true }: 
     )}
     </>
   );
-}
+});

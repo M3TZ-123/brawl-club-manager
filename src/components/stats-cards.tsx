@@ -1,5 +1,6 @@
 "use client";
 
+import { memo, useMemo } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { formatNumber } from "@/lib/utils";
 import { Trophy, Users, TrendingUp, Activity } from "lucide-react";
@@ -11,13 +12,13 @@ interface StatsCardsProps {
   avgTrophies: number;
 }
 
-export function StatsCards({
+export const StatsCards = memo(function StatsCards({
   totalMembers,
   totalTrophies,
   activeMembers,
   avgTrophies,
 }: StatsCardsProps) {
-  const cards = [
+  const cards = useMemo(() => [
     {
       title: "Total Members",
       value: totalMembers,
@@ -46,7 +47,7 @@ export function StatsCards({
       description: "Per member",
       color: "text-purple-500",
     },
-  ];
+  ], [activeMembers, avgTrophies, totalMembers, totalTrophies]);
 
   return (
     <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
@@ -64,4 +65,4 @@ export function StatsCards({
       ))}
     </div>
   );
-}
+});

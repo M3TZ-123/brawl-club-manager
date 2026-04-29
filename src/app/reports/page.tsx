@@ -1,10 +1,11 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import dynamic from "next/dynamic";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { LayoutWrapper } from "@/components/layout-wrapper";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { TrophyChart, ActivityPieChart } from "@/components/charts";
+import { fetchJsonCached, invalidateJsonCache } from "@/lib/client-data-cache";
 import { formatNumber, formatDate } from "@/lib/utils";
 import { Download, RefreshCw, TrendingUp, TrendingDown, Users, Trophy } from "lucide-react";
 
@@ -41,28 +42,85 @@ function escapeHtml(value: unknown) {
     .replace(/'/g, "&#39;");
 }
 
+function ReportChartSkeleton() {
+  return (
+    <Card>
+      <CardContent className="h-[320px] animate-pulse p-6">
+        <div className="h-5 w-32 rounded bg-muted" />
+        <div className="mt-6 h-56 rounded bg-muted/60" />
+      </CardContent>
+    </Card>
+  );
+}
+
+function ReportSkeleton() {
+  return (
+    <div className="space-y-6">
+      <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-5">
+        {Array.from({ length: 5 }).map((_, index) => (
+          <Card key={index}>
+            <CardContent className="h-28 animate-pulse p-6">
+              <div className="h-4 w-24 rounded bg-muted" />
+              <div className="mt-5 h-7 w-20 rounded bg-muted/70" />
+            </CardContent>
+          </Card>
+        ))}
+      </div>
+      <div className="grid gap-6 md:grid-cols-2">
+        <ReportChartSkeleton />
+        <ReportChartSkeleton />
+      </div>
+    </div>
+  );
+}
+
+const TrophyChart = dynamic(
+  () => import("@/components/charts").then((mod) => mod.TrophyChart),
+  { ssr: false, loading: () => <ReportChartSkeleton /> }
+);
+
+const ActivityPieChart = dynamic(
+  () => import("@/components/charts").then((mod) => mod.ActivityPieChart),
+  { ssr: false, loading: () => <ReportChartSkeleton /> }
+);
+
 export default function ReportsPage() {
   const [report, setReport] = useState<WeeklyReport | null>(null);
   const [isLoading, setIsLoading] = useState(true);
+  const [isRefreshing, setIsRefreshing] = useState(false);
 
-  useEffect(() => {
-    loadReport();
-  }, []);
-
-  const loadReport = async () => {
-    setIsLoading(true);
+  const loadReport = useCallback(async (force = false) => {
+    if (force) {
+      setIsRefreshing(true);
+      invalidateJsonCache("/api/reports/weekly");
+    } else {
+      setIsLoading(true);
+    }
     try {
-      const response = await fetch("/api/reports/weekly");
-      if (response.ok) {
-        const data = await response.json();
-        setReport(data);
-      }
+      const data = await fetchJsonCached<WeeklyReport>("/api/reports/weekly", {
+        staleMs: 60_000,
+        force,
+      });
+      setReport(data);
     } catch (error) {
       console.error("Error loading report:", error);
     } finally {
       setIsLoading(false);
+      setIsRefreshing(false);
     }
-  };
+  }, []);
+
+  useEffect(() => {
+    loadReport();
+  }, [loadReport]);
+
+  useEffect(() => {
+    const handleClubDataUpdated = () => {
+      loadReport(true);
+    };
+    window.addEventListener("club-data-updated", handleClubDataUpdated);
+    return () => window.removeEventListener("club-data-updated", handleClubDataUpdated);
+  }, [loadReport]);
 
   const handleExportReport = () => {
     // For simplicity, we'll export as text/html that can be printed to PDF
@@ -119,22 +177,15 @@ export default function ReportsPage() {
     URL.revokeObjectURL(url);
   };
 
-  if (isLoading) {
-    return (
-      <LayoutWrapper>
-        <div className="flex-1 flex items-center justify-center">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary"></div>
-        </div>
-      </LayoutWrapper>
-    );
-  }
-
-  const activityData = report
-    ? [
+  const activityData = useMemo(
+    () => report
+      ? [
         { name: "Active", value: report.activityDistribution.active, color: "#22c55e" },
         { name: "Inactive", value: report.activityDistribution.inactive, color: "#ef4444" },
       ]
-    : [];
+      : [],
+    [report]
+  );
 
   return (
     <LayoutWrapper>
@@ -148,9 +199,15 @@ export default function ReportsPage() {
               )}
             </div>
             <div className="flex gap-2">
-              <Button variant="outline" onClick={loadReport} size="sm" className="sm:size-default">
-                <RefreshCw className="h-4 w-4 sm:mr-2" />
-                <span className="hidden sm:inline">Refresh</span>
+              <Button
+                variant="outline"
+                onClick={() => loadReport(true)}
+                size="sm"
+                className="sm:size-default"
+                disabled={isRefreshing}
+              >
+                <RefreshCw className={`h-4 w-4 sm:mr-2 ${isRefreshing ? "animate-spin" : ""}`} />
+                <span className="hidden sm:inline">{isRefreshing ? "Refreshing..." : "Refresh"}</span>
               </Button>
               <Button onClick={handleExportReport} size="sm" className="sm:size-default">
                 <Download className="h-4 w-4 sm:mr-2" />
@@ -159,7 +216,9 @@ export default function ReportsPage() {
             </div>
           </div>
 
-          {report && (
+          {isLoading ? (
+            <ReportSkeleton />
+          ) : report && (
             <div className="space-y-6">
               {/* Summary Cards */}
               <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-5">

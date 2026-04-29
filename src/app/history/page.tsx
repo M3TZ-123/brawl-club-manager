@@ -1,7 +1,8 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { LayoutWrapper } from "@/components/layout-wrapper";
+import { fetchJsonCached, invalidateJsonCache } from "@/lib/client-data-cache";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import {
@@ -30,7 +31,6 @@ function formatSafeDate(value: string | null | undefined, withTime = false): str
 
 export default function HistoryPage() {
   const [history, setHistory] = useState<MemberHistory[]>([]);
-  const [filteredHistory, setFilteredHistory] = useState<MemberHistory[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState("");
   const [filter, setFilter] = useState<"all" | "current" | "former">("all");
@@ -39,14 +39,14 @@ export default function HistoryPage() {
   const [editingNote, setEditingNote] = useState("");
   const [savingNote, setSavingNote] = useState(false);
 
-  const loadHistory = useCallback(async () => {
+  const loadHistory = useCallback(async (force = false) => {
     try {
       const query = timeRange === "all" ? "" : `?days=${timeRange}`;
-      const response = await fetch(`/api/history${query}`);
-      if (response.ok) {
-        const data = await response.json();
-        setHistory(data.history || []);
-      }
+      const data = await fetchJsonCached<{ history?: MemberHistory[] }>(`/api/history${query}`, {
+        staleMs: 30_000,
+        force,
+      });
+      setHistory(data.history || []);
     } catch (error) {
       console.error("Error loading history:", error);
     } finally {
@@ -59,6 +59,14 @@ export default function HistoryPage() {
   }, [loadHistory]);
 
   useEffect(() => {
+    const handleClubDataUpdated = () => {
+      loadHistory(true);
+    };
+    window.addEventListener("club-data-updated", handleClubDataUpdated);
+    return () => window.removeEventListener("club-data-updated", handleClubDataUpdated);
+  }, [loadHistory]);
+
+  const filteredHistory = useMemo(() => {
     let filtered = [...history];
 
     // Search filter
@@ -77,7 +85,7 @@ export default function HistoryPage() {
       filtered = filtered.filter((h) => !h.is_current_member);
     }
 
-    setFilteredHistory(filtered);
+    return filtered;
   }, [history, searchQuery, filter]);
 
   const getMemberBadge = (h: MemberHistory) => {
@@ -109,6 +117,7 @@ export default function HistoryPage() {
         body: JSON.stringify({ player_tag: playerTag, notes: editingNote.trim() }),
       });
       if (response.ok) {
+        invalidateJsonCache("/api/history");
         setHistory((prev) =>
           prev.map((h) =>
             h.player_tag === playerTag ? { ...h, notes: editingNote.trim() || null } : h
@@ -329,6 +338,7 @@ export default function HistoryPage() {
                                           body: JSON.stringify({ player_tag: h.player_tag, notes: "" }),
                                         }).then((res) => {
                                           if (res.ok) {
+                                            invalidateJsonCache("/api/history");
                                             setHistory((prev) =>
                                               prev.map((item) =>
                                                 item.player_tag === h.player_tag ? { ...item, notes: null } : item

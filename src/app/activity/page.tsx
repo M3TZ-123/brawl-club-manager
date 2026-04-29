@@ -1,8 +1,9 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { memo, useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
 import Link from "next/link";
 import { LayoutWrapper } from "@/components/layout-wrapper";
+import { fetchJsonCached } from "@/lib/client-data-cache";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
@@ -108,7 +109,7 @@ function formatNumber(n: number): string {
   return n.toString();
 }
 
-function Podium({
+const Podium = memo(function Podium({
   members,
   formatValue,
   subtitle,
@@ -117,7 +118,8 @@ function Podium({
   formatValue: (m: LeaderboardMember) => string;
   subtitle?: (m: LeaderboardMember) => string;
 }) {
-  const top3 = members.slice(0, 3);
+  const top3 = useMemo(() => members.slice(0, 3), [members]);
+
   if (top3.length === 0) {
     return (
       <p className="text-center text-muted-foreground py-8">
@@ -148,24 +150,28 @@ function Podium({
       ))}
     </div>
   );
-}
+});
 
-function LeaderboardTable({
+const LeaderboardTable = memo(function LeaderboardTable({
   members,
   columns,
 }: {
   members: LeaderboardMember[];
   columns: {
     header: string;
-    value: (m: LeaderboardMember) => React.ReactNode;
+    value: (m: LeaderboardMember) => ReactNode;
     className?: string;
   }[];
 }) {
-  const rest = members.slice(3);
   const PAGE_SIZE = 10;
   const [page, setPage] = useState(0);
-  const totalPages = Math.ceil(rest.length / PAGE_SIZE);
-  const paginated = rest.slice(page * PAGE_SIZE, (page + 1) * PAGE_SIZE);
+  const rest = useMemo(() => members.slice(3), [members]);
+  const totalPages = Math.max(1, Math.ceil(rest.length / PAGE_SIZE));
+  const safePage = Math.min(page, totalPages - 1);
+  const paginated = useMemo(
+    () => rest.slice(safePage * PAGE_SIZE, (safePage + 1) * PAGE_SIZE),
+    [safePage, rest]
+  );
 
   if (rest.length === 0) return null;
 
@@ -188,7 +194,7 @@ function LeaderboardTable({
             {paginated.map((member, i) => (
               <TableRow key={member.tag} className="group">
                 <TableCell>
-                  <RankBadge rank={page * PAGE_SIZE + i + 4} />
+                  <RankBadge rank={safePage * PAGE_SIZE + i + 4} />
                 </TableCell>
                 <TableCell>
                   <Link
@@ -215,7 +221,7 @@ function LeaderboardTable({
               variant="outline"
               size="sm"
               onClick={() => setPage((p) => Math.max(0, p - 1))}
-              disabled={page === 0}
+              disabled={safePage === 0}
               className="h-7 px-2 text-xs"
             >
               Previous
@@ -224,7 +230,7 @@ function LeaderboardTable({
               variant="outline"
               size="sm"
               onClick={() => setPage((p) => Math.min(totalPages - 1, p + 1))}
-              disabled={page >= totalPages - 1}
+              disabled={safePage >= totalPages - 1}
               className="h-7 px-2 text-xs"
             >
               Next
@@ -234,7 +240,7 @@ function LeaderboardTable({
       )}
     </div>
   );
-}
+});
 
 const categories = [
   {
@@ -361,23 +367,32 @@ export default function LeaderboardPage() {
   const [isLoading, setIsLoading] = useState(true);
   const [activeTab, setActiveTab] = useState("trophyLeaders");
 
-  useEffect(() => {
-    const load = async () => {
-      try {
-        const res = await fetch("/api/leaderboard");
-        if (res.ok) {
-          const data = await res.json();
-          setLeaderboards(data.leaderboards);
-          setMemberCount(data.memberCount || 0);
-        }
-      } catch (err) {
-        console.error("Error loading leaderboard:", err);
-      } finally {
-        setIsLoading(false);
-      }
-    };
-    load();
+  const loadLeaderboard = useCallback(async (force = false) => {
+    try {
+      const data = await fetchJsonCached<{ leaderboards: Leaderboards; memberCount?: number }>(
+        "/api/leaderboard",
+        { staleMs: 60_000, force }
+      );
+      setLeaderboards(data.leaderboards);
+      setMemberCount(data.memberCount || 0);
+    } catch (err) {
+      console.error("Error loading leaderboard:", err);
+    } finally {
+      setIsLoading(false);
+    }
   }, []);
+
+  useEffect(() => {
+    loadLeaderboard();
+  }, [loadLeaderboard]);
+
+  useEffect(() => {
+    const handleClubDataUpdated = () => {
+      loadLeaderboard(true);
+    };
+    window.addEventListener("club-data-updated", handleClubDataUpdated);
+    return () => window.removeEventListener("club-data-updated", handleClubDataUpdated);
+  }, [loadLeaderboard]);
 
   return (
     <LayoutWrapper>

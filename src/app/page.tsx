@@ -1,18 +1,76 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import dynamic from "next/dynamic";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { useAppStore } from "@/lib/store";
+import { fetchJsonCached } from "@/lib/client-data-cache";
 import { LayoutWrapper } from "@/components/layout-wrapper";
 import { SetupWizard } from "@/components/setup-wizard";
 import { StatsCards } from "@/components/stats-cards";
-import { MembersTable } from "@/components/members-table";
 import { ActivityTimeline } from "@/components/activity-timeline";
-import { ActivityPieChart, MemberBarChart } from "@/components/charts";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Member, ClubEvent } from "@/types/database";
 import { Trophy, UserX, TrendingUp, TrendingDown, Minus, Crown, Target, Copy, Check } from "lucide-react";
+
+function ChartSkeleton() {
+  return (
+    <Card>
+      <CardContent className="h-[320px] animate-pulse p-6">
+        <div className="h-5 w-32 rounded bg-muted" />
+        <div className="mt-6 h-56 rounded bg-muted/60" />
+      </CardContent>
+    </Card>
+  );
+}
+
+function MembersPreviewSkeleton() {
+  return (
+    <div className="space-y-2">
+      {Array.from({ length: 5 }).map((_, index) => (
+        <div key={index} className="h-10 animate-pulse rounded bg-muted/60" />
+      ))}
+    </div>
+  );
+}
+
+function DashboardSkeleton() {
+  return (
+    <div className="space-y-6">
+      <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
+        {Array.from({ length: 4 }).map((_, index) => (
+          <Card key={index}>
+            <CardContent className="h-28 animate-pulse p-6">
+              <div className="h-4 w-24 rounded bg-muted" />
+              <div className="mt-5 h-7 w-20 rounded bg-muted/70" />
+              <div className="mt-3 h-3 w-28 rounded bg-muted/50" />
+            </CardContent>
+          </Card>
+        ))}
+      </div>
+      <div className="grid gap-6 md:grid-cols-2">
+        <ChartSkeleton />
+        <ChartSkeleton />
+      </div>
+    </div>
+  );
+}
+
+const ActivityPieChart = dynamic(
+  () => import("@/components/charts").then((mod) => mod.ActivityPieChart),
+  { ssr: false, loading: () => <ChartSkeleton /> }
+);
+
+const MemberBarChart = dynamic(
+  () => import("@/components/charts").then((mod) => mod.MemberBarChart),
+  { ssr: false, loading: () => <ChartSkeleton /> }
+);
+
+const MembersTable = dynamic(
+  () => import("@/components/members-table").then((mod) => mod.MembersTable),
+  { loading: () => <MembersPreviewSkeleton /> }
+);
 
 interface ClubInsights {
   megaPig: {
@@ -53,6 +111,7 @@ export default function DashboardPage() {
   const [insights, setInsights] = useState<ClubInsights | null>(null);
   const [copiedTag, setCopiedTag] = useState<string | null>(null);
   const inactiveMembersRef = useRef<HTMLDivElement | null>(null);
+  const copyResetTimeoutRef = useRef<number | null>(null);
 
   useEffect(() => {
     setMounted(true);
@@ -61,6 +120,25 @@ export default function DashboardPage() {
       loadSettingsFromDB();
     }
   }, [hasLoadedSettings, loadSettingsFromDB]);
+
+  const loadData = useCallback(async (force = false) => {
+    try {
+      const [membersData, eventsData, insightsData] = await Promise.all([
+        fetchJsonCached<{ members: Member[] }>("/api/members", { staleMs: 30_000, force }),
+        fetchJsonCached<{ events: ClubEvent[] }>("/api/events", { staleMs: 30_000, force }),
+        fetchJsonCached<{ insights: ClubInsights | null }>("/api/insights", { staleMs: 30_000, force }),
+      ]);
+
+      setMembers(membersData.members || []);
+      setEvents(eventsData.events || []);
+      setInsights(insightsData.insights || null);
+    } catch (error) {
+      console.error("Error loading data:", error);
+    } finally {
+      setIsLoading(false);
+      setDataLoaded(true);
+    }
+  }, []);
 
   useEffect(() => {
     if (!mounted || isLoadingSettings) return;
@@ -73,37 +151,23 @@ export default function DashboardPage() {
     } else {
       setIsLoading(false);
     }
-  }, [clubTag, apiKeyConfigured, mounted, isLoadingSettings, dataLoaded]);
+  }, [clubTag, apiKeyConfigured, mounted, isLoadingSettings, dataLoaded, loadData]);
 
-  const loadData = async () => {
-    try {
-      const [membersRes, eventsRes, insightsRes] = await Promise.all([
-        fetch("/api/members"),
-        fetch("/api/events"),
-        fetch("/api/insights"),
-      ]);
+  useEffect(() => {
+    const handleClubDataUpdated = () => {
+      loadData(true);
+    };
+    window.addEventListener("club-data-updated", handleClubDataUpdated);
+    return () => window.removeEventListener("club-data-updated", handleClubDataUpdated);
+  }, [loadData]);
 
-      if (membersRes.ok) {
-        const data = await membersRes.json();
-        setMembers(data.members || []);
+  useEffect(() => {
+    return () => {
+      if (copyResetTimeoutRef.current) {
+        window.clearTimeout(copyResetTimeoutRef.current);
       }
-
-      if (eventsRes.ok) {
-        const data = await eventsRes.json();
-        setEvents(data.events || []);
-      }
-
-      if (insightsRes.ok) {
-        const data = await insightsRes.json();
-        setInsights(data.insights || null);
-      }
-    } catch (error) {
-      console.error("Error loading data:", error);
-    } finally {
-      setIsLoading(false);
-      setDataLoaded(true);
-    }
-  };
+    };
+  }, []);
 
   const scrollToInactiveMembers = () => {
     inactiveMembersRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
@@ -113,13 +177,39 @@ export default function DashboardPage() {
     try {
       await navigator.clipboard.writeText(tag);
       setCopiedTag(tag);
-      window.setTimeout(() => {
+      if (copyResetTimeoutRef.current) {
+        window.clearTimeout(copyResetTimeoutRef.current);
+      }
+      copyResetTimeoutRef.current = window.setTimeout(() => {
         setCopiedTag((current) => (current === tag ? null : current));
+        copyResetTimeoutRef.current = null;
       }, 1200);
     } catch (error) {
       console.error("Failed to copy player tag:", error);
     }
   };
+
+  const dashboardData = useMemo(() => {
+    const totalTrophies = members.reduce((sum, m) => sum + m.trophies, 0);
+    const activeMembers = members.filter((m) => m.is_active).length;
+    const avgTrophies = members.length > 0 ? Math.round(totalTrophies / members.length) : 0;
+
+    return {
+      totalTrophies,
+      activeMembers,
+      avgTrophies,
+      activityData: [
+        { name: "Active", value: activeMembers, color: "#22c55e" },
+        { name: "Inactive", value: Math.max(members.length - activeMembers, 0), color: "#ef4444" },
+      ],
+      topMembers: members.slice(0, 10).map((m) => ({
+        name: m.player_name,
+        trophies: m.trophies,
+      })),
+      dashboardMembers: members.slice(0, 10),
+      recentEvents: events.slice(0, 5),
+    };
+  }, [events, members]);
 
   if (!mounted || isLoadingSettings) {
     return (
@@ -133,34 +223,18 @@ export default function DashboardPage() {
     return <SetupWizard onComplete={() => setIsSetupComplete(true)} />;
   }
 
-  const totalTrophies = members.reduce((sum, m) => sum + m.trophies, 0);
-  const activeMembers = members.filter((m) => m.is_active).length;
-  const avgTrophies = members.length > 0 ? Math.round(totalTrophies / members.length) : 0;
-
-  const activityData = [
-    { name: "Active", value: activeMembers, color: "#22c55e" },
-    { name: "Inactive", value: Math.max(members.length - activeMembers, 0), color: "#ef4444" },
-  ];
-
-  const topMembers = members.slice(0, 10).map((m) => ({
-    name: m.player_name,
-    trophies: m.trophies,
-  }));
-
   return (
     <LayoutWrapper>
       {isLoading ? (
-        <div className="flex items-center justify-center h-full">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary"></div>
-        </div>
+        <DashboardSkeleton />
       ) : (
         <div className="space-y-6">
           {/* Stats Overview */}
           <StatsCards
             totalMembers={members.length}
-            totalTrophies={totalTrophies}
-            activeMembers={activeMembers}
-            avgTrophies={avgTrophies}
+            totalTrophies={dashboardData.totalTrophies}
+            activeMembers={dashboardData.activeMembers}
+            avgTrophies={dashboardData.avgTrophies}
           />
 
           <Card>
@@ -353,8 +427,8 @@ export default function DashboardPage() {
 
           {/* Charts Row */}
           <div className="grid gap-6 md:grid-cols-2">
-            <ActivityPieChart data={activityData} />
-            <MemberBarChart data={topMembers} />
+            <ActivityPieChart data={dashboardData.activityData} />
+            <MemberBarChart data={dashboardData.topMembers} />
           </div>
 
           {/* Members and Activity */}
@@ -368,12 +442,12 @@ export default function DashboardPage() {
                   </Link>
                 </CardHeader>
                 <CardContent>
-                  <MembersTable members={members.slice(0, 10)} showPagination={false} />
+                  <MembersTable members={dashboardData.dashboardMembers} showPagination={false} />
                 </CardContent>
               </Card>
             </div>
             <div>
-              <ActivityTimeline events={events.slice(0, 5)} />
+              <ActivityTimeline events={dashboardData.recentEvents} />
             </div>
           </div>
         </div>
