@@ -28,7 +28,7 @@ export async function fetchJsonCached<T>(
     return cached.promise;
   }
 
-  const promise = fetch(url)
+  const promise = fetch(url, { cache: force ? "no-store" : "default" })
     .then(async (response) => {
       const data = await response.json().catch(() => ({}));
       if (!response.ok) {

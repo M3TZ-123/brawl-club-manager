@@ -1,95 +1,60 @@
 import { NextResponse } from "next/server";
 import { supabase } from "@/lib/supabase";
 
-type ActivitySnapshot = {
+type WeeklyStatsRow = {
   player_tag: string;
-  trophies: number;
-  trophy_change: number;
-  recorded_at: string;
+  date: string;
+  wins: number | null;
+  battles: number | null;
+  trophies_gained: number | null;
+  trophies_lost: number | null;
 };
-
-async function fetchAllActivitySnapshots(playerTags: string[], sinceISO: string): Promise<ActivitySnapshot[]> {
-  if (playerTags.length === 0) return [];
-
-  const pageSize = 1000;
-  const rows: ActivitySnapshot[] = [];
-
-  for (let from = 0; ; from += pageSize) {
-    const { data, error } = await supabase
-      .from("activity_log")
-      .select("*")
-      .in("player_tag", playerTags)
-      .gte("recorded_at", sinceISO)
-      .order("recorded_at", { ascending: true })
-      .range(from, from + pageSize - 1);
-
-    if (error) throw error;
-    rows.push(...((data || []) as ActivitySnapshot[]));
-    if (!data || data.length < pageSize) break;
-  }
-
-  return rows;
-}
-
-function findNearestBaseline(
-  playerLogs: Array<{ trophies: number; recorded_at: string }>,
-  targetTime: Date,
-  maxDistanceMs: number
-) {
-  let nearest: { trophies: number; recorded_at: string } | null = null;
-  let nearestDistance = Number.POSITIVE_INFINITY;
-
-  for (const log of playerLogs) {
-    const distance = Math.abs(new Date(log.recorded_at).getTime() - targetTime.getTime());
-    if (distance <= maxDistanceMs && distance < nearestDistance) {
-      nearest = log;
-      nearestDistance = distance;
-    }
-  }
-
-  return nearest;
-}
 
 export async function GET() {
   try {
     // Get current member tags from member_history (same logic as /api/members)
-    const { data: currentMemberHistory } = await supabase
+    const { data: currentMemberHistory, error: currentMemberError } = await supabase
       .from("member_history")
       .select("player_tag")
       .eq("is_current_member", true);
+
+    if (currentMemberError) throw currentMemberError;
     
     const currentMemberTags = currentMemberHistory?.map(h => h.player_tag) || [];
-
-    // Only fetch members who are currently in the club
-    const { data: members, error } = await supabase
-      .from("members")
-      .select("*")
-      .in("player_tag", currentMemberTags.length > 0 ? currentMemberTags : [''])
-      .order("trophies", { ascending: false });
-
-    if (error) throw error;
 
     // Get activity logs from last 7 days
     const weekAgo = new Date();
     weekAgo.setDate(weekAgo.getDate() - 7);
 
-    const activityLogs = await fetchAllActivitySnapshots(
-      currentMemberTags,
-      new Date(weekAgo.getTime() - 24 * 60 * 60 * 1000).toISOString()
-    );
-
     const weekAgoDate = weekAgo.toISOString().slice(0, 10);
-    const { data: weeklyStats } = await supabase
-      .from("daily_stats")
-      .select("player_tag, wins, battles")
-      .in("player_tag", currentMemberTags.length > 0 ? currentMemberTags : [""])
-      .gte("date", weekAgoDate);
+    const currentMemberFilter = currentMemberTags.length > 0 ? currentMemberTags : [""];
 
-    // Get events from last 7 days
-    const { data: events } = await supabase
-      .from("club_events")
-      .select("*")
-      .gte("event_time", weekAgo.toISOString());
+    const [membersRes, weeklyStatsRes, eventsRes] = await Promise.all([
+      supabase
+        .from("members")
+        .select("player_tag, player_name, trophies, is_active")
+        .in("player_tag", currentMemberFilter)
+        .order("trophies", { ascending: false }),
+      supabase
+        .from("daily_stats")
+        .select("player_tag, date, wins, battles, trophies_gained, trophies_lost")
+        .in("player_tag", currentMemberFilter)
+        .gte("date", weekAgoDate),
+      supabase
+        .from("club_events")
+        .select("event_type, player_name, event_time")
+        .gte("event_time", weekAgo.toISOString())
+        .order("event_time", { ascending: false })
+        .limit(10),
+    ]);
+
+    if (membersRes.error) throw membersRes.error;
+    if (weeklyStatsRes.error) throw weeklyStatsRes.error;
+    if (eventsRes.error) throw eventsRes.error;
+
+    const members = membersRes.data || [];
+    const weeklyStats = weeklyStatsRes.data || [];
+    const events = eventsRes.data || [];
 
     if (!members) {
       return NextResponse.json({ error: "No data available" }, { status: 404 });
@@ -99,39 +64,21 @@ export async function GET() {
     const totalTrophies = members.reduce((sum, m) => sum + m.trophies, 0);
     const activeCount = members.filter((m) => m.is_active).length;
 
-    // Trophy changes by player (current members only), based on 7-day baseline snapshots
-    // This matches /api/members logic and avoids drift from summing sync deltas.
-    const currentMemberTagSet = new Set((members || []).map((m) => m.player_tag));
-    const logsByPlayer = new Map<string, { player_tag: string; trophies: number; recorded_at: string }[]>();
-
-    for (const log of activityLogs) {
-      if (!currentMemberTagSet.has(log.player_tag)) continue;
-      if (!logsByPlayer.has(log.player_tag)) {
-        logsByPlayer.set(log.player_tag, []);
-      }
-      logsByPlayer.get(log.player_tag)!.push({
-        player_tag: log.player_tag,
-        trophies: log.trophies,
-        recorded_at: log.recorded_at,
-      });
-    }
-
+    // Trophy changes by player from pre-aggregated daily stats.
     const playerTrophyChanges: Record<string, number> = {};
-    for (const member of members) {
-      const playerLogs = logsByPlayer.get(member.player_tag) || [];
-      if (playerLogs.length === 0) continue;
-
-      const baseline7d = findNearestBaseline(playerLogs, weekAgo, 24 * 60 * 60 * 1000);
-
-      if (!baseline7d) continue;
-      playerTrophyChanges[member.player_tag] = member.trophies - baseline7d.trophies;
+    const memberByTag = new Map(members.map((member) => [member.player_tag, member]));
+    const netByDate = new Map<string, number>();
+    for (const row of weeklyStats as WeeklyStatsRow[]) {
+      const net = (row.trophies_gained || 0) - (row.trophies_lost || 0);
+      playerTrophyChanges[row.player_tag] = (playerTrophyChanges[row.player_tag] || 0) + net;
+      netByDate.set(row.date, (netByDate.get(row.date) || 0) + net);
     }
 
     // Top gainers (only players who actually gained trophies)
     const topGainers = Object.entries(playerTrophyChanges)
       .filter(([, change]) => change > 0)
       .map(([tag, change]) => {
-        const member = members.find((m) => m.player_tag === tag);
+        const member = memberByTag.get(tag);
         return {
           playerTag: tag,
           playerName: member?.player_name || "Unknown",
@@ -143,7 +90,7 @@ export async function GET() {
 
     const allChanges = Object.entries(playerTrophyChanges)
       .map(([tag, change]) => {
-        const member = members.find((m) => m.player_tag === tag);
+        const member = memberByTag.get(tag);
         return {
           playerTag: tag,
           playerName: member?.player_name || "Unknown",
@@ -170,29 +117,23 @@ export async function GET() {
       inactive: members.filter((m) => !m.is_active).length,
     };
 
-    // Daily trophy totals - aggregate all members' trophies per day
-    const dailyTrophies: Record<string, number> = {};
-    
-    // Group logs by date, then sum the latest trophy value for each player on that date
-    const logsByDate: Record<string, Record<string, number>> = {};
-    activityLogs.forEach((log) => {
-      const date = new Date(log.recorded_at).toISOString().slice(0, 10);
-      if (!logsByDate[date]) {
-        logsByDate[date] = {};
-      }
-      // Keep the latest trophy value for each player on each day
-      logsByDate[date][log.player_tag] = log.trophies;
-    });
+    const trophyTrend: { date: string; trophies: number }[] = [];
+    const trendDates: string[] = [];
+    const today = new Date();
+    for (let offset = 6; offset >= 0; offset--) {
+      const date = new Date(today);
+      date.setDate(date.getDate() - offset);
+      trendDates.push(date.toISOString().slice(0, 10));
+    }
 
-    // Sum up all players' trophies for each day
-    Object.entries(logsByDate).forEach(([date, playerTrophies]) => {
-      dailyTrophies[date] = Object.values(playerTrophies).reduce((sum, t) => sum + t, 0);
-    });
-
-    // Add today's total from current members if not already present
-    const today = new Date().toISOString().slice(0, 10);
-    if (!dailyTrophies[today] && members.length > 0) {
-      dailyTrophies[today] = totalTrophies;
+    for (const date of trendDates) {
+      const futureNet = trendDates
+        .filter((candidate) => candidate > date)
+        .reduce((sum, candidate) => sum + (netByDate.get(candidate) || 0), 0);
+      trophyTrend.push({
+        date,
+        trophies: totalTrophies - futureNet,
+      });
     }
 
     const report = {
@@ -216,12 +157,7 @@ export async function GET() {
       topLosersMode: hasRealLosses ? "losses" : "lowest_progress",
       activityDistribution,
       recentEvents: events?.slice(0, 10) || [],
-      trophyTrend: Object.entries(dailyTrophies)
-        .map(([date, trophies]) => ({
-          date,
-          trophies,
-        }))
-        .sort((a, b) => a.date.localeCompare(b.date)),
+      trophyTrend,
     };
 
     return NextResponse.json(report);

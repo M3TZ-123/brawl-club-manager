@@ -1,21 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { createHash } from "crypto";
 import { supabase } from "@/lib/supabase";
 import { rejectCrossOriginRequest } from "@/lib/request-security";
-
-function buildNotificationDedupeKey(
-  type: string,
-  title: string,
-  message: string,
-  playerTag: string | null,
-  createdAtISO: string
-) {
-  const secondEpoch = Math.floor(new Date(createdAtISO).getTime() / 1000) * 1000;
-  const secondIso = new Date(secondEpoch).toISOString();
-  return createHash("sha256")
-    .update(`${type}|${playerTag || ""}|${title}|${message}|${secondIso}`)
-    .digest("hex");
-}
 
 function isMissingNotificationsTable(error: unknown): boolean {
   if (!error || typeof error !== "object") return false;
@@ -43,60 +28,6 @@ export async function GET(request: NextRequest) {
       ? typesParam.split(",").map((t) => t.trim()).filter(Boolean)
       : [];
 
-    // One-time backfill: if notifications table is empty, import from club_events
-    const { count: existingCount, error: existingCountError } = await supabase
-      .from("notifications")
-      .select("*", { count: "exact", head: true });
-
-    if (existingCountError) {
-      if (isMissingNotificationsTable(existingCountError)) {
-        return NextResponse.json({ notifications: [], unreadCount: 0, tableMissing: true });
-      }
-      throw existingCountError;
-    }
-
-    if (existingCount === 0) {
-      const { data: events } = await supabase
-        .from("club_events")
-        .select("*")
-        .order("event_time", { ascending: false })
-        .limit(100);
-
-      if (events && events.length > 0) {
-        const uniqueKeys = new Set<string>();
-        const backfill = events
-          .filter((e: { event_type: string; player_name: string; player_tag: string; event_time: string }) => {
-            const key = `${e.event_type}|${e.player_tag}|${e.player_name}|${e.event_time}`;
-            if (uniqueKeys.has(key)) return false;
-            uniqueKeys.add(key);
-            return true;
-          })
-          .map((e: { event_type: string; player_name: string; player_tag: string; event_time: string }) => ({
-          type: e.event_type,
-          title: e.event_type === "join" ? "Member Joined" : "Member Left",
-          message: `${e.player_name} (${e.player_tag}) ${e.event_type === "join" ? "joined" : "left"} the club.`,
-          player_tag: e.player_tag,
-          player_name: e.player_name,
-          is_read: true, // mark old events as already read
-          created_at: e.event_time,
-          dedupe_key: buildNotificationDedupeKey(
-            e.event_type,
-            e.event_type === "join" ? "Member Joined" : "Member Left",
-            `${e.player_name} (${e.player_tag}) ${e.event_type === "join" ? "joined" : "left"} the club.`,
-            e.player_tag,
-            e.event_time
-          ),
-        }));
-        const { error: insertError } = await supabase
-          .from("notifications")
-          .upsert(backfill, { onConflict: "dedupe_key", ignoreDuplicates: true });
-        if (insertError && !isMissingNotificationsTable(insertError)) {
-          throw insertError;
-        }
-        console.log(`Backfilled ${backfill.length} notifications from club_events`);
-      }
-    }
-
     let query = supabase
       .from("notifications")
       .select("*")
@@ -111,30 +42,31 @@ export async function GET(request: NextRequest) {
       query = query.in("type", types);
     }
 
-    const { data: notifications, error } = await query;
-    if (error) {
-      if (isMissingNotificationsTable(error)) {
+    const [notificationsRes, unreadCountRes] = await Promise.all([
+      query,
+      supabase
+        .from("notifications")
+        .select("*", { count: "exact", head: true })
+        .eq("is_read", false),
+    ]);
+
+    if (notificationsRes.error) {
+      if (isMissingNotificationsTable(notificationsRes.error)) {
         return NextResponse.json({ notifications: [], unreadCount: 0, tableMissing: true });
       }
-      throw error;
+      throw notificationsRes.error;
     }
 
-    // Also get unread count
-    const { count, error: countError } = await supabase
-      .from("notifications")
-      .select("*", { count: "exact", head: true })
-      .eq("is_read", false);
-
-    if (countError) {
-      if (isMissingNotificationsTable(countError)) {
-        return NextResponse.json({ notifications: notifications || [], unreadCount: 0, tableMissing: true });
+    if (unreadCountRes.error) {
+      if (isMissingNotificationsTable(unreadCountRes.error)) {
+        return NextResponse.json({ notifications: notificationsRes.data || [], unreadCount: 0, tableMissing: true });
       }
-      throw countError;
+      throw unreadCountRes.error;
     }
 
     return NextResponse.json({
-      notifications: notifications || [],
-      unreadCount: count || 0,
+      notifications: notificationsRes.data || [],
+      unreadCount: unreadCountRes.count || 0,
     });
   } catch (error) {
     console.error("Error fetching notifications:", error);

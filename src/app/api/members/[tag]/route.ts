@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { supabase } from "@/lib/supabase";
-import { getPlayer, getPlayerRankedData, getLastBattleTime, getPlayerBattleStats, getBrawlerPowerDistribution, calculateEnhancedStats, calculateWinRateFromBattleLog, getPlayerBattleLog, processBattleLog, BrawlStarsBattleLog } from "@/lib/brawl-api";
+import { getPlayer, getPlayerRankedData, calculateEnhancedStats, calculateWinRateFromBattleLog, getPlayerBattleLog, processBattleLog, BrawlStarsBattleLog } from "@/lib/brawl-api";
 import { rejectCrossOriginRequest } from "@/lib/request-security";
 
 type RecentMatch = {
@@ -193,14 +193,63 @@ export async function GET(
     const { tag } = await params;
     const playerTag = decodeURIComponent(tag);
 
-    const apiKey = await getConfiguredApiKey();
+    const activitySince = new Date(Date.now() - 32 * 24 * 60 * 60 * 1000).toISOString();
+    const twentyEightDaysAgo = new Date();
+    twentyEightDaysAgo.setDate(twentyEightDaysAgo.getDate() - 28);
 
-    // Get member from database
-    const { data: member, error } = await supabase
-      .from("members")
-      .select("*")
-      .eq("player_tag", playerTag)
-      .single();
+    const [
+      memberRes,
+      activityHistory,
+      firstActivityRowsRes,
+      recentMatchesRes,
+      memberHistoryRes,
+      dailyStatsRes,
+      playerTrackingRes,
+      snapshotRowsRes,
+    ] = await Promise.all([
+      supabase
+        .from("members")
+        .select("*")
+        .eq("player_tag", playerTag)
+        .single(),
+      fetchActivityHistorySince(playerTag, activitySince),
+      supabase
+        .from("activity_log")
+        .select("recorded_at")
+        .eq("player_tag", playerTag)
+        .order("recorded_at", { ascending: true })
+        .limit(1),
+      supabase
+        .from("battle_history")
+        .select("battle_time, mode, map, result, trophy_change, is_star_player, brawler_name, brawler_power")
+        .eq("player_tag", playerTag)
+        .order("battle_time", { ascending: false })
+        .limit(25),
+      supabase
+        .from("member_history")
+        .select("*")
+        .eq("player_tag", playerTag)
+        .maybeSingle(),
+      supabase
+        .from("daily_stats")
+        .select("*")
+        .eq("player_tag", playerTag)
+        .gte("date", twentyEightDaysAgo.toISOString().slice(0, 10))
+        .order("date", { ascending: true }),
+      supabase
+        .from("player_tracking")
+        .select("*")
+        .eq("player_tag", playerTag)
+        .maybeSingle(),
+      supabase
+        .from("brawler_snapshots")
+        .select("brawler_id, brawler_name, power_level, trophies, rank, recorded_at")
+        .eq("player_tag", playerTag)
+        .order("recorded_at", { ascending: false })
+        .limit(500),
+    ]);
+
+    const { data: member, error } = memberRes;
 
     if (error || !member) {
       return NextResponse.json(
@@ -209,48 +258,19 @@ export async function GET(
       );
     }
 
-    const activitySince = new Date(Date.now() - 32 * 24 * 60 * 60 * 1000).toISOString();
-    const activityHistory = await fetchActivityHistorySince(playerTag, activitySince);
+    if (firstActivityRowsRes.error) throw firstActivityRowsRes.error;
+    if (recentMatchesRes.error) throw recentMatchesRes.error;
+    if (memberHistoryRes.error) throw memberHistoryRes.error;
+    if (dailyStatsRes.error) throw dailyStatsRes.error;
+    if (playerTrackingRes.error) throw playerTrackingRes.error;
+    if (snapshotRowsRes.error) throw snapshotRowsRes.error;
 
-    const { data: firstActivityRows } = await supabase
-      .from("activity_log")
-      .select("recorded_at")
-      .eq("player_tag", playerTag)
-      .order("recorded_at", { ascending: true })
-      .limit(1);
-
-    // Get recent matches for this player (mini battle feed)
-    const { data: recentMatches } = await supabase
-      .from("battle_history")
-      .select("battle_time, mode, map, result, trophy_change, is_star_player, brawler_name, brawler_power")
-      .eq("player_tag", playerTag)
-      .order("battle_time", { ascending: false })
-      .limit(25);
-
-    // Get member history
-    const { data: memberHistory } = await supabase
-      .from("member_history")
-      .select("*")
-      .eq("player_tag", playerTag)
-      .single();
-
-    // Get daily stats from database (last 28 days)
-    const twentyEightDaysAgo = new Date();
-    twentyEightDaysAgo.setDate(twentyEightDaysAgo.getDate() - 28);
-    
-    const { data: dailyStats } = await supabase
-      .from("daily_stats")
-      .select("*")
-      .eq("player_tag", playerTag)
-      .gte("date", twentyEightDaysAgo.toISOString().slice(0, 10))
-      .order("date", { ascending: true });
-
-    // Get player tracking info
-    const { data: playerTracking } = await supabase
-      .from("player_tracking")
-      .select("*")
-      .eq("player_tag", playerTag)
-      .single();
+    const firstActivityRows = firstActivityRowsRes.data;
+    const recentMatches = recentMatchesRes.data || [];
+    const memberHistory = memberHistoryRes.data;
+    const dailyStats = dailyStatsRes.data || [];
+    const playerTracking = playerTrackingRes.data;
+    const snapshotRows = snapshotRowsRes.data || [];
 
     // Calculate enhanced stats from stored data
     let enhancedStats = null;
@@ -258,11 +278,34 @@ export async function GET(
       enhancedStats = calculateEnhancedStats(dailyStats, playerTracking);
     }
 
-    // Fetch additional data from API
-    let lastBattleTime = null;
-    let battleStats = null;
+    const dailyRows = dailyStats || [];
+    const lastBattleTime = recentMatches?.[0]?.battle_time
+      || (playerTracking?.last_battle_date ? `${playerTracking.last_battle_date}T00:00:00.000Z` : null);
+    const totalBattles = dailyRows.reduce((sum, stat) => sum + (stat.battles || 0), 0);
+    const totalWins = dailyRows.reduce((sum, stat) => sum + (stat.wins || 0), 0);
+    const totalLosses = dailyRows.reduce((sum, stat) => sum + (stat.losses || 0), 0);
+    const starPlayerCount = dailyRows.reduce((sum, stat) => sum + (stat.star_player || 0), 0);
+    const trophiesGained = dailyRows.reduce((sum, stat) => sum + (stat.trophies_gained || 0), 0);
+    const trophiesLost = dailyRows.reduce((sum, stat) => sum + (stat.trophies_lost || 0), 0);
+    const activeDays = dailyRows.filter((stat) => (stat.battles || 0) > 0).length;
+    const battleStats = dailyRows.length > 0
+      ? {
+          battles: totalBattles,
+          wins: totalWins,
+          losses: totalLosses,
+          winRate: totalBattles > 0 ? Math.round((totalWins / totalBattles) * 100) : 0,
+          starPlayer: starPlayerCount,
+          trophyChange: trophiesGained - trophiesLost,
+          activeDays,
+          battlesByDay: Object.fromEntries(
+            dailyRows
+              .filter((stat) => (stat.battles || 0) > 0)
+              .map((stat) => [stat.date, stat.battles || 0])
+          ),
+        }
+      : null;
+
     let powerDistribution = null;
-    let brawlers = null;
     let topBrawlers: Array<{
       id: number;
       name: string;
@@ -272,65 +315,7 @@ export async function GET(
       rank: number;
       icon_url: string;
     }> = [];
-    let playerTags: string[] = [];
-
-    if (apiKey) {
-      try {
-        // Run API calls in parallel
-        const [battleTimeResult, battleStatsResult, playerData] = await Promise.all([
-          getLastBattleTime(playerTag, apiKey),
-          getPlayerBattleStats(playerTag, apiKey),
-          getPlayer(playerTag, apiKey),
-        ]);
-
-        lastBattleTime = battleTimeResult;
-        
-        // Convert Map and Set to serializable format (this is from current battle log - last 25 battles)
-        battleStats = {
-          battles: battleStatsResult.battles,
-          wins: battleStatsResult.wins,
-          losses: battleStatsResult.losses,
-          winRate: battleStatsResult.winRate,
-          starPlayer: battleStatsResult.starPlayer,
-          trophyChange: battleStatsResult.trophyChange,
-          activeDays: battleStatsResult.activeDays.size,
-          battlesByDay: Object.fromEntries(battleStatsResult.battlesByDay),
-        };
-
-        brawlers = playerData.brawlers;
-        powerDistribution = getBrawlerPowerDistribution(playerData.brawlers);
-
-        // Top brawlers by trophies
-        topBrawlers = [...playerData.brawlers]
-          .sort((a, b) => b.trophies - a.trophies)
-          .slice(0, 5)
-          .map((brawler) => ({
-            id: brawler.id,
-            name: brawler.name,
-            trophies: brawler.trophies,
-            highestTrophies: brawler.highestTrophies,
-            power: brawler.power,
-            rank: brawler.rank,
-            icon_url: `https://cdn.brawlify.com/brawlers/borders/${brawler.id}.png`,
-          }));
-
-        // Optional player tags (bonus metadata if available)
-        const playerProfile = playerData as unknown as {
-          title?: string | null;
-          nameColor?: string | null;
-        };
-        const tags: string[] = [];
-        if (playerProfile.title && playerProfile.title.trim().length > 0) {
-          tags.push(playerProfile.title.trim());
-        }
-        if (playerProfile.nameColor && playerProfile.nameColor !== "0xffffffff") {
-          tags.push("Custom Name Color");
-        }
-        playerTags = tags;
-      } catch (apiError) {
-        console.error("Error fetching API data:", apiError);
-      }
-    }
+    const playerTags: string[] = [];
 
     // Build calendar data from daily_stats (more reliable than battle log)
     const calendarBattlesByDay: Record<string, number> = {};
@@ -355,42 +340,51 @@ export async function GET(
       enhancedStats.trackedDays = trackedDays;
     }
 
-    // Fallback: if API top brawlers unavailable, derive from latest brawler snapshots
-    if (topBrawlers.length === 0) {
-      const { data: snapshotRows } = await supabase
-        .from("brawler_snapshots")
-        .select("brawler_id, brawler_name, power_level, trophies, rank, recorded_at")
-        .eq("player_tag", playerTag)
-        .order("recorded_at", { ascending: false })
-        .limit(500);
+    const latestByBrawler = new Map<number, {
+      brawler_id: number;
+      brawler_name: string;
+      power_level: number;
+      trophies: number;
+      rank: number;
+      max_trophies: number;
+    }>();
 
-      const latestByBrawler = new Map<number, {
-        brawler_id: number;
-        brawler_name: string;
-        power_level: number;
-        trophies: number;
-        rank: number;
-        max_trophies: number;
-      }>();
+    for (const row of snapshotRows || []) {
+      const existing = latestByBrawler.get(row.brawler_id);
+      if (!existing) {
+        latestByBrawler.set(row.brawler_id, {
+          brawler_id: row.brawler_id,
+          brawler_name: row.brawler_name,
+          power_level: row.power_level,
+          trophies: row.trophies,
+          rank: row.rank,
+          max_trophies: row.trophies,
+        });
+      } else if (row.trophies > existing.max_trophies) {
+        existing.max_trophies = row.trophies;
+      }
+    }
 
-      for (const row of snapshotRows || []) {
-        const existing = latestByBrawler.get(row.brawler_id);
-        if (!existing) {
-          latestByBrawler.set(row.brawler_id, {
-            brawler_id: row.brawler_id,
-            brawler_name: row.brawler_name,
-            power_level: row.power_level,
-            trophies: row.trophies,
-            rank: row.rank,
-            max_trophies: row.trophies,
-          });
-        } else if (row.trophies > existing.max_trophies) {
-          existing.max_trophies = row.trophies;
-          latestByBrawler.set(row.brawler_id, existing);
-        }
+    const latestBrawlers = Array.from(latestByBrawler.values());
+    if (latestBrawlers.length > 0) {
+      const distribution = Array(11).fill(0);
+      let totalPower = 0;
+      let maxedCount = 0;
+
+      for (const brawler of latestBrawlers) {
+        const power = Math.min(Math.max(brawler.power_level || 1, 1), 11);
+        distribution[power - 1]++;
+        totalPower += power;
+        if (power === 11) maxedCount++;
       }
 
-      topBrawlers = Array.from(latestByBrawler.values())
+      powerDistribution = {
+        distribution,
+        avgPower: totalPower / latestBrawlers.length,
+        maxedCount,
+      };
+
+      topBrawlers = latestBrawlers
         .sort((a, b) => b.trophies - a.trophies)
         .slice(0, 5)
         .map((brawler) => ({
@@ -412,7 +406,7 @@ export async function GET(
       battleStats,
       enhancedStats,
       powerDistribution,
-      brawlers,
+      brawlers: null,
       topBrawlers,
       recentMatches: (recentMatches || []) as RecentMatch[],
       playerTags,

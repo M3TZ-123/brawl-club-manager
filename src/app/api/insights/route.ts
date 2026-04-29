@@ -7,7 +7,7 @@ type BattleSummary = {
   result: string | null;
 };
 
-async function fetchAllBattleSummaries(playerTags: string[], sinceDate: string): Promise<BattleSummary[]> {
+async function fetchMegaPigBattleSummaries(playerTags: string[], sinceDate: string): Promise<BattleSummary[]> {
   if (playerTags.length === 0) return [];
 
   const pageSize = 1000;
@@ -19,6 +19,7 @@ async function fetchAllBattleSummaries(playerTags: string[], sinceDate: string):
       .select("battle_time, mode, result")
       .in("player_tag", playerTags)
       .gte("battle_time", sinceDate)
+      .or("mode.ilike.%mega%,mode.ilike.%pig%")
       .range(from, from + pageSize - 1);
 
     if (error) throw error;
@@ -60,15 +61,10 @@ export async function GET() {
     // 0. MEGA PIG STATUS — derived from tracked battle_history
     // Note: Official API does not currently expose a direct club Mega Pig rank field.
     // ============================
-    const recentBattles = await fetchAllBattleSummaries(
+    const megaPigBattles = await fetchMegaPigBattleSummaries(
       members.map((m) => m.player_tag),
       weekAgoStr
     );
-
-    const megaPigBattles = recentBattles.filter((battle) => {
-      const mode = (battle.mode || "").toLowerCase();
-      return mode.includes("mega") || mode.includes("pig");
-    });
 
     const megaPigWins = megaPigBattles.reduce((sum, battle) => {
       return sum + (battle.result === "victory" ? 1 : 0);

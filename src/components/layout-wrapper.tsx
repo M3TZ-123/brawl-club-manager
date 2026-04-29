@@ -282,9 +282,17 @@ function SimpleHeader() {
   useEffect(() => {
     const timer = window.setTimeout(() => {
       loadNotifications();
-    }, 0);
+    }, 1500);
     return () => window.clearTimeout(timer);
   }, [loadNotifications]);
+
+  useEffect(() => {
+    if (!showNotifications) return;
+    const timer = window.setTimeout(() => {
+      loadNotifications();
+    }, 0);
+    return () => window.clearTimeout(timer);
+  }, [loadNotifications, showNotifications]);
 
   // Close panel on click outside
   useEffect(() => {

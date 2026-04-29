@@ -9,11 +9,21 @@ type ActivitySnapshot = {
 
 type BattleSnapshot = {
   player_tag: string;
-  battle_time: string;
-  trophy_change: number;
+  last_battle_date: string | null;
 };
 
-async function fetchAllActivitySnapshots(playerTags: string[], sinceISO: string): Promise<ActivitySnapshot[]> {
+type DailyStatsSnapshot = {
+  player_tag: string;
+  date: string;
+  trophies_gained: number | null;
+  trophies_lost: number | null;
+};
+
+async function fetchActivitySnapshotsWindow(
+  playerTags: string[],
+  fromISO: string,
+  toISO: string
+): Promise<ActivitySnapshot[]> {
   if (playerTags.length === 0) return [];
 
   const pageSize = 1000;
@@ -24,7 +34,8 @@ async function fetchAllActivitySnapshots(playerTags: string[], sinceISO: string)
       .from("activity_log")
       .select("player_tag, trophies, recorded_at")
       .in("player_tag", playerTags)
-      .gte("recorded_at", sinceISO)
+      .gte("recorded_at", fromISO)
+      .lte("recorded_at", toISO)
       .order("recorded_at", { ascending: true })
       .range(from, from + pageSize - 1);
 
@@ -36,36 +47,40 @@ async function fetchAllActivitySnapshots(playerTags: string[], sinceISO: string)
   return rows;
 }
 
-async function fetchAllBattleSnapshots(playerTags: string[], sinceISO: string): Promise<BattleSnapshot[]> {
+async function fetchTrackingSnapshots(playerTags: string[]): Promise<BattleSnapshot[]> {
   if (playerTags.length === 0) return [];
 
-  const pageSize = 1000;
-  const rows: BattleSnapshot[] = [];
+  const { data, error } = await supabase
+    .from("player_tracking")
+    .select("player_tag, last_battle_date")
+    .in("player_tag", playerTags);
 
-  for (let from = 0; ; from += pageSize) {
-    const { data, error } = await supabase
-      .from("battle_history")
-      .select("player_tag, battle_time, trophy_change")
-      .in("player_tag", playerTags)
-      .gte("battle_time", sinceISO)
-      .order("battle_time", { ascending: false })
-      .range(from, from + pageSize - 1);
+  if (error) throw error;
+  return (data || []) as BattleSnapshot[];
+}
 
-    if (error) throw error;
-    rows.push(...((data || []) as BattleSnapshot[]));
-    if (!data || data.length < pageSize) break;
-  }
+async function fetchDailyStatsSnapshots(playerTags: string[], sinceDate: string): Promise<DailyStatsSnapshot[]> {
+  if (playerTags.length === 0) return [];
 
-  return rows;
+  const { data, error } = await supabase
+    .from("daily_stats")
+    .select("player_tag, date, trophies_gained, trophies_lost")
+    .in("player_tag", playerTags)
+    .gte("date", sinceDate);
+
+  if (error) throw error;
+  return (data || []) as DailyStatsSnapshot[];
 }
 
 export async function GET() {
   try {
     // Get current member tags from member_history
-    const { data: currentMemberHistory } = await supabase
+    const { data: currentMemberHistory, error: currentMemberError } = await supabase
       .from("member_history")
       .select("player_tag")
       .eq("is_current_member", true);
+
+    if (currentMemberError) throw currentMemberError;
     
     const currentMemberTags = currentMemberHistory?.map(h => h.player_tag) || [];
 
@@ -90,10 +105,24 @@ export async function GET() {
     const sevenDaysAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
 
     // Get activity logs from the last 7 days (plus a small buffer for baseline)
-    const activityLogs = await fetchAllActivitySnapshots(
-      currentMemberTags,
-      new Date(sevenDaysAgo.getTime() - 24 * 60 * 60 * 1000).toISOString()
-    );
+    const [activityLogs24h, activityLogs7d, trackingSnapshots, dailyStatsSnapshots] = await Promise.all([
+      fetchActivitySnapshotsWindow(
+        currentMemberTags,
+        new Date(twentyFourHoursAgo.getTime() - 12 * 60 * 60 * 1000).toISOString(),
+        new Date(twentyFourHoursAgo.getTime() + 12 * 60 * 60 * 1000).toISOString()
+      ),
+      fetchActivitySnapshotsWindow(
+        currentMemberTags,
+        new Date(sevenDaysAgo.getTime() - 24 * 60 * 60 * 1000).toISOString(),
+        new Date(sevenDaysAgo.getTime() + 24 * 60 * 60 * 1000).toISOString()
+      ),
+      fetchTrackingSnapshots(currentMemberTags),
+      fetchDailyStatsSnapshots(
+        currentMemberTags,
+        new Date(sevenDaysAgo.getTime() - 24 * 60 * 60 * 1000).toISOString().slice(0, 10)
+      ),
+    ]);
+    const activityLogs = [...activityLogs24h, ...activityLogs7d];
 
     // Pre-group logs by player_tag for O(1) lookups instead of O(n) per member
     const logsByPlayer = new Map<string, ActivitySnapshot[]>();
@@ -104,29 +133,31 @@ export async function GET() {
       logsByPlayer.get(log.player_tag)!.push(log);
     }
 
-    // Build battle recency map from real battles (captures activity even when trophy change is 0)
-    const recentBattles = await fetchAllBattleSnapshots(currentMemberTags, sevenDaysAgo.toISOString());
-
     const latestBattleByPlayer = new Map<string, Date>();
-    const battleDelta24hByPlayer = new Map<string, number>();
-    const battleDelta7dByPlayer = new Map<string, number>();
-    for (const battle of recentBattles) {
-      if (!latestBattleByPlayer.has(battle.player_tag)) {
-        latestBattleByPlayer.set(battle.player_tag, new Date(battle.battle_time));
+    for (const snapshot of trackingSnapshots) {
+      if (snapshot.last_battle_date) {
+        latestBattleByPlayer.set(snapshot.player_tag, new Date(`${snapshot.last_battle_date}T00:00:00.000Z`));
       }
+    }
 
-      const battleTime = new Date(battle.battle_time);
-      if (battleTime >= twentyFourHoursAgo) {
-        battleDelta24hByPlayer.set(
-          battle.player_tag,
-          (battleDelta24hByPlayer.get(battle.player_tag) || 0) + (battle.trophy_change || 0)
+    const dailyDelta24hByPlayer = new Map<string, number>();
+    const dailyDelta7dByPlayer = new Map<string, number>();
+    const twentyFourHoursAgoDate = twentyFourHoursAgo.toISOString().slice(0, 10);
+    const sevenDaysAgoDate = sevenDaysAgo.toISOString().slice(0, 10);
+
+    for (const row of dailyStatsSnapshots) {
+      const delta = (row.trophies_gained || 0) - (row.trophies_lost || 0);
+      if (row.date >= twentyFourHoursAgoDate) {
+        dailyDelta24hByPlayer.set(
+          row.player_tag,
+          (dailyDelta24hByPlayer.get(row.player_tag) || 0) + delta
         );
       }
 
-      if (battleTime >= sevenDaysAgo) {
-        battleDelta7dByPlayer.set(
-          battle.player_tag,
-          (battleDelta7dByPlayer.get(battle.player_tag) || 0) + (battle.trophy_change || 0)
+      if (row.date >= sevenDaysAgoDate) {
+        dailyDelta7dByPlayer.set(
+          row.player_tag,
+          (dailyDelta7dByPlayer.get(row.player_tag) || 0) + delta
         );
       }
     }
@@ -157,11 +188,11 @@ export async function GET() {
       // If no activity logs exist, we still compute activity_status from battles and fallback flags
       if (playerLogs.length === 0) {
         const lastBattleAt = latestBattleByPlayer.get(member.player_tag);
-        const fallback24h = battleDelta24hByPlayer.has(member.player_tag)
-          ? battleDelta24hByPlayer.get(member.player_tag) || 0
+        const fallback24h = dailyDelta24hByPlayer.has(member.player_tag)
+          ? dailyDelta24hByPlayer.get(member.player_tag) || 0
           : null;
-        const fallback7d = battleDelta7dByPlayer.has(member.player_tag)
-          ? battleDelta7dByPlayer.get(member.player_tag) || 0
+        const fallback7d = dailyDelta7dByPlayer.has(member.player_tag)
+          ? dailyDelta7dByPlayer.get(member.player_tag) || 0
           : null;
         const activityStatus = lastBattleAt
           ? (lastBattleAt >= twentyFourHoursAgo ? "active" : "minimal")
@@ -197,11 +228,11 @@ export async function GET() {
         : null;
 
       // Fallback to battle deltas when snapshot baseline is unavailable
-      const fallback24h = battleDelta24hByPlayer.has(member.player_tag)
-        ? battleDelta24hByPlayer.get(member.player_tag) || 0
+      const fallback24h = dailyDelta24hByPlayer.has(member.player_tag)
+        ? dailyDelta24hByPlayer.get(member.player_tag) || 0
         : null;
-      const fallback7d = battleDelta7dByPlayer.has(member.player_tag)
-        ? battleDelta7dByPlayer.get(member.player_tag) || 0
+      const fallback7d = dailyDelta7dByPlayer.has(member.player_tag)
+        ? dailyDelta7dByPlayer.get(member.player_tag) || 0
         : null;
 
       const trophies24h = snapshot24h != null ? snapshot24h : fallback24h;

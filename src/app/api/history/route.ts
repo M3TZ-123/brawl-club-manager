@@ -16,16 +16,23 @@ type MemberHistoryRow = Record<string, unknown> & {
   is_current_member?: boolean | null;
 };
 
-async function fetchAllMemberHistory(): Promise<MemberHistoryRow[]> {
+async function fetchAllMemberHistory(cutoffDate: Date | null): Promise<MemberHistoryRow[]> {
   const pageSize = 1000;
   const rows: MemberHistoryRow[] = [];
 
   for (let from = 0; ; from += pageSize) {
-    const { data, error } = await supabase
+    let query = supabase
       .from("member_history")
-      .select("*")
+      .select("player_tag, player_name, first_seen, last_seen, last_left_at, times_joined, times_left, is_current_member, role_at_leave, trophies_at_leave, notes")
       .order("last_seen", { ascending: false })
       .range(from, from + pageSize - 1);
+
+    if (cutoffDate) {
+      const cutoffISO = cutoffDate.toISOString();
+      query = query.or(`first_seen.gte.${cutoffISO},last_left_at.gte.${cutoffISO},last_seen.gte.${cutoffISO}`);
+    }
+
+    const { data, error } = await query;
 
     if (error) throw error;
     rows.push(...((data || []) as MemberHistoryRow[]));
@@ -45,7 +52,7 @@ export async function GET(request: NextRequest) {
       ? new Date(Date.now() - days * 24 * 60 * 60 * 1000)
       : null;
 
-    const history = await fetchAllMemberHistory();
+    const history = await fetchAllMemberHistory(cutoffDate);
 
     let filteredHistory = history;
 

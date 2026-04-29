@@ -11,26 +11,19 @@ type BattleModeRow = {
   mode: string | null;
 };
 
-async function fetchAllBattleModes(playerTags: string[]): Promise<BattleModeRow[]> {
+async function fetchRecentBattleModes(playerTags: string[]): Promise<BattleModeRow[]> {
   if (playerTags.length === 0) return [];
 
-  const pageSize = 1000;
-  const rows: BattleModeRow[] = [];
+  const { data, error } = await supabase
+    .from("battle_history")
+    .select("mode")
+    .in("player_tag", playerTags)
+    .not("mode", "is", null)
+    .order("battle_time", { ascending: false })
+    .limit(1500);
 
-  for (let from = 0; ; from += pageSize) {
-    const { data, error } = await supabase
-      .from("battle_history")
-      .select("mode")
-      .in("player_tag", playerTags)
-      .not("mode", "is", null)
-      .range(from, from + pageSize - 1);
-
-    if (error) throw error;
-    rows.push(...((data || []) as BattleModeRow[]));
-    if (!data || data.length < pageSize) break;
-  }
-
-  return rows;
+  if (error) throw error;
+  return (data || []) as BattleModeRow[];
 }
 
 export async function GET(request: Request) {
@@ -62,7 +55,10 @@ export async function GET(request: Request) {
     // Build query - fetch raw battles
     let query = supabase
       .from("battle_history")
-      .select("*", { count: "exact" })
+      .select(
+        "player_tag, battle_time, mode, map, result, trophy_change, is_star_player, brawler_name, brawler_power, teams_json",
+        { count: "exact" }
+      )
       .in("player_tag", currentMemberTags.length > 0 ? currentMemberTags : [""])
       .order("battle_time", { ascending: false })
       .range(offset, offset + limit - 1);
@@ -311,7 +307,7 @@ export async function GET(request: Request) {
     }
 
     // Get distinct modes for filter
-    const modes = await fetchAllBattleModes(currentMemberTags);
+    const modes = await fetchRecentBattleModes(currentMemberTags);
 
     const uniqueModes = [...new Set(modes.map((m) => m.mode))].filter(Boolean).sort();
 
