@@ -114,25 +114,25 @@ Open [http://localhost:3000](http://localhost:3000) to see the app.
 4. Add environment variables
 5. Deploy!
 
-### Setup Auto-Sync
+### Setup Auto-Sync With cron-job.org
 
-The app supports two automatic sync paths:
+Use cron-job.org as the production scheduler.
 
-1. **Vercel Cron** runs `/api/sync` once per day from `vercel.json`. This is useful as a backup on the Hobby plan, where Vercel cron jobs are limited to daily runs.
-2. **GitHub Actions** runs `.github/workflows/sync.yml` every 30 minutes. This is the recommended frequent sync path for this app.
+Create one cron-job.org job:
 
-For GitHub Actions, add these repository secrets in GitHub:
+- URL: `https://brawlstatz.vercel.app/api/sync`
+- Method: `GET`
+- Schedule: every 30 minutes, or your preferred interval
+- Timeout: as high as cron-job.org allows, because a full club sync can take time
+- Custom request header:
 
-- `CRON_SECRET` - must be exactly the same value as the Vercel `CRON_SECRET`
-- `VERCEL_APP_URL` - your production URL, for example `https://brawlstatz.vercel.app`
-
-The workflow calls `/api/sync` with:
-
-```http
-Authorization: Bearer <CRON_SECRET>
+```txt
+Authorization: Bearer YOUR_VERCEL_CRON_SECRET_VALUE
 ```
 
-The in-app refresh interval is only a browser/admin fallback. It works while an admin has the app open, but production auto-sync should rely on GitHub Actions or another external scheduler.
+The value after `Bearer` must be exactly the same as the `CRON_SECRET` environment variable in Vercel.
+
+The in-app refresh interval is only a browser/admin fallback. It works while an admin has the app open, but production auto-sync should rely on cron-job.org or another external scheduler.
 
 ## 📁 Project Structure
 
