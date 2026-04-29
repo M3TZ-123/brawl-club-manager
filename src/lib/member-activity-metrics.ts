@@ -11,6 +11,11 @@ type BattleSnapshot = {
   last_battle_date: string | null;
 };
 
+type BattleHistorySnapshot = {
+  player_tag: string;
+  battle_time: string;
+};
+
 type DailyStatsSnapshot = {
   player_tag: string;
   date: string;
@@ -65,6 +70,34 @@ async function fetchTrackingSnapshots(playerTags: string[]): Promise<BattleSnaps
   return (data || []) as BattleSnapshot[];
 }
 
+async function fetchLatestBattleHistorySnapshots(playerTags: string[]): Promise<BattleHistorySnapshot[]> {
+  if (playerTags.length === 0) return [];
+
+  const pageSize = 1000;
+  const latestByPlayer = new Map<string, BattleHistorySnapshot>();
+
+  for (let from = 0; latestByPlayer.size < playerTags.length; from += pageSize) {
+    const { data, error } = await supabaseAdmin
+      .from("battle_history")
+      .select("player_tag, battle_time")
+      .in("player_tag", playerTags)
+      .order("battle_time", { ascending: false })
+      .range(from, from + pageSize - 1);
+
+    if (error) throw error;
+
+    for (const row of (data || []) as BattleHistorySnapshot[]) {
+      if (!latestByPlayer.has(row.player_tag)) {
+        latestByPlayer.set(row.player_tag, row);
+      }
+    }
+
+    if (!data || data.length < pageSize) break;
+  }
+
+  return [...latestByPlayer.values()];
+}
+
 async function fetchDailyStatsSnapshots(playerTags: string[], sinceDate: string): Promise<DailyStatsSnapshot[]> {
   if (playerTags.length === 0) return [];
 
@@ -107,7 +140,7 @@ export async function appendMemberActivityMetrics<T extends { player_tag: string
   const twentyFourHoursAgo = new Date(now.getTime() - 24 * 60 * 60 * 1000);
   const sevenDaysAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
 
-  const [activityLogs24h, activityLogs7d, trackingSnapshots, dailyStatsSnapshots] = await Promise.all([
+  const [activityLogs24h, activityLogs7d, trackingSnapshots, latestBattleSnapshots, dailyStatsSnapshots] = await Promise.all([
     fetchActivitySnapshotsWindow(
       playerTags,
       new Date(twentyFourHoursAgo.getTime() - 12 * 60 * 60 * 1000).toISOString(),
@@ -119,6 +152,7 @@ export async function appendMemberActivityMetrics<T extends { player_tag: string
       new Date(sevenDaysAgo.getTime() + 24 * 60 * 60 * 1000).toISOString()
     ),
     fetchTrackingSnapshots(playerTags),
+    fetchLatestBattleHistorySnapshots(playerTags),
     fetchDailyStatsSnapshots(
       playerTags,
       new Date(sevenDaysAgo.getTime() - 24 * 60 * 60 * 1000).toISOString().slice(0, 10)
@@ -134,9 +168,17 @@ export async function appendMemberActivityMetrics<T extends { player_tag: string
   }
 
   const latestBattleByPlayer = new Map<string, Date>();
+  for (const snapshot of latestBattleSnapshots) {
+    latestBattleByPlayer.set(snapshot.player_tag, new Date(snapshot.battle_time));
+  }
+
   for (const snapshot of trackingSnapshots) {
     if (snapshot.last_battle_date) {
-      latestBattleByPlayer.set(snapshot.player_tag, new Date(`${snapshot.last_battle_date}T00:00:00.000Z`));
+      const trackingBattleDate = new Date(`${snapshot.last_battle_date}T00:00:00.000Z`);
+      const currentLatest = latestBattleByPlayer.get(snapshot.player_tag);
+      if (!currentLatest || trackingBattleDate > currentLatest) {
+        latestBattleByPlayer.set(snapshot.player_tag, trackingBattleDate);
+      }
     }
   }
 
