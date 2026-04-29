@@ -2,6 +2,9 @@ import { NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabase-admin";
 import { ClubEvent, Member } from "@/types/database";
 
+export const dynamic = "force-dynamic";
+export const revalidate = 0;
+
 interface DashboardSummary {
   totalMembers: number;
   totalTrophies: number;
@@ -51,17 +54,20 @@ export async function GET() {
       avgTrophies: members.length > 0 ? Math.round(totalTrophies / members.length) : 0,
     };
 
-    return NextResponse.json({
-      summary,
-      topMembers: members.slice(0, 10),
-      recentEvents: (eventsRes.data || []) as ClubEvent[],
-      generatedAt: new Date().toISOString(),
-    });
+    return NextResponse.json(
+      {
+        summary,
+        topMembers: members.slice(0, 10),
+        recentEvents: (eventsRes.data || []) as ClubEvent[],
+        generatedAt: new Date().toISOString(),
+      },
+      { headers: { "Cache-Control": "no-store" } }
+    );
   } catch (error) {
     console.error("Error fetching dashboard:", error);
     return NextResponse.json(
       { error: "Failed to fetch dashboard" },
-      { status: 500 }
+      { status: 500, headers: { "Cache-Control": "no-store" } }
     );
   }
 }

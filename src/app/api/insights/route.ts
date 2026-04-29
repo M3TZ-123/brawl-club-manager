@@ -1,6 +1,9 @@
 import { NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabase-admin";
 
+export const dynamic = "force-dynamic";
+export const revalidate = 0;
+
 type BattleSummary = {
   battle_time: string;
   mode: string | null;
@@ -44,6 +47,11 @@ export async function GET() {
       supabaseAdmin.from("daily_stats").select("player_tag, date, battles, wins, trophies_gained, trophies_lost").gte("date", weekAgoStr),
       supabaseAdmin.from("daily_stats").select("player_tag, battles").gte("date", prevWeekStr).lt("date", weekAgoStr),
     ]);
+
+    if (currentMembersRes.error) throw currentMembersRes.error;
+    if (membersRes.error) throw membersRes.error;
+    if (thisWeekStatsRes.error) throw thisWeekStatsRes.error;
+    if (prevWeekStatsRes.error) throw prevWeekStatsRes.error;
 
     const currentTags = new Set((currentMembersRes.data || []).map(h => h.player_tag));
     const members = (membersRes.data || []).filter(m => currentTags.has(m.player_tag));
@@ -99,12 +107,14 @@ export async function GET() {
     // Get last battle date from daily_stats (actual activity, not sync timestamp)
     const lastBattleDateMap = new Map<string, string>();
     if (inactiveTags.length > 0) {
-      const { data: lastBattles } = await supabaseAdmin
+      const { data: lastBattles, error: lastBattlesError } = await supabaseAdmin
         .from("daily_stats")
         .select("player_tag, date")
         .in("player_tag", inactiveTags)
         .gt("battles", 0)
         .order("date", { ascending: false });
+
+      if (lastBattlesError) throw lastBattlesError;
 
       for (const row of lastBattles || []) {
         if (!lastBattleDateMap.has(row.player_tag)) {
@@ -172,44 +182,56 @@ export async function GET() {
       
       // If still not found, query directly
       if (!mvpName) {
-        const { data: mvpMember } = await supabaseAdmin
+        const tagCandidates = Array.from(new Set([
+          mvpTag,
+          mvpTag.replace("#", ""),
+          `#${mvpTag.replace("#", "")}`,
+        ]));
+        const { data: mvpMember, error: mvpLookupError } = await supabaseAdmin
           .from("members")
           .select("player_name")
-          .or(`player_tag.eq.${mvpTag},player_tag.eq.#${mvpTag},player_tag.eq.${mvpTag.replace("#", "")}`)
+          .in("player_tag", tagCandidates)
           .limit(1)
-          .single();
+          .maybeSingle();
+        if (mvpLookupError) throw mvpLookupError;
         mvpName = mvpMember?.player_name || mvpTag;
       }
     }
 
-    return NextResponse.json({
-      insights: {
-        // Mega Pig
-        megaPig: {
-          ...megaPigStatus,
-          lastBattleAt: megaPigStatus.lastBattleAt
-            ? new Date(megaPigStatus.lastBattleAt).toISOString()
-            : null,
+    return NextResponse.json(
+      {
+        insights: {
+          // Mega Pig
+          megaPig: {
+            ...megaPigStatus,
+            lastBattleAt: megaPigStatus.lastBattleAt
+              ? new Date(megaPigStatus.lastBattleAt).toISOString()
+              : null,
+          },
+          // Win Rate
+          winRate,
+          totalWins,
+          totalBattlesThisWeek,
+          // Kick List
+          kickList: kickCandidates,
+          kickCount: kickCandidates.length,
+          // Activity Trend
+          thisWeekTotal,
+          prevWeekTotal,
+          trendDiff,
+          trendDirection,
+          // MVP
+          mvpName,
+          mvpTrophies,
         },
-        // Win Rate
-        winRate,
-        totalWins,
-        totalBattlesThisWeek,
-        // Kick List
-        kickList: kickCandidates,
-        kickCount: kickCandidates.length,
-        // Activity Trend
-        thisWeekTotal,
-        prevWeekTotal,
-        trendDiff,
-        trendDirection,
-        // MVP
-        mvpName,
-        mvpTrophies,
       },
-    });
+      { headers: { "Cache-Control": "no-store" } }
+    );
   } catch (error) {
     console.error("Error fetching club insights:", error);
-    return NextResponse.json({ error: "Failed to fetch insights" }, { status: 500 });
+    return NextResponse.json(
+      { error: "Failed to fetch insights" },
+      { status: 500, headers: { "Cache-Control": "no-store" } }
+    );
   }
 }
