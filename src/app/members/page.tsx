@@ -15,6 +15,7 @@ import {
 } from "@/components/members-table";
 import { fetchJsonCached, invalidateJsonCache } from "@/lib/client-data-cache";
 import { useAppStore } from "@/lib/store";
+import { useAdminSession } from "@/hooks/use-admin-session";
 import { cn, formatDateTime, formatNumber, formatRelativeTime } from "@/lib/utils";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -254,7 +255,15 @@ function sanitizeCsvValue(value: string | number | boolean | null | undefined) {
 }
 
 export default function MembersPage() {
-  const { lastSyncTime, setLastSyncTime } = useAppStore();
+  const {
+    lastSyncTime,
+    setLastSyncTime,
+    clubTag,
+    apiKeyConfigured,
+    isSyncing,
+    setIsSyncing,
+  } = useAppStore();
+  const { isAdmin, isLoading: isAdminLoading } = useAdminSession();
   const [members, setMembers] = useState<MemberWithGains[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isRefreshing, setIsRefreshing] = useState(false);
@@ -272,7 +281,7 @@ export default function MembersPage() {
   const [columnVisibility, setColumnVisibility] = useState<MemberColumnVisibility>(DEFAULT_MEMBER_COLUMNS);
   const [sortState, setSortState] = useState<MemberSortState>({ key: "trophies", direction: "desc" });
   const [selectedMember, setSelectedMember] = useState<MemberWithGains | null>(null);
-  const [copied, setCopied] = useState<"tag" | "visible" | null>(null);
+  const [copied, setCopied] = useState<"tag" | null>(null);
   const copyResetTimeoutRef = useRef<number | null>(null);
 
   const loadMembers = useCallback(async (force = false) => {
@@ -448,7 +457,7 @@ export default function MembersPage() {
     }));
   };
 
-  const copyText = async (text: string, copiedType: "tag" | "visible") => {
+  const copyText = async (text: string, copiedType: "tag") => {
     try {
       await navigator.clipboard.writeText(text);
       setCopied(copiedType);
@@ -464,10 +473,35 @@ export default function MembersPage() {
     }
   };
 
-  const handleCopyVisibleTags = () => {
-    const tags = filteredMembers.map((member) => member.player_tag).join("\n");
-    if (tags) {
-      copyText(tags, "visible");
+  const handleSyncNow = async () => {
+    if (!clubTag || !apiKeyConfigured) {
+      setErrorMessage("Club tag and API key must be configured before syncing.");
+      return;
+    }
+
+    try {
+      setErrorMessage(null);
+      setIsSyncing(true);
+      const response = await fetch("/api/sync", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ clubTag }),
+      });
+      const data = await response.json().catch(() => ({}));
+
+      if (!response.ok) {
+        throw new Error(data.error || data.message || "Sync failed");
+      }
+
+      invalidateJsonCache();
+      const syncTime = typeof data.timestamp === "string" ? data.timestamp : new Date().toISOString();
+      setLastSyncTime(syncTime);
+      await loadMembers(true);
+    } catch (error) {
+      console.error("Sync failed:", error);
+      setErrorMessage(error instanceof Error ? error.message : "Sync failed");
+    } finally {
+      setIsSyncing(false);
     }
   };
 
@@ -593,24 +627,17 @@ export default function MembersPage() {
                   <Columns3 className="h-4 w-4" />
                   Columns
                 </Button>
-                <Button
-                  variant="outline"
-                  onClick={() => loadMembers(true)}
-                  disabled={isRefreshing}
-                  className="gap-2"
-                >
-                  <RefreshCw className={cn("h-4 w-4", isRefreshing && "animate-spin")} />
-                  {isRefreshing ? "Reloading" : "Reload"}
-                </Button>
-                <Button
-                  variant="outline"
-                  onClick={handleCopyVisibleTags}
-                  disabled={filteredMembers.length === 0}
-                  className="gap-2"
-                >
-                  {copied === "visible" ? <Check className="h-4 w-4" /> : <Copy className="h-4 w-4" />}
-                  Tags
-                </Button>
+                {isAdmin && (
+                  <Button
+                    variant="outline"
+                    onClick={handleSyncNow}
+                    disabled={isSyncing || isRefreshing || isAdminLoading || !clubTag || !apiKeyConfigured}
+                    className="gap-2"
+                  >
+                    <RefreshCw className={cn("h-4 w-4", (isSyncing || isRefreshing) && "animate-spin")} />
+                    {isSyncing ? "Syncing" : "Sync Now"}
+                  </Button>
+                )}
                 <Button
                   variant="outline"
                   onClick={handleExport}
