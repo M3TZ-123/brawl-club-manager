@@ -16,11 +16,10 @@ type BattleHistorySnapshot = {
   battle_time: string;
 };
 
-type DailyStatsSnapshot = {
+type BattleDeltaSnapshot = {
   player_tag: string;
-  date: string;
-  trophies_gained: number | null;
-  trophies_lost: number | null;
+  battle_time: string;
+  trophy_change: number | null;
 };
 
 const DAY_MS = 24 * 60 * 60 * 1000;
@@ -103,17 +102,26 @@ async function fetchLatestBattleHistorySnapshots(playerTags: string[]): Promise<
   return [...latestByPlayer.values()];
 }
 
-async function fetchDailyStatsSnapshots(playerTags: string[], sinceDate: string): Promise<DailyStatsSnapshot[]> {
+async function fetchBattleDeltaSnapshots(playerTags: string[], sinceISO: string): Promise<BattleDeltaSnapshot[]> {
   if (playerTags.length === 0) return [];
 
-  const { data, error } = await supabaseAdmin
-    .from("daily_stats")
-    .select("player_tag, date, trophies_gained, trophies_lost")
-    .in("player_tag", playerTags)
-    .gte("date", sinceDate);
+  const pageSize = 1000;
+  const rows: BattleDeltaSnapshot[] = [];
 
-  if (error) throw error;
-  return (data || []) as DailyStatsSnapshot[];
+  for (let from = 0; ; from += pageSize) {
+    const { data, error } = await supabaseAdmin
+      .from("battle_history")
+      .select("player_tag, battle_time, trophy_change")
+      .in("player_tag", playerTags)
+      .gte("battle_time", sinceISO)
+      .range(from, from + pageSize - 1);
+
+    if (error) throw error;
+    rows.push(...((data || []) as BattleDeltaSnapshot[]));
+    if (!data || data.length < pageSize) break;
+  }
+
+  return rows;
 }
 
 function findNearestBaseline(
@@ -147,7 +155,7 @@ export async function appendMemberActivityMetrics<T extends { player_tag: string
   const threeDaysAgo = new Date(now.getTime() - 3 * DAY_MS);
   const sevenDaysAgo = new Date(now.getTime() - 7 * DAY_MS);
 
-  const [activityLogs24h, activityLogs3d, activityLogs7d, trackingSnapshots, latestBattleSnapshots, dailyStatsSnapshots] = await Promise.all([
+  const [activityLogs24h, activityLogs3d, activityLogs7d, trackingSnapshots, latestBattleSnapshots, battleDeltaSnapshots] = await Promise.all([
     fetchActivitySnapshotsWindow(
       playerTags,
       new Date(twentyFourHoursAgo.getTime() - 12 * 60 * 60 * 1000).toISOString(),
@@ -165,10 +173,7 @@ export async function appendMemberActivityMetrics<T extends { player_tag: string
     ),
     fetchTrackingSnapshots(playerTags),
     fetchLatestBattleHistorySnapshots(playerTags),
-    fetchDailyStatsSnapshots(
-      playerTags,
-      new Date(sevenDaysAgo.getTime() - 24 * 60 * 60 * 1000).toISOString().slice(0, 10)
-    ),
+    fetchBattleDeltaSnapshots(playerTags, sevenDaysAgo.toISOString()),
   ]);
 
   const logsByPlayer = new Map<string, ActivitySnapshot[]>();
@@ -194,25 +199,24 @@ export async function appendMemberActivityMetrics<T extends { player_tag: string
     }
   }
 
-  const dailyDelta24hByPlayer = new Map<string, number>();
-  const dailyDelta3dByPlayer = new Map<string, number>();
-  const dailyDelta7dByPlayer = new Map<string, number>();
-  const twentyFourHoursAgoDate = twentyFourHoursAgo.toISOString().slice(0, 10);
-  const threeDaysAgoDate = threeDaysAgo.toISOString().slice(0, 10);
-  const sevenDaysAgoDate = sevenDaysAgo.toISOString().slice(0, 10);
+  const battleDelta24hByPlayer = new Map<string, number>();
+  const battleDelta3dByPlayer = new Map<string, number>();
+  const battleDelta7dByPlayer = new Map<string, number>();
 
-  for (const row of dailyStatsSnapshots) {
-    const delta = (row.trophies_gained || 0) - (row.trophies_lost || 0);
-    if (row.date >= twentyFourHoursAgoDate) {
-      dailyDelta24hByPlayer.set(row.player_tag, (dailyDelta24hByPlayer.get(row.player_tag) || 0) + delta);
+  for (const row of battleDeltaSnapshots) {
+    const battleTime = new Date(row.battle_time).getTime();
+    const delta = row.trophy_change || 0;
+
+    if (battleTime >= twentyFourHoursAgo.getTime()) {
+      battleDelta24hByPlayer.set(row.player_tag, (battleDelta24hByPlayer.get(row.player_tag) || 0) + delta);
     }
 
-    if (row.date >= threeDaysAgoDate) {
-      dailyDelta3dByPlayer.set(row.player_tag, (dailyDelta3dByPlayer.get(row.player_tag) || 0) + delta);
+    if (battleTime >= threeDaysAgo.getTime()) {
+      battleDelta3dByPlayer.set(row.player_tag, (battleDelta3dByPlayer.get(row.player_tag) || 0) + delta);
     }
 
-    if (row.date >= sevenDaysAgoDate) {
-      dailyDelta7dByPlayer.set(row.player_tag, (dailyDelta7dByPlayer.get(row.player_tag) || 0) + delta);
+    if (battleTime >= sevenDaysAgo.getTime()) {
+      battleDelta7dByPlayer.set(row.player_tag, (battleDelta7dByPlayer.get(row.player_tag) || 0) + delta);
     }
   }
 
@@ -224,14 +228,14 @@ export async function appendMemberActivityMetrics<T extends { player_tag: string
     const snapshot24h = baseline24h != null ? member.trophies - baseline24h.trophies : null;
     const snapshot3d = baseline3d != null ? member.trophies - baseline3d.trophies : null;
     const snapshot7d = baseline7d != null ? member.trophies - baseline7d.trophies : null;
-    const fallback24h = dailyDelta24hByPlayer.has(member.player_tag)
-      ? dailyDelta24hByPlayer.get(member.player_tag) || 0
+    const fallback24h = battleDelta24hByPlayer.has(member.player_tag)
+      ? battleDelta24hByPlayer.get(member.player_tag) || 0
       : null;
-    const fallback3d = dailyDelta3dByPlayer.has(member.player_tag)
-      ? dailyDelta3dByPlayer.get(member.player_tag) || 0
+    const fallback3d = battleDelta3dByPlayer.has(member.player_tag)
+      ? battleDelta3dByPlayer.get(member.player_tag) || 0
       : null;
-    const fallback7d = dailyDelta7dByPlayer.has(member.player_tag)
-      ? dailyDelta7dByPlayer.get(member.player_tag) || 0
+    const fallback7d = battleDelta7dByPlayer.has(member.player_tag)
+      ? battleDelta7dByPlayer.get(member.player_tag) || 0
       : null;
     const trophies24h = snapshot24h != null ? snapshot24h : fallback24h;
     const trophies3d = snapshot3d != null ? snapshot3d : fallback3d;

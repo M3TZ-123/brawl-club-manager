@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabase-admin";
+import { appendMemberActivityMetrics } from "@/lib/member-activity-metrics";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -10,7 +11,7 @@ type BattleSummary = {
   result: string | null;
 };
 
-async function fetchMegaPigBattleSummaries(playerTags: string[], sinceDate: string): Promise<BattleSummary[]> {
+async function fetchMegaBossBattleSummaries(playerTags: string[], sinceDate: string): Promise<BattleSummary[]> {
   if (playerTags.length === 0) return [];
 
   const pageSize = 1000;
@@ -22,7 +23,7 @@ async function fetchMegaPigBattleSummaries(playerTags: string[], sinceDate: stri
       .select("battle_time, mode, result")
       .in("player_tag", playerTags)
       .gte("battle_time", sinceDate)
-      .or("mode.ilike.%mega%,mode.ilike.%pig%")
+      .eq("mode", "megaBoss")
       .range(from, from + pageSize - 1);
 
     if (error) throw error;
@@ -36,16 +37,24 @@ async function fetchMegaPigBattleSummaries(playerTags: string[], sinceDate: stri
 export async function GET() {
   try {
     const now = new Date();
-    const sevenDaysAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
-    const prevWeekStart = new Date(now.getTime() - 14 * 24 * 60 * 60 * 1000);
-    const weekAgoStr = sevenDaysAgo.toISOString().split("T")[0];
-    const prevWeekStr = prevWeekStart.toISOString().split("T")[0];
+    const weekStart = new Date(Date.UTC(
+      now.getUTCFullYear(),
+      now.getUTCMonth(),
+      now.getUTCDate() - 6
+    ));
+    const previousWeekStart = new Date(Date.UTC(
+      now.getUTCFullYear(),
+      now.getUTCMonth(),
+      now.getUTCDate() - 13
+    ));
+    const weekStartStr = weekStart.toISOString().slice(0, 10);
+    const previousWeekStartStr = previousWeekStart.toISOString().slice(0, 10);
     // Parallel data fetches
     const [currentMembersRes, membersRes, thisWeekStatsRes, prevWeekStatsRes] = await Promise.all([
       supabaseAdmin.from("member_history").select("player_tag").eq("is_current_member", true),
       supabaseAdmin.from("members").select("player_tag, player_name, trophies, is_active, last_updated"),
-      supabaseAdmin.from("daily_stats").select("player_tag, date, battles, wins, trophies_gained, trophies_lost").gte("date", weekAgoStr),
-      supabaseAdmin.from("daily_stats").select("player_tag, battles").gte("date", prevWeekStr).lt("date", weekAgoStr),
+      supabaseAdmin.from("daily_stats").select("player_tag, date, battles, wins, trophies_gained, trophies_lost").gte("date", weekStartStr),
+      supabaseAdmin.from("daily_stats").select("player_tag, battles").gte("date", previousWeekStartStr).lt("date", weekStartStr),
     ]);
 
     if (currentMembersRes.error) throw currentMembersRes.error;
@@ -66,25 +75,24 @@ export async function GET() {
     const prevWeekStats = (prevWeekStatsRes.data || []).filter((s) => currentTags.has(s.player_tag));
 
     // ============================
-    // 0. MEGA PIG STATUS — derived from tracked battle_history
-    // Note: Official API does not currently expose a direct club Mega Pig rank field.
+    // 0. MEGA BOSS STATUS — derived from exact tracked battle_history mode.
     // ============================
-    const megaPigBattles = await fetchMegaPigBattleSummaries(
+    const megaBossBattles = await fetchMegaBossBattleSummaries(
       members.map((m) => m.player_tag),
-      weekAgoStr
+      weekStartStr
     );
 
-    const megaPigWins = megaPigBattles.reduce((sum, battle) => {
+    const megaBossWins = megaBossBattles.reduce((sum, battle) => {
       return sum + (battle.result === "victory" ? 1 : 0);
     }, 0);
 
-    const megaPigStatus = {
-      isTracked: megaPigBattles.length > 0,
-      totalWins: megaPigWins,
-      totalBattles: megaPigBattles.length,
+    const megaBossStatus = {
+      isTracked: megaBossBattles.length > 0,
+      totalWins: megaBossWins,
+      totalBattles: megaBossBattles.length,
       rankReached: null as string | null,
-      lastBattleAt: megaPigBattles.length > 0
-        ? megaPigBattles
+      lastBattleAt: megaBossBattles.length > 0
+        ? megaBossBattles
             .map((battle) => new Date(battle.battle_time).getTime())
             .sort((a, b) => b - a)[0]
         : null,
@@ -100,9 +108,12 @@ export async function GET() {
       : 0;
 
     // ============================
-    // 2. KICK LIST — Inactive members (is_active = false, consistent with Active Players stat)
+    // 2. INACTIVE MEMBERS — use the same computed activity status as Members/Dashboard.
     // ============================
-    const inactiveTags = members.filter((m) => !m.is_active).map((m) => m.player_tag);
+    const membersWithActivity = await appendMemberActivityMetrics(members, now);
+    const inactiveTags = membersWithActivity
+      .filter((member) => member.activity_status === "inactive")
+      .map((member) => member.player_tag);
 
     // Get last battle date from daily_stats (actual activity, not sync timestamp)
     const lastBattleDateMap = new Map<string, string>();
@@ -123,12 +134,12 @@ export async function GET() {
       }
     }
 
-    const kickCandidates = members
-      .filter((m) => !m.is_active)
-      .map((m) => ({
-        tag: m.player_tag,
-        name: m.player_name,
-        lastActive: lastBattleDateMap.get(m.player_tag) || null,
+    const kickCandidates = membersWithActivity
+      .filter((member) => member.activity_status === "inactive")
+      .map((member) => ({
+        tag: member.player_tag,
+        name: member.player_name,
+        lastActive: member.last_battle_at || lastBattleDateMap.get(member.player_tag) || null,
       }))
       .sort((a, b) => {
         // Sort by longest inactive first (null = never played = first)
@@ -201,11 +212,11 @@ export async function GET() {
     return NextResponse.json(
       {
         insights: {
-          // Mega Pig
-          megaPig: {
-            ...megaPigStatus,
-            lastBattleAt: megaPigStatus.lastBattleAt
-              ? new Date(megaPigStatus.lastBattleAt).toISOString()
+          // Mega Boss
+          megaBoss: {
+            ...megaBossStatus,
+            lastBattleAt: megaBossStatus.lastBattleAt
+              ? new Date(megaBossStatus.lastBattleAt).toISOString()
               : null,
           },
           // Win Rate

@@ -68,7 +68,7 @@ interface DashboardResponse {
 }
 
 interface ClubInsights {
-  megaPig: {
+  megaBoss: {
     isTracked: boolean;
     totalWins: number;
     totalBattles: number;
@@ -620,13 +620,13 @@ export default function DashboardPage() {
                 <CardContent className="pt-4">
                   <div className="mb-2 flex items-center gap-2">
                     <Trophy className="h-4 w-4 text-yellow-500" />
-                    <span className="text-sm font-medium text-muted-foreground">Mega Pig Wins</span>
+                    <span className="text-sm font-medium text-muted-foreground">Mega Boss Wins</span>
                   </div>
-                  <p className="text-3xl font-bold">{insights.megaPig.totalWins.toLocaleString()}</p>
+                  <p className="text-3xl font-bold">{insights.megaBoss.totalWins.toLocaleString()}</p>
                   <p className="mt-1 text-sm text-muted-foreground">
-                    {insights.megaPig.isTracked
-                      ? `${insights.megaPig.totalBattles.toLocaleString()} Mega Pig battles tracked`
-                      : "No Mega Pig battles found this week"}
+                    {insights.megaBoss.isTracked
+                      ? `${insights.megaBoss.totalBattles.toLocaleString()} Mega Boss battles tracked`
+                      : "No Mega Boss battles found this week"}
                   </p>
                 </CardContent>
               </Card>

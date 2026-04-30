@@ -61,7 +61,7 @@ interface LeaderboardMember {
     trophiesLost: number;
     activeDays: number;
     winRate: number;
-    netTrophies: number;
+    netTrophies: number | null;
   };
 }
 
@@ -289,9 +289,10 @@ const categories = [
     key: "weeklyTrophyGainers" as const,
     label: "Progress",
     icon: TrendingUp,
-    description: "Most trophies gained in the last 7 days",
+    description: "Best trophy movement over the last 7 days",
     formatValue: (m: LeaderboardMember) => {
       const n = m.weekly.netTrophies;
+      if (n == null) return "No data";
       return n >= 0 ? `+${n}` : `${n}`;
     },
     subtitle: (m: LeaderboardMember) => `${formatNumber(m.trophies)} total`,
@@ -300,13 +301,14 @@ const categories = [
         header: "Net",
         value: (m: LeaderboardMember) => {
           const n = m.weekly.netTrophies;
+          if (n == null) return <span className="text-muted-foreground">No data</span>;
           const color = n > 0 ? "text-green-500" : n < 0 ? "text-red-500" : "";
           return <span className={`font-semibold ${color}`}>{n >= 0 ? `+${n}` : n}</span>;
         },
         className: "text-right",
       },
-      { header: "Gained", value: (m: LeaderboardMember) => `+${m.weekly.trophiesGained}`, className: "text-right" },
-      { header: "Lost", value: (m: LeaderboardMember) => `-${m.weekly.trophiesLost}`, className: "text-right" },
+      { header: "Current", value: (m: LeaderboardMember) => formatNumber(m.trophies), className: "text-right" },
+      { header: "Peak", value: (m: LeaderboardMember) => formatNumber(m.highestTrophies), className: "text-right" },
     ],
   },
   {

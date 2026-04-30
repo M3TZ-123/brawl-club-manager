@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabase-admin";
 import { aggregateDailyBattleStats, type DailyBattleStatsRow } from "@/lib/battle-tracking-stats";
+import { appendMemberActivityMetrics } from "@/lib/member-activity-metrics";
 
 type TrackingRow = {
   player_tag: string;
@@ -81,6 +82,10 @@ export async function GET() {
       fetchDailyStatsRows(currentTagList),
       fetchTrackingRows(currentTagList),
     ]);
+    const membersWithMetrics = await appendMemberActivityMetrics(members, now);
+    const memberMetricsByTag = new Map(
+      membersWithMetrics.map((member) => [member.player_tag, member])
+    );
 
     const weeklyMap = new Map<string, {
       battles: number;
@@ -120,6 +125,7 @@ export async function GET() {
     const enriched = members.map((m) => {
       const tracking = trackingMap.get(m.player_tag);
       const trackedStats = trackedStatsMap.get(m.player_tag);
+      const metrics = memberMetricsByTag.get(m.player_tag);
       const w = weeklyMap.get(m.player_tag);
       const totalVictories = (m.solo_victories || 0) + (m.duo_victories || 0) + (m.trio_victories || 0);
 
@@ -156,7 +162,7 @@ export async function GET() {
           trophiesLost: w?.trophiesLost || 0,
           activeDays: w?.activeDays || 0,
           winRate: w && w.battles > 0 ? Math.round((w.wins / w.battles) * 100) : 0,
-          netTrophies: (w?.trophiesGained || 0) - (w?.trophiesLost || 0),
+          netTrophies: metrics?.trophies_7d ?? null,
         },
       };
     });
@@ -172,8 +178,8 @@ export async function GET() {
         .sort((a, b) => b.weekly.winRate - a.weekly.winRate)
         .slice(0, 30),
       weeklyTrophyGainers: [...enriched]
-        .filter((m) => m.weekly.netTrophies !== 0)
-        .sort((a, b) => b.weekly.netTrophies - a.weekly.netTrophies)
+        .filter((m) => m.weekly.netTrophies != null && m.weekly.netTrophies !== 0)
+        .sort((a, b) => (b.weekly.netTrophies || 0) - (a.weekly.netTrophies || 0))
         .slice(0, 30),
       weeklyStarPlayers: [...enriched]
         .filter((m) => m.weekly.starPlayer > 0)

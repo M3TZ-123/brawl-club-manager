@@ -109,8 +109,11 @@ function normalizeTag(tag: string | null | undefined): string {
 function getMatchType(mode: string, totalTrophyChange: number, result: string) {
   const modeLower = (mode || "").toLowerCase();
 
-  if (modeLower.includes("mega") || modeLower.includes("pig") || modeLower.includes("club")) {
-    return { label: "Mega Pig/Club", className: "text-amber-400 border-amber-500/40" };
+  if (modeLower === "megaboss") {
+    return { label: "Mega Boss", className: "text-amber-400 border-amber-500/40" };
+  }
+  if (modeLower.includes("pig") || modeLower.includes("club")) {
+    return { label: "Club Event", className: "text-amber-400 border-amber-500/40" };
   }
   if (modeLower.includes("ranked") || modeLower.includes("powerleague")) {
     return { label: "Ranked", className: "text-violet-400 border-violet-500/40" };
