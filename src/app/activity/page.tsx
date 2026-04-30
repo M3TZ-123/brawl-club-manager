@@ -123,7 +123,7 @@ const Podium = memo(function Podium({
   if (top3.length === 0) {
     return (
       <p className="text-center text-muted-foreground py-8">
-        No data available yet. Sync your club to start tracking!
+        No tracked data available yet. Run Sync Now or wait for the next automatic update.
       </p>
     );
   }
@@ -260,7 +260,7 @@ const categories = [
     key: "weeklyBattlers" as const,
     label: "Battles",
     icon: Swords,
-    description: "Most battles played this week",
+    description: "Most battles played in the last 7 days",
     formatValue: (m: LeaderboardMember) => m.weekly.battles.toString(),
     subtitle: (m: LeaderboardMember) => {
       const draws = m.weekly.battles - m.weekly.wins - m.weekly.losses;
@@ -276,7 +276,7 @@ const categories = [
     key: "weeklyWinRate" as const,
     label: "Win Rate",
     icon: Target,
-    description: "Highest win rate this week (min 10 battles)",
+    description: "Highest win rate in the last 7 days (min 10 battles)",
     formatValue: (m: LeaderboardMember) => `${m.weekly.winRate}%`,
     subtitle: (m: LeaderboardMember) => `${m.weekly.battles} battles`,
     columns: [
@@ -289,7 +289,7 @@ const categories = [
     key: "weeklyTrophyGainers" as const,
     label: "Progress",
     icon: TrendingUp,
-    description: "Most trophies gained this week",
+    description: "Most trophies gained in the last 7 days",
     formatValue: (m: LeaderboardMember) => {
       const n = m.weekly.netTrophies;
       return n >= 0 ? `+${n}` : `${n}`;
@@ -313,7 +313,7 @@ const categories = [
     key: "weeklyStarPlayers" as const,
     label: "Stars",
     icon: Star,
-    description: "Most Star Player awards this week",
+    description: "Most Star Player awards in the last 7 days",
     formatValue: (m: LeaderboardMember) => `${m.weekly.starPlayer}`,
     subtitle: (m: LeaderboardMember) => `${m.weekly.battles} battles`,
     columns: [
@@ -333,7 +333,7 @@ const categories = [
     key: "mostActive" as const,
     label: "Activity",
     icon: Flame,
-    description: "Most active members (tracked days)",
+    description: "Most active members by tracked battle days",
     formatValue: (m: LeaderboardMember) => `${m.allTime.activeDays}d`,
     subtitle: (m: LeaderboardMember) => m.allTime.currentStreak > 0 ? `${m.allTime.currentStreak}d streak` : "No streak",
     columns: [
@@ -344,9 +344,9 @@ const categories = [
   },
   {
     key: "allTimeBattlers" as const,
-    label: "All-Time",
+    label: "Recorded Stats",
     icon: Zap,
-    description: "All-time battle statistics",
+    description: "Battle totals recorded by BrawlStatz syncs",
     formatValue: (m: LeaderboardMember) => formatNumber(m.allTime.battles),
     subtitle: (m: LeaderboardMember) => {
       const draws = m.allTime.battles - m.allTime.wins - m.allTime.losses;

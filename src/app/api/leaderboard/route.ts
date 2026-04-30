@@ -1,16 +1,6 @@
 import { NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabase-admin";
-
-type DailyStatsRow = {
-  player_tag: string;
-  date: string;
-  battles: number | null;
-  wins: number | null;
-  losses: number | null;
-  star_player: number | null;
-  trophies_gained: number | null;
-  trophies_lost: number | null;
-};
+import { aggregateDailyBattleStats, type DailyBattleStatsRow } from "@/lib/battle-tracking-stats";
 
 type TrackingRow = {
   player_tag: string;
@@ -26,17 +16,26 @@ type TrackingRow = {
   peak_day_battles: number | null;
 };
 
-async function fetchWeeklyDailyStats(playerTags: string[], sinceDate: string): Promise<DailyStatsRow[]> {
+async function fetchDailyStatsRows(playerTags: string[]): Promise<DailyBattleStatsRow[]> {
   if (playerTags.length === 0) return [];
 
-  const { data, error } = await supabaseAdmin
-    .from("daily_stats")
-    .select("player_tag, date, battles, wins, losses, star_player, trophies_gained, trophies_lost")
-    .in("player_tag", playerTags)
-    .gte("date", sinceDate);
+  const pageSize = 1000;
+  const rows: DailyBattleStatsRow[] = [];
 
-  if (error) throw error;
-  return (data || []) as DailyStatsRow[];
+  for (let from = 0; ; from += pageSize) {
+    const { data, error } = await supabaseAdmin
+      .from("daily_stats")
+      .select("player_tag, date, battles, wins, losses, star_player, trophies_gained, trophies_lost")
+      .in("player_tag", playerTags)
+      .order("date", { ascending: true })
+      .range(from, from + pageSize - 1);
+
+    if (error) throw error;
+    rows.push(...((data || []) as DailyBattleStatsRow[]));
+    if (!data || data.length < pageSize) break;
+  }
+
+  return rows;
 }
 
 async function fetchTrackingRows(playerTags: string[]): Promise<TrackingRow[]> {
@@ -54,8 +53,12 @@ async function fetchTrackingRows(playerTags: string[]): Promise<TrackingRow[]> {
 export async function GET() {
   try {
     const now = new Date();
-    const sevenDaysAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
-    const weekAgoStr = sevenDaysAgo.toISOString().split("T")[0];
+    const weekStart = new Date(Date.UTC(
+      now.getUTCFullYear(),
+      now.getUTCMonth(),
+      now.getUTCDate() - 6
+    ));
+    const weekStartStr = weekStart.toISOString().slice(0, 10);
 
     const [membersRes, currentMembersRes] = await Promise.all([
       supabaseAdmin
@@ -74,8 +77,8 @@ export async function GET() {
     const currentTagList = [...currentTags];
     const members = (membersRes.data || []).filter((m) => currentTags.has(m.player_tag));
 
-    const [weeklyStatsRows, trackingRows] = await Promise.all([
-      fetchWeeklyDailyStats(currentTagList, weekAgoStr),
+    const [dailyStatsRows, trackingRows] = await Promise.all([
+      fetchDailyStatsRows(currentTagList),
       fetchTrackingRows(currentTagList),
     ]);
 
@@ -89,6 +92,7 @@ export async function GET() {
       activeDays: number;
     }>();
 
+    const weeklyStatsRows = dailyStatsRows.filter((row) => row.date >= weekStartStr);
     for (const ds of weeklyStatsRows) {
       const existing = weeklyMap.get(ds.player_tag) || {
         battles: 0,
@@ -111,9 +115,11 @@ export async function GET() {
     }
 
     const trackingMap = new Map(trackingRows.map((row) => [row.player_tag, row]));
+    const trackedStatsMap = aggregateDailyBattleStats(dailyStatsRows, currentTagList, now);
 
     const enriched = members.map((m) => {
       const tracking = trackingMap.get(m.player_tag);
+      const trackedStats = trackedStatsMap.get(m.player_tag);
       const w = weeklyMap.get(m.player_tag);
       const totalVictories = (m.solo_victories || 0) + (m.duo_victories || 0) + (m.trio_victories || 0);
 
@@ -130,16 +136,16 @@ export async function GET() {
         rankCurrent: m.rank_current,
         rankHighest: m.rank_highest,
         allTime: {
-          battles: tracking?.total_battles || 0,
-          wins: tracking?.total_wins || 0,
-          losses: tracking?.total_losses || 0,
-          starPlayer: tracking?.star_player_count || 0,
-          trophiesGained: tracking?.trophies_gained || 0,
-          trophiesLost: tracking?.trophies_lost || 0,
-          activeDays: tracking?.active_days || 0,
-          currentStreak: tracking?.current_streak || 0,
-          bestStreak: tracking?.best_streak || 0,
-          peakDayBattles: tracking?.peak_day_battles || 0,
+          battles: trackedStats?.battles || tracking?.total_battles || 0,
+          wins: trackedStats?.wins || tracking?.total_wins || 0,
+          losses: trackedStats?.losses || tracking?.total_losses || 0,
+          starPlayer: trackedStats?.starPlayer || tracking?.star_player_count || 0,
+          trophiesGained: trackedStats?.trophiesGained || tracking?.trophies_gained || 0,
+          trophiesLost: trackedStats?.trophiesLost || tracking?.trophies_lost || 0,
+          activeDays: trackedStats?.activeDays || tracking?.active_days || 0,
+          currentStreak: trackedStats?.currentStreak || tracking?.current_streak || 0,
+          bestStreak: trackedStats?.bestStreak || tracking?.best_streak || 0,
+          peakDayBattles: trackedStats?.peakDayBattles || tracking?.peak_day_battles || 0,
         },
         weekly: {
           battles: w?.battles || 0,

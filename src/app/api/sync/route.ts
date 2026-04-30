@@ -3,6 +3,7 @@ import { createHash } from "crypto";
 import { getClub, getPlayer, getPlayerRankedData, getPlayerBattleLog, processBattleLog, calculateWinRateFromBattleLog, BrawlStarsBattleLog } from "@/lib/brawl-api";
 import { supabaseAdmin } from "@/lib/supabase-admin";
 import { rejectUnauthorizedAdminMutation, rejectUnauthorizedAdminRequest } from "@/lib/admin-auth";
+import { aggregateDailyBattleStats, type DailyBattleStatsRow } from "@/lib/battle-tracking-stats";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -154,6 +155,67 @@ async function fetchStoredBattlesForDailyStats(
   }
 
   return rows;
+}
+
+async function fetchDailyBattleStatsRows(playerTags: string[]): Promise<DailyBattleStatsRow[]> {
+  if (playerTags.length === 0) return [];
+
+  const pageSize = 1000;
+  const rows: DailyBattleStatsRow[] = [];
+
+  for (let from = 0; ; from += pageSize) {
+    const { data, error } = await supabaseAdmin
+      .from("daily_stats")
+      .select("player_tag, date, battles, wins, losses, star_player, trophies_gained, trophies_lost")
+      .in("player_tag", playerTags)
+      .order("date", { ascending: true })
+      .range(from, from + pageSize - 1);
+
+    if (error) throw error;
+    rows.push(...((data || []) as DailyBattleStatsRow[]));
+    if (!data || data.length < pageSize) break;
+  }
+
+  return rows;
+}
+
+async function rebuildPlayerTrackingStats(playerTags: string[]) {
+  const uniquePlayerTags = [...new Set(playerTags)];
+  if (uniquePlayerTags.length === 0) return;
+
+  try {
+    const dailyStats = await fetchDailyBattleStatsRows(uniquePlayerTags);
+    const statsByPlayer = aggregateDailyBattleStats(dailyStats, uniquePlayerTags);
+    const lastUpdated = new Date().toISOString();
+
+    const trackingUpdates = uniquePlayerTags.map((playerTag) => {
+      const stats = statsByPlayer.get(playerTag);
+      return {
+        player_tag: playerTag,
+        total_battles: stats?.battles || 0,
+        total_wins: stats?.wins || 0,
+        total_losses: stats?.losses || 0,
+        star_player_count: stats?.starPlayer || 0,
+        trophies_gained: stats?.trophiesGained || 0,
+        trophies_lost: stats?.trophiesLost || 0,
+        active_days: stats?.activeDays || 0,
+        current_streak: stats?.currentStreak || 0,
+        best_streak: stats?.bestStreak || 0,
+        peak_day_battles: stats?.peakDayBattles || 0,
+        last_updated: lastUpdated,
+      };
+    });
+
+    const { error } = await supabaseAdmin
+      .from("player_tracking")
+      .upsert(trackingUpdates, { onConflict: "player_tag" });
+
+    if (error) {
+      console.error("Error rebuilding player tracking stats:", error);
+    }
+  } catch (error) {
+    console.error("Error loading daily stats for player tracking rebuild:", error);
+  }
 }
 
 async function fetchPreviousBrawlerSnapshots(playerTags: string[], sinceISO: string): Promise<PreviousBrawlerSnapshot[]> {
@@ -930,6 +992,8 @@ async function syncClubData(providedClubTag?: string, providedApiKey?: string, i
           else if (count && count > 0) console.log(`Purged ${count} snapshots older than ${retentionDays} days`);
         }),
     ]);
+
+    await rebuildPlayerTrackingStats(currentMemberTagList);
 
     // Insert DB notifications for the notification panel when alerts are enabled.
     if (notificationsEnabled) {
