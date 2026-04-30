@@ -25,6 +25,7 @@ async function fetchAllMemberHistory(cutoffDate: Date | null): Promise<MemberHis
       .from("member_history")
       .select("player_tag, player_name, first_seen, last_seen, last_left_at, times_joined, times_left, is_current_member, role_at_leave, trophies_at_leave, notes")
       .order("last_seen", { ascending: false })
+      .order("player_tag", { ascending: true })
       .range(from, from + pageSize - 1);
 
     if (cutoffDate) {

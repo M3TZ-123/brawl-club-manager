@@ -52,6 +52,7 @@ async function fetchActivitySnapshotsWindow(
       .gte("recorded_at", fromISO)
       .lte("recorded_at", toISO)
       .order("recorded_at", { ascending: true })
+      .order("player_tag", { ascending: true })
       .range(from, from + pageSize - 1);
 
     if (error) throw error;
@@ -86,6 +87,7 @@ async function fetchLatestBattleHistorySnapshots(playerTags: string[]): Promise<
       .select("player_tag, battle_time")
       .in("player_tag", playerTags)
       .order("battle_time", { ascending: false })
+      .order("player_tag", { ascending: true })
       .range(from, from + pageSize - 1);
 
     if (error) throw error;
@@ -114,6 +116,8 @@ async function fetchBattleDeltaSnapshots(playerTags: string[], sinceISO: string)
       .select("player_tag, battle_time, trophy_change")
       .in("player_tag", playerTags)
       .gte("battle_time", sinceISO)
+      .order("battle_time", { ascending: true })
+      .order("player_tag", { ascending: true })
       .range(from, from + pageSize - 1);
 
     if (error) throw error;

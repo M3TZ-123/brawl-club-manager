@@ -80,6 +80,7 @@ async function fetchAllExistingMembers(): Promise<ExistingMemberRow[]> {
     const { data, error } = await supabaseAdmin
       .from("members")
       .select("player_tag, player_name, icon_id, role, trophies, rank_current, rank_highest")
+      .order("player_tag", { ascending: true })
       .range(from, from + pageSize - 1);
 
     if (error) throw error;
@@ -98,6 +99,7 @@ async function fetchAllMemberHistory(): Promise<MemberHistoryRow[]> {
     const { data, error } = await supabaseAdmin
       .from("member_history")
       .select("*")
+      .order("player_tag", { ascending: true })
       .range(from, from + pageSize - 1);
 
     if (error) throw error;
@@ -120,6 +122,8 @@ async function fetchRecentActivity(playerTags: string[], sinceISO: string): Prom
       .select("player_tag, trophy_change, activity_type, recorded_at")
       .in("player_tag", playerTags)
       .gte("recorded_at", sinceISO)
+      .order("recorded_at", { ascending: true })
+      .order("player_tag", { ascending: true })
       .range(from, from + pageSize - 1);
 
     if (error) throw error;
@@ -147,6 +151,8 @@ async function fetchStoredBattlesForDailyStats(
       .in("player_tag", playerTags)
       .gte("battle_time", fromISO)
       .lt("battle_time", toISO)
+      .order("battle_time", { ascending: true })
+      .order("player_tag", { ascending: true })
       .range(from, from + pageSize - 1);
 
     if (error) throw error;
@@ -169,6 +175,7 @@ async function fetchDailyBattleStatsRows(playerTags: string[]): Promise<DailyBat
       .select("player_tag, date, battles, wins, losses, star_player, trophies_gained, trophies_lost")
       .in("player_tag", playerTags)
       .order("date", { ascending: true })
+      .order("player_tag", { ascending: true })
       .range(from, from + pageSize - 1);
 
     if (error) throw error;
@@ -231,6 +238,8 @@ async function fetchPreviousBrawlerSnapshots(playerTags: string[], sinceISO: str
       .in("player_tag", playerTags)
       .gte("recorded_at", sinceISO)
       .order("recorded_at", { ascending: true })
+      .order("player_tag", { ascending: true })
+      .order("brawler_id", { ascending: true })
       .range(from, from + pageSize - 1);
 
     if (error) throw error;

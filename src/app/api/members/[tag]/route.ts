@@ -45,6 +45,7 @@ async function fetchActivityHistorySince(playerTag: string, sinceISO: string): P
       .eq("player_tag", playerTag)
       .gte("recorded_at", sinceISO)
       .order("recorded_at", { ascending: false })
+      .order("id", { ascending: false })
       .range(from, from + pageSize - 1);
 
     if (error) throw error;
@@ -70,6 +71,7 @@ async function fetchStoredBattlesForDailyStats(
       .eq("player_tag", playerTag)
       .gte("battle_time", fromISO)
       .lt("battle_time", toISO)
+      .order("battle_time", { ascending: true })
       .range(from, from + pageSize - 1);
 
     if (error) throw error;

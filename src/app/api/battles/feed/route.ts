@@ -20,6 +20,7 @@ async function fetchRecentBattleModes(playerTags: string[]): Promise<BattleModeR
     .in("player_tag", playerTags)
     .not("mode", "is", null)
     .order("battle_time", { ascending: false })
+    .order("player_tag", { ascending: true })
     .limit(1500);
 
   if (error) throw error;
@@ -61,6 +62,7 @@ export async function GET(request: Request) {
       )
       .in("player_tag", currentMemberTags.length > 0 ? currentMemberTags : [""])
       .order("battle_time", { ascending: false })
+      .order("player_tag", { ascending: true })
       .range(offset, offset + limit - 1);
 
     if (mode) {

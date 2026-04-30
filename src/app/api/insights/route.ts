@@ -24,6 +24,8 @@ async function fetchMegaBossBattleSummaries(playerTags: string[], sinceDate: str
       .in("player_tag", playerTags)
       .gte("battle_time", sinceDate)
       .eq("mode", "megaBoss")
+      .order("battle_time", { ascending: true })
+      .order("player_tag", { ascending: true })
       .range(from, from + pageSize - 1);
 
     if (error) throw error;
