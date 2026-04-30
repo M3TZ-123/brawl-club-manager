@@ -68,7 +68,7 @@ export const useAppStore = create<AppState>()(
       hasLoadedSettings: false,
       theme: "dark",
       sidebarOpen: true,
-      inactivityThreshold: 24,
+      inactivityThreshold: 48,
       refreshInterval: 60, // 1 hour
       notificationsEnabled: true,
       discordWebhook: "",
@@ -107,7 +107,7 @@ export const useAppStore = create<AppState>()(
               clubName: settings.club_name || get().clubName || "",
               apiKey: "",
               apiKeyConfigured: settings.api_key_configured === "true" || get().apiKeyConfigured,
-              inactivityThreshold: parseIntegerSetting(settings.inactivity_threshold, get().inactivityThreshold, 1, 168),
+              inactivityThreshold: parseIntegerSetting(settings.inactivity_threshold, get().inactivityThreshold, 48, 168),
               refreshInterval: parseIntegerSetting(settings.refresh_interval, get().refreshInterval, 60, 1440),
               notificationsEnabled: settings.notifications_enabled == null
                 ? get().notificationsEnabled

@@ -32,6 +32,14 @@ function getNumberMetric(value: number | null | undefined) {
   return typeof value === "number" && Number.isFinite(value) ? value : 0;
 }
 
+function hasSevenDayGain(member: DashboardMember) {
+  return member.trophies_7d != null && member.trophies_7d > 0;
+}
+
+function hasNoThreeDayProgress(member: DashboardMember) {
+  return member.trophies_3d === 0;
+}
+
 function sortByTrophiesDesc(a: Member, b: Member) {
   return getNumberMetric(b.trophies) - getNumberMetric(a.trophies);
 }
@@ -44,7 +52,7 @@ function sortByRisk(a: DashboardMember, b: DashboardMember) {
   const statusWeight = { inactive: 0, minimal: 1, active: 2 };
   const statusDiff = statusWeight[a.activity_status] - statusWeight[b.activity_status];
   if (statusDiff !== 0) return statusDiff;
-  return getNumberMetric(a.trophies_7d) - getNumberMetric(b.trophies_7d);
+  return getNumberMetric(a.trophies_3d) - getNumberMetric(b.trophies_3d);
 }
 
 function normalizeTimestamp(value: string | null | undefined) {
@@ -116,7 +124,8 @@ export async function GET() {
     const members = ((membersRes.data || []) as Member[]).sort(sortByTrophiesDesc);
 
     const totalTrophies = members.reduce((sum, member) => sum + (member.trophies || 0), 0);
-    const activeMembers = members.filter((member) => member.is_active).length;
+    const membersWithMetrics = await appendMemberActivityMetrics(members, now);
+    const activeMembers = membersWithMetrics.filter((member) => member.activity_status === "active").length;
 
     const summary: DashboardSummary = {
       totalMembers: members.length,
@@ -124,22 +133,17 @@ export async function GET() {
       activeMembers,
       avgTrophies: members.length > 0 ? Math.round(totalTrophies / members.length) : 0,
     };
-
-    const membersWithMetrics = await appendMemberActivityMetrics(members, now);
     const topMembers = membersWithMetrics.slice(0, 6);
     const topGainers = membersWithMetrics
-      .filter((member) => getNumberMetric(member.trophies_7d) > 0)
+      .filter(hasSevenDayGain)
       .sort(sortBySevenDayGainDesc)
       .slice(0, 5);
-    const trophyLosers = membersWithMetrics
-      .filter((member) => getNumberMetric(member.trophies_7d) < 0)
-      .sort((a, b) => getNumberMetric(a.trophies_7d) - getNumberMetric(b.trophies_7d))
+    const noProgressMembers = membersWithMetrics
+      .filter(hasNoThreeDayProgress)
+      .sort(sortByRisk)
       .slice(0, 5);
     const attentionMembers = membersWithMetrics
-      .filter((member) => {
-        const sevenDayChange = getNumberMetric(member.trophies_7d);
-        return member.activity_status !== "active" || sevenDayChange < 0;
-      })
+      .filter((member) => member.activity_status !== "active" || hasNoThreeDayProgress(member))
       .sort(sortByRisk)
       .slice(0, 6);
 
@@ -164,7 +168,7 @@ export async function GET() {
         summary,
         topMembers,
         topGainers,
-        trophyLosers,
+        noProgressMembers,
         attentionMembers,
         changeSummary,
         syncStatus: {

@@ -40,7 +40,7 @@ function sanitizeSettingValue(key: string, value: unknown): string | null {
 
   if (key === "inactivity_threshold") {
     const parsed = Number.parseInt(String(value), 10);
-    return String(Number.isFinite(parsed) ? Math.min(Math.max(parsed, 1), 168) : 24);
+    return String(Number.isFinite(parsed) ? Math.min(Math.max(parsed, 48), 168) : 48);
   }
 
   if (key === "refresh_interval") {

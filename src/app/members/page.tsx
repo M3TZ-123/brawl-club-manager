@@ -33,6 +33,7 @@ import {
   Activity,
   AlertTriangle,
   Check,
+  CircleMinus,
   Columns3,
   Copy,
   Download,
@@ -43,7 +44,6 @@ import {
   Search,
   SlidersHorizontal,
   Trophy,
-  TrendingDown,
   TrendingUp,
   UserX,
   Users,
@@ -52,7 +52,7 @@ import {
 type QuickFilter = "all" | "attention" | "top-gainers" | "no-progress" | "low-activity" | "inactive";
 type RoleFilter = "all" | "president" | "vicepresident" | "senior" | "member";
 type ActivityFilter = "all" | ActivityStatus | "unknown";
-type MovementFilter = "all" | "positive" | "negative" | "flat" | "unknown";
+type MovementFilter = "all" | "positive" | "flat" | "unknown";
 type RankFilter = "all" | "masters" | "legendary" | "mythic" | "diamond" | "gold" | "lower" | "unranked";
 
 const ROLE_ORDER = ["president", "vicepresident", "senior", "member"];
@@ -67,8 +67,9 @@ const ACTIVITY_ORDER: Record<ActivityFilter, number> = {
 const COLUMN_OPTIONS: Array<{ key: MemberColumnKey; label: string; description: string }> = [
   { key: "role", label: "Role", description: "Club permission level" },
   { key: "trophies", label: "Trophies", description: "Current trophy count" },
-  { key: "trophies_24h", label: "24h", description: "One-day movement" },
-  { key: "trophies_7d", label: "7 days", description: "Weekly movement" },
+  { key: "trophies_24h", label: "24h", description: "One-day trophy progress" },
+  { key: "trophies_3d", label: "3 days", description: "Short-term trophy progress" },
+  { key: "trophies_7d", label: "7 days", description: "Weekly trophy progress" },
   { key: "activity", label: "Activity", description: "Readable status badge" },
   { key: "last_battle", label: "Last Battle", description: "Most recent tracked battle" },
   { key: "highest_trophies", label: "Highest", description: "Personal best trophies" },
@@ -98,14 +99,26 @@ function getActivityClass(status: ActivityFilter) {
   return "border-border bg-muted/40 text-muted-foreground";
 }
 
-function getSevenDayChange(member: MemberWithGains) {
-  return member.trophies_7d;
+function getThreeDayChange(member: MemberWithGains) {
+  return member.trophies_3d;
+}
+
+function hasThreeDayGain(member: MemberWithGains) {
+  const threeDayChange = getThreeDayChange(member);
+  return threeDayChange != null && threeDayChange > 0;
+}
+
+function hasNoThreeDayProgress(member: MemberWithGains) {
+  return getThreeDayChange(member) === 0;
+}
+
+function hasMissingThreeDayData(member: MemberWithGains) {
+  return getThreeDayChange(member) == null;
 }
 
 function needsAttention(member: MemberWithGains) {
   const status = getActivityStatus(member);
-  const sevenDayChange = getSevenDayChange(member);
-  return status === "minimal" || status === "inactive" || (sevenDayChange ?? 0) <= 0;
+  return status === "minimal" || status === "inactive" || hasNoThreeDayProgress(member);
 }
 
 function rankMatches(rank: string | null, filter: RankFilter) {
@@ -138,6 +151,8 @@ function getSortValue(member: MemberWithGains, key: MemberSortKey): string | num
       return member.rank_highest?.toLowerCase() || null;
     case "trophies_24h":
       return member.trophies_24h ?? null;
+    case "trophies_3d":
+      return member.trophies_3d ?? null;
     case "trophies_7d":
       return member.trophies_7d ?? null;
     case "activity_status":
@@ -319,7 +334,10 @@ export default function MembersPage() {
   }, [loadMembers]);
 
   useEffect(() => {
-    const handleClubDataUpdated = () => {
+    const handleClubDataUpdated = (event: Event) => {
+      if (event instanceof CustomEvent && event.detail?.source === "members-page") {
+        return;
+      }
       loadMembers(true);
     };
     window.addEventListener("club-data-updated", handleClubDataUpdated);
@@ -350,8 +368,8 @@ export default function MembersPage() {
   const quickFilters = useMemo(() => [
     { id: "all" as const, label: "All", count: members.length, icon: Users },
     { id: "attention" as const, label: "Needs Attention", count: members.filter(needsAttention).length, icon: AlertTriangle },
-    { id: "top-gainers" as const, label: "Top Gainers", count: members.filter((member) => (member.trophies_7d ?? 0) > 0).length, icon: TrendingUp },
-    { id: "no-progress" as const, label: "No Progress", count: members.filter((member) => (member.trophies_7d ?? 0) <= 0).length, icon: TrendingDown },
+    { id: "top-gainers" as const, label: "Top Gainers", count: members.filter(hasThreeDayGain).length, icon: TrendingUp },
+    { id: "no-progress" as const, label: "No Progress", count: members.filter(hasNoThreeDayProgress).length, icon: CircleMinus },
     { id: "low-activity" as const, label: "Low Activity", count: members.filter((member) => getActivityStatus(member) === "minimal").length, icon: Activity },
     { id: "inactive" as const, label: "Inactive", count: members.filter((member) => getActivityStatus(member) === "inactive").length, icon: UserX },
   ], [members]);
@@ -372,8 +390,8 @@ export default function MembersPage() {
         }
 
         if (quickFilter === "attention" && !needsAttention(member)) return false;
-        if (quickFilter === "top-gainers" && !((member.trophies_7d ?? 0) > 0)) return false;
-        if (quickFilter === "no-progress" && !((member.trophies_7d ?? 0) <= 0)) return false;
+        if (quickFilter === "top-gainers" && !hasThreeDayGain(member)) return false;
+        if (quickFilter === "no-progress" && !hasNoThreeDayProgress(member)) return false;
         if (quickFilter === "low-activity" && getActivityStatus(member) !== "minimal") return false;
         if (quickFilter === "inactive" && getActivityStatus(member) !== "inactive") return false;
 
@@ -381,10 +399,9 @@ export default function MembersPage() {
         if (activityFilter !== "all" && getActivityStatus(member) !== activityFilter) return false;
         if (!rankMatches(member.rank_current, rankFilter)) return false;
 
-        if (movementFilter === "positive" && !((member.trophies_7d ?? 0) > 0)) return false;
-        if (movementFilter === "negative" && !((member.trophies_7d ?? 0) < 0)) return false;
-        if (movementFilter === "flat" && member.trophies_7d !== 0) return false;
-        if (movementFilter === "unknown" && member.trophies_7d != null) return false;
+        if (movementFilter === "positive" && !hasThreeDayGain(member)) return false;
+        if (movementFilter === "flat" && !hasNoThreeDayProgress(member)) return false;
+        if (movementFilter === "unknown" && !hasMissingThreeDayData(member)) return false;
 
         if (min != null && Number.isFinite(min) && member.trophies < min) return false;
         if (max != null && Number.isFinite(max) && member.trophies > max) return false;
@@ -425,9 +442,9 @@ export default function MembersPage() {
   const handleQuickFilter = (filter: QuickFilter) => {
     setQuickFilter(filter);
     if (filter === "top-gainers") {
-      setSortState({ key: "trophies_7d", direction: "desc" });
+      setSortState({ key: "trophies_3d", direction: "desc" });
     } else if (filter === "no-progress") {
-      setSortState({ key: "trophies_7d", direction: "asc" });
+      setSortState({ key: "trophies_3d", direction: "asc" });
     } else if (filter === "inactive" || filter === "low-activity" || filter === "attention") {
       setSortState({ key: "activity_status", direction: "asc" });
     }
@@ -489,6 +506,9 @@ export default function MembersPage() {
       const syncTime = typeof data.timestamp === "string" ? data.timestamp : new Date().toISOString();
       setLastSyncTime(syncTime);
       await loadMembers(true);
+      window.dispatchEvent(new CustomEvent("club-data-updated", {
+        detail: { changes: data.changes, source: "members-page", syncTime },
+      }));
     } catch (error) {
       console.error("Sync failed:", error);
       setErrorMessage(error instanceof Error ? error.message : "Sync failed");
@@ -506,6 +526,7 @@ export default function MembersPage() {
         "Trophies",
         "Highest",
         "24h",
+        "3 Days",
         "7 Days",
         "Activity",
         "Last Battle",
@@ -522,6 +543,7 @@ export default function MembersPage() {
         sanitizeCsvValue(member.trophies),
         sanitizeCsvValue(member.highest_trophies),
         sanitizeCsvValue(member.trophies_24h),
+        sanitizeCsvValue(member.trophies_3d),
         sanitizeCsvValue(member.trophies_7d),
         sanitizeCsvValue(getActivityLabel(getActivityStatus(member))),
         sanitizeCsvValue(member.last_battle_at || ""),
@@ -556,7 +578,7 @@ export default function MembersPage() {
           <SummaryCard
             title="Active"
             value={summary.active}
-            description="Tracked as active"
+            description="Played in last 24h"
             icon={Activity}
             tone="text-green-500"
           />
@@ -589,7 +611,7 @@ export default function MembersPage() {
               <div>
                 <CardTitle>Members</CardTitle>
                 <p className="mt-1 text-sm text-muted-foreground">
-                  Full roster with activity, weekly movement, filters, and quick review.
+                  Full roster with activity, 3-day progress, filters, and quick review.
                 </p>
               </div>
 
@@ -715,16 +737,15 @@ export default function MembersPage() {
                   </label>
 
                   <label className="space-y-1.5 text-sm">
-                    <span className="text-muted-foreground">7-day movement</span>
+                    <span className="text-muted-foreground">3-day progress</span>
                     <select
                       value={movementFilter}
                       onChange={(event) => setMovementFilter(event.target.value as MovementFilter)}
                       className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
                     >
-                      <option value="all">All movement</option>
+                      <option value="all">All progress</option>
                       <option value="positive">Gained trophies</option>
-                      <option value="negative">Lost trophies</option>
-                      <option value="flat">No movement</option>
+                      <option value="flat">No progress</option>
                       <option value="unknown">No data</option>
                     </select>
                   </label>
@@ -884,9 +905,9 @@ export default function MembersPage() {
                     </p>
                   </div>
                   <div className="rounded-lg border border-border bg-muted/20 p-3">
-                    <p className="text-xs text-muted-foreground">7 days</p>
-                    <p className={cn("mt-1 text-xl font-bold", getDeltaClass(selectedMember.trophies_7d))}>
-                      {formatDelta(selectedMember.trophies_7d)}
+                    <p className="text-xs text-muted-foreground">3 days</p>
+                    <p className={cn("mt-1 text-xl font-bold", getDeltaClass(selectedMember.trophies_3d))}>
+                      {formatDelta(selectedMember.trophies_3d)}
                     </p>
                   </div>
                 </div>

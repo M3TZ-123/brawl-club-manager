@@ -249,15 +249,15 @@ export default function SettingsPage() {
                       </label>
                       <Input
                         type="number"
-                        min="1"
+                        min="48"
                         max="168"
                         value={effectiveInactivityThreshold}
                         onChange={(e) =>
-                          setLocalInactivityThreshold(parseBoundedInput(e.target.value, 24, 1, 168))
+                          setLocalInactivityThreshold(parseBoundedInput(e.target.value, 48, 48, 168))
                         }
                       />
                       <p className="text-xs text-muted-foreground">
-                        Players with no trophy changes for this many hours are marked inactive
+                        Players with no tracked battle past this threshold are marked inactive
                       </p>
                     </div>
 
@@ -271,9 +271,9 @@ export default function SettingsPage() {
                     <div className="p-4 rounded-lg bg-muted/50">
                       <h4 className="font-medium mb-2">Activity Detection</h4>
                       <ul className="text-sm text-muted-foreground space-y-1">
-                        <li>🟢 <strong>Active:</strong> ±20+ trophy change</li>
-                        <li>🟡 <strong>Minimal:</strong> Small trophy change (streak keeper)</li>
-                        <li>🔴 <strong>Inactive:</strong> No changes past threshold</li>
+                        <li>Active: played in the last 24 hours</li>
+                        <li>Low activity: played between 24 and {effectiveInactivityThreshold} hours ago</li>
+                        <li>Inactive: no tracked battle for more than {effectiveInactivityThreshold} hours</li>
                       </ul>
                     </div>
 

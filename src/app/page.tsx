@@ -13,7 +13,6 @@ import { Member, ClubEvent } from "@/types/database";
 import {
   Activity,
   AlertTriangle,
-  ArrowDownRight,
   ArrowUpRight,
   CheckCircle2,
   Clock3,
@@ -35,6 +34,7 @@ type ActivityStatus = "active" | "minimal" | "inactive";
 
 interface DashboardMember extends Member {
   trophies_24h: number | null;
+  trophies_3d: number | null;
   trophies_7d: number | null;
   activity_status: ActivityStatus;
   last_battle_at: string | null;
@@ -49,7 +49,7 @@ interface DashboardResponse {
   };
   topMembers: DashboardMember[];
   topGainers: DashboardMember[];
-  trophyLosers: DashboardMember[];
+  noProgressMembers: DashboardMember[];
   attentionMembers: DashboardMember[];
   changeSummary: {
     joins: number;
@@ -260,7 +260,7 @@ function MemberSignalList({
 }: {
   members: DashboardMember[];
   emptyText: string;
-  mode: "gain" | "loss" | "attention" | "top";
+  mode: "gain" | "no-progress" | "attention" | "top";
 }) {
   if (members.length === 0) {
     return (
@@ -272,42 +272,51 @@ function MemberSignalList({
 
   return (
     <div className="space-y-2">
-      {members.map((member, index) => (
-        <div
-          key={member.player_tag}
-          className="flex items-center justify-between gap-3 rounded-lg border border-border/60 bg-muted/20 px-3 py-2.5"
-        >
-          <div className="flex min-w-0 items-center gap-3">
-            {mode === "top" && (
-              <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md bg-primary/15 text-xs font-bold text-primary">
-                {index + 1}
-              </span>
-            )}
-            <div className="min-w-0">
-              <p className="truncate text-sm font-semibold">{member.player_name || "Unknown player"}</p>
-              <p className="text-xs text-muted-foreground">{member.player_tag}</p>
+      {members.map((member, index) => {
+        const progressValue = mode === "attention" || mode === "no-progress"
+          ? member.trophies_3d
+          : member.trophies_7d;
+        const progressWindow = mode === "attention" || mode === "no-progress" ? "3d" : "7d";
+
+        return (
+          <div
+            key={member.player_tag}
+            className="flex items-center justify-between gap-3 rounded-lg border border-border/60 bg-muted/20 px-3 py-2.5"
+          >
+            <div className="flex min-w-0 items-center gap-3">
+              {mode === "top" && (
+                <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md bg-primary/15 text-xs font-bold text-primary">
+                  {index + 1}
+                </span>
+              )}
+              <div className="min-w-0">
+                <p className="truncate text-sm font-semibold">{member.player_name || "Unknown player"}</p>
+                <p className="text-xs text-muted-foreground">{member.player_tag}</p>
+              </div>
+            </div>
+
+            <div className="shrink-0 text-right">
+              {mode === "attention" ? (
+                <div className="flex flex-col items-end gap-1">
+                  <ActivityBadge status={member.activity_status} />
+                  <span className={`text-xs ${getDeltaClass(progressValue)}`}>
+                    {formatDelta(progressValue)} in {progressWindow}
+                  </span>
+                </div>
+              ) : (
+                <>
+                  <p className="text-sm font-semibold">{formatNumber(member.trophies)}</p>
+                  <p className={`text-xs ${getDeltaClass(progressValue)}`}>
+                    {mode === "top" || mode === "no-progress"
+                      ? `${formatDelta(progressValue)} in ${progressWindow}`
+                      : formatDelta(progressValue)}
+                  </p>
+                </>
+              )}
             </div>
           </div>
-
-          <div className="shrink-0 text-right">
-            {mode === "attention" ? (
-              <div className="flex flex-col items-end gap-1">
-                <ActivityBadge status={member.activity_status} />
-                <span className={`text-xs ${getDeltaClass(member.trophies_7d)}`}>
-                  {formatDelta(member.trophies_7d)} in 7d
-                </span>
-              </div>
-            ) : (
-              <>
-                <p className="text-sm font-semibold">{formatNumber(member.trophies)}</p>
-                <p className={`text-xs ${getDeltaClass(member.trophies_7d)}`}>
-                  {mode === "top" ? `${formatDelta(member.trophies_7d)} in 7d` : formatDelta(member.trophies_7d)}
-                </p>
-              </>
-            )}
-          </div>
-        </div>
-      ))}
+        );
+      })}
     </div>
   );
 }
@@ -535,7 +544,7 @@ export default function DashboardPage() {
       avgTrophies,
       topMembers: dashboard?.topMembers ?? [],
       topGainers: dashboard?.topGainers ?? [],
-      trophyLosers: dashboard?.trophyLosers ?? [],
+      noProgressMembers: dashboard?.noProgressMembers ?? [],
       attentionMembers: dashboard?.attentionMembers ?? [],
       recentEvents: dashboard?.recentEvents ?? [],
       changeSummary: dashboard?.changeSummary ?? {
@@ -720,7 +729,7 @@ export default function DashboardPage() {
                   <ListChecks className="h-5 w-5 text-yellow-400" />
                   Needs Attention
                 </CardTitle>
-                <p className="text-sm text-muted-foreground">Inactive, low-activity, or losing trophies</p>
+                <p className="text-sm text-muted-foreground">Inactive, low activity, or no 3-day progress</p>
               </CardHeader>
               <CardContent>
                 <MemberSignalList
@@ -751,16 +760,16 @@ export default function DashboardPage() {
             <Card>
               <CardHeader>
                 <CardTitle className="flex items-center gap-2 text-base">
-                  <ArrowDownRight className="h-5 w-5 text-red-400" />
-                  Losing Trophies
+                  <Minus className="h-5 w-5 text-yellow-400" />
+                  No Progress
                 </CardTitle>
-                <p className="text-sm text-muted-foreground">Negative 7-day trophy progress</p>
+                <p className="text-sm text-muted-foreground">Exactly 0 net trophies over 3 days</p>
               </CardHeader>
               <CardContent>
                 <MemberSignalList
-                  members={dashboardData.trophyLosers}
-                  mode="loss"
-                  emptyText="No members are down over the last 7 days."
+                  members={dashboardData.noProgressMembers}
+                  mode="no-progress"
+                  emptyText="No members are stuck at 0 progress."
                 />
               </CardContent>
             </Card>

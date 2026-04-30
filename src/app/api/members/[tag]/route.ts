@@ -3,6 +3,9 @@ import { supabaseAdmin } from "@/lib/supabase-admin";
 import { getPlayer, getPlayerRankedData, calculateEnhancedStats, calculateWinRateFromBattleLog, getPlayerBattleLog, processBattleLog, BrawlStarsBattleLog } from "@/lib/brawl-api";
 import { rejectUnauthorizedAdminMutation } from "@/lib/admin-auth";
 
+const DAY_MS = 24 * 60 * 60 * 1000;
+const ACTIVE_BATTLE_WINDOW_MS = DAY_MS;
+
 type RecentMatch = {
   battle_time: string;
   mode: string | null;
@@ -167,7 +170,7 @@ async function getInactivityThresholdHours(): Promise<number> {
     .single();
 
   const parsed = Number.parseInt(data?.value || "", 10);
-  return Number.isFinite(parsed) && parsed > 0 ? parsed : 48;
+  return Number.isFinite(parsed) ? Math.min(Math.max(parsed, 48), 168) : 48;
 }
 
 async function getConfiguredApiKey(): Promise<string | undefined> {
@@ -468,12 +471,16 @@ export async function POST(
     adjustFutureBattleTimes(processedBattles);
     const inactivityThreshold = await getInactivityThresholdHours();
     const thresholdTimeMs = Date.now() - inactivityThreshold * 60 * 60 * 1000;
+    const activeBattleCutoffMs = Date.now() - ACTIVE_BATTLE_WINDOW_MS;
     const hasRecentBattle = processedBattles.some(
       (battle) => new Date(battle.battle_time).getTime() >= thresholdTimeMs
     );
+    const hasActiveBattle = processedBattles.some(
+      (battle) => new Date(battle.battle_time).getTime() >= activeBattleCutoffMs
+    );
 
     let activityType = "inactive";
-    if (Math.abs(trophyChange) >= 20) {
+    if (hasActiveBattle) {
       activityType = "active";
     } else if (Math.abs(trophyChange) > 0 || hasRecentBattle) {
       activityType = "minimal";

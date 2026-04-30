@@ -8,6 +8,9 @@ export const dynamic = "force-dynamic";
 export const revalidate = 0;
 export const maxDuration = 60;
 
+const DAY_MS = 24 * 60 * 60 * 1000;
+const ACTIVE_BATTLE_WINDOW_MS = DAY_MS;
+
 function buildNotificationDedupeKey(
   type: string,
   title: string,
@@ -262,7 +265,7 @@ async function syncClubData(providedClubTag?: string, providedApiKey?: string, i
           if (setting.key === "inactivity_threshold") {
             const parsedThreshold = Number.parseInt(setting.value, 10);
             inactivityThreshold = Number.isFinite(parsedThreshold) && parsedThreshold > 0
-              ? parsedThreshold
+              ? Math.min(Math.max(parsedThreshold, 48), 168)
               : 48;
           }
         }
@@ -314,6 +317,7 @@ async function syncClubData(providedClubTag?: string, providedApiKey?: string, i
     // Get last activity for each member (to check inactivity threshold)
     const thresholdTime = new Date(Date.now() - inactivityThreshold * 60 * 60 * 1000).toISOString();
     const thresholdTimeMs = new Date(thresholdTime).getTime();
+    const activeBattleCutoffMs = Date.now() - ACTIVE_BATTLE_WINDOW_MS;
     const recentActivity = await fetchRecentActivity(currentMemberTagList, thresholdTime);
     
     // Map of players who had activity in the threshold period
@@ -405,10 +409,14 @@ async function syncClubData(providedClubTag?: string, providedApiKey?: string, i
             const hasRecentBattle = processedBattles.some(
               (battle) => new Date(battle.battle_time).getTime() >= thresholdTimeMs
             );
+            const hasActiveBattle = processedBattles.some(
+              (battle) => new Date(battle.battle_time).getTime() >= activeBattleCutoffMs
+            );
 
-            // Determine activity type based on current trophy change and battle recency
+            // Activity labels follow the members page thresholds:
+            // active = played in 24h, minimal = played before the inactive threshold.
             let activityType = "inactive";
-            if (Math.abs(trophyChange) >= 20) {
+            if (hasActiveBattle) {
               activityType = "active";
             } else if (Math.abs(trophyChange) > 0 || hasRecentBattle) {
               activityType = "minimal";

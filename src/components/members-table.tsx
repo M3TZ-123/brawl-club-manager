@@ -37,6 +37,7 @@ type ActivityDisplayStatus = ActivityStatus | "unknown";
 
 export interface MemberWithGains extends Member {
   trophies_24h?: number | null;
+  trophies_3d?: number | null;
   trophies_7d?: number | null;
   activity_status?: ActivityStatus;
   last_battle_at?: string | null;
@@ -50,6 +51,7 @@ export type MemberColumnKey =
   | "rank_current"
   | "rank_highest"
   | "trophies_24h"
+  | "trophies_3d"
   | "trophies_7d"
   | "activity"
   | "last_battle"
@@ -65,6 +67,7 @@ export type MemberSortKey =
   | "rank_current"
   | "rank_highest"
   | "trophies_24h"
+  | "trophies_3d"
   | "trophies_7d"
   | "activity_status"
   | "last_battle_at"
@@ -86,7 +89,8 @@ export const DEFAULT_MEMBER_COLUMNS: MemberColumnVisibility = {
   rank_current: false,
   rank_highest: false,
   trophies_24h: true,
-  trophies_7d: true,
+  trophies_3d: true,
+  trophies_7d: false,
   activity: true,
   last_battle: true,
   brawlers_count: false,
@@ -111,6 +115,7 @@ const SORTABLE_COLUMNS: Partial<Record<MemberColumnKey, MemberSortKey>> = {
   rank_current: "rank_current",
   rank_highest: "rank_highest",
   trophies_24h: "trophies_24h",
+  trophies_3d: "trophies_3d",
   trophies_7d: "trophies_7d",
   activity: "activity_status",
   last_battle: "last_battle_at",
@@ -418,9 +423,9 @@ export const MembersTable = memo(function MembersTable({
                   <p className="font-semibold">{formatNumber(member.trophies)}</p>
                 </div>
                 <div>
-                  <p className="text-xs text-muted-foreground">7 days</p>
-                  <p className={cn("font-semibold", getDeltaClass(member.trophies_7d))}>
-                    {formatDelta(member.trophies_7d)}
+                  <p className="text-xs text-muted-foreground">3 days</p>
+                  <p className={cn("font-semibold", getDeltaClass(member.trophies_3d))}>
+                    {formatDelta(member.trophies_3d)}
                   </p>
                 </div>
                 <div>
@@ -471,6 +476,9 @@ export const MembersTable = memo(function MembersTable({
               )}
               {columnVisibility.trophies_24h && (
                 <SortableHead label="24h" sortKey={SORTABLE_COLUMNS.trophies_24h} sortState={sortState} onSort={onSort} align="right" />
+              )}
+              {columnVisibility.trophies_3d && (
+                <SortableHead label="3 days" sortKey={SORTABLE_COLUMNS.trophies_3d} sortState={sortState} onSort={onSort} align="right" />
               )}
               {columnVisibility.trophies_7d && (
                 <SortableHead label="7 days" sortKey={SORTABLE_COLUMNS.trophies_7d} sortState={sortState} onSort={onSort} align="right" />
@@ -561,6 +569,11 @@ export const MembersTable = memo(function MembersTable({
                     {columnVisibility.trophies_24h && (
                       <TableCell className={cn("text-right font-medium", getDeltaClass(member.trophies_24h))}>
                         {formatDelta(member.trophies_24h)}
+                      </TableCell>
+                    )}
+                    {columnVisibility.trophies_3d && (
+                      <TableCell className={cn("text-right font-medium", getDeltaClass(member.trophies_3d))}>
+                        {formatDelta(member.trophies_3d)}
                       </TableCell>
                     )}
                     {columnVisibility.trophies_7d && (

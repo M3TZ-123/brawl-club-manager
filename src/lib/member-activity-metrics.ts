@@ -23,8 +23,13 @@ type DailyStatsSnapshot = {
   trophies_lost: number | null;
 };
 
+const DAY_MS = 24 * 60 * 60 * 1000;
+const ACTIVE_BATTLE_WINDOW_MS = DAY_MS;
+const LOW_ACTIVITY_BATTLE_WINDOW_MS = 2 * DAY_MS;
+
 export type MemberActivityMetrics = {
   trophies_24h: number | null;
+  trophies_3d: number | null;
   trophies_7d: number | null;
   activity_status: "active" | "minimal" | "inactive";
   last_battle_at: string | null;
@@ -137,14 +142,21 @@ export async function appendMemberActivityMetrics<T extends { player_tag: string
   const playerTags = members.map((member) => member.player_tag);
   if (playerTags.length === 0) return [];
 
-  const twentyFourHoursAgo = new Date(now.getTime() - 24 * 60 * 60 * 1000);
-  const sevenDaysAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+  const twentyFourHoursAgo = new Date(now.getTime() - ACTIVE_BATTLE_WINDOW_MS);
+  const lowActivityCutoff = new Date(now.getTime() - LOW_ACTIVITY_BATTLE_WINDOW_MS);
+  const threeDaysAgo = new Date(now.getTime() - 3 * DAY_MS);
+  const sevenDaysAgo = new Date(now.getTime() - 7 * DAY_MS);
 
-  const [activityLogs24h, activityLogs7d, trackingSnapshots, latestBattleSnapshots, dailyStatsSnapshots] = await Promise.all([
+  const [activityLogs24h, activityLogs3d, activityLogs7d, trackingSnapshots, latestBattleSnapshots, dailyStatsSnapshots] = await Promise.all([
     fetchActivitySnapshotsWindow(
       playerTags,
       new Date(twentyFourHoursAgo.getTime() - 12 * 60 * 60 * 1000).toISOString(),
       new Date(twentyFourHoursAgo.getTime() + 12 * 60 * 60 * 1000).toISOString()
+    ),
+    fetchActivitySnapshotsWindow(
+      playerTags,
+      new Date(threeDaysAgo.getTime() - 24 * 60 * 60 * 1000).toISOString(),
+      new Date(threeDaysAgo.getTime() + 24 * 60 * 60 * 1000).toISOString()
     ),
     fetchActivitySnapshotsWindow(
       playerTags,
@@ -160,7 +172,7 @@ export async function appendMemberActivityMetrics<T extends { player_tag: string
   ]);
 
   const logsByPlayer = new Map<string, ActivitySnapshot[]>();
-  for (const log of [...activityLogs24h, ...activityLogs7d]) {
+  for (const log of [...activityLogs24h, ...activityLogs3d, ...activityLogs7d]) {
     if (!logsByPlayer.has(log.player_tag)) {
       logsByPlayer.set(log.player_tag, []);
     }
@@ -183,14 +195,20 @@ export async function appendMemberActivityMetrics<T extends { player_tag: string
   }
 
   const dailyDelta24hByPlayer = new Map<string, number>();
+  const dailyDelta3dByPlayer = new Map<string, number>();
   const dailyDelta7dByPlayer = new Map<string, number>();
   const twentyFourHoursAgoDate = twentyFourHoursAgo.toISOString().slice(0, 10);
+  const threeDaysAgoDate = threeDaysAgo.toISOString().slice(0, 10);
   const sevenDaysAgoDate = sevenDaysAgo.toISOString().slice(0, 10);
 
   for (const row of dailyStatsSnapshots) {
     const delta = (row.trophies_gained || 0) - (row.trophies_lost || 0);
     if (row.date >= twentyFourHoursAgoDate) {
       dailyDelta24hByPlayer.set(row.player_tag, (dailyDelta24hByPlayer.get(row.player_tag) || 0) + delta);
+    }
+
+    if (row.date >= threeDaysAgoDate) {
+      dailyDelta3dByPlayer.set(row.player_tag, (dailyDelta3dByPlayer.get(row.player_tag) || 0) + delta);
     }
 
     if (row.date >= sevenDaysAgoDate) {
@@ -201,29 +219,46 @@ export async function appendMemberActivityMetrics<T extends { player_tag: string
   return members.map((member) => {
     const playerLogs = logsByPlayer.get(member.player_tag) || [];
     const baseline24h = findNearestBaseline(playerLogs, twentyFourHoursAgo, 12 * 60 * 60 * 1000);
+    const baseline3d = findNearestBaseline(playerLogs, threeDaysAgo, 24 * 60 * 60 * 1000);
     const baseline7d = findNearestBaseline(playerLogs, sevenDaysAgo, 24 * 60 * 60 * 1000);
     const snapshot24h = baseline24h != null ? member.trophies - baseline24h.trophies : null;
+    const snapshot3d = baseline3d != null ? member.trophies - baseline3d.trophies : null;
     const snapshot7d = baseline7d != null ? member.trophies - baseline7d.trophies : null;
     const fallback24h = dailyDelta24hByPlayer.has(member.player_tag)
       ? dailyDelta24hByPlayer.get(member.player_tag) || 0
+      : null;
+    const fallback3d = dailyDelta3dByPlayer.has(member.player_tag)
+      ? dailyDelta3dByPlayer.get(member.player_tag) || 0
       : null;
     const fallback7d = dailyDelta7dByPlayer.has(member.player_tag)
       ? dailyDelta7dByPlayer.get(member.player_tag) || 0
       : null;
     const trophies24h = snapshot24h != null ? snapshot24h : fallback24h;
+    const trophies3d = snapshot3d != null ? snapshot3d : fallback3d;
     const trophies7d = snapshot7d != null ? snapshot7d : fallback7d;
     const lastBattleAt = latestBattleByPlayer.get(member.player_tag);
-    const activityStatus = lastBattleAt
-      ? (lastBattleAt >= twentyFourHoursAgo ? "active" : "minimal")
-      : (trophies24h != null && trophies24h !== 0)
-        ? "active"
-        : (trophies7d != null && trophies7d !== 0)
-          ? "minimal"
-          : "inactive";
+    let activityStatus: MemberActivityMetrics["activity_status"];
+
+    if (lastBattleAt) {
+      if (lastBattleAt >= twentyFourHoursAgo) {
+        activityStatus = "active";
+      } else if (lastBattleAt >= lowActivityCutoff) {
+        activityStatus = "minimal";
+      } else {
+        activityStatus = "inactive";
+      }
+    } else if (trophies24h != null && trophies24h !== 0) {
+      activityStatus = "active";
+    } else if (trophies7d != null && trophies7d !== 0) {
+      activityStatus = "minimal";
+    } else {
+      activityStatus = "inactive";
+    }
 
     return {
       ...member,
       trophies_24h: trophies24h,
+      trophies_3d: trophies3d,
       trophies_7d: trophies7d,
       activity_status: activityStatus,
       last_battle_at: lastBattleAt ? lastBattleAt.toISOString() : null,
