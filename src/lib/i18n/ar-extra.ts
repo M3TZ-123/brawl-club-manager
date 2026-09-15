@@ -1,4 +1,5 @@
 export const arExtra: Record<string, string> = {
+  "Automatic sync is scheduled every 30 minutes. Use Sync Now for an immediate admin sync; recent attempts appear on the dashboard.": "المزامنة التلقائية مجدولة كل 30 دقيقة. يمكن للمسؤول الضغط على «زامن الآن» للتحديث الفوري، وتظهر المحاولات الأخيرة في لوحة التحكم.",
   "Today": "اليوم", "Yesterday": "أمس", "Air Hockey": "الهوكي الهوائي", "Basket Brawl": "كرة السلة", "Brawl Arena": "ساحة براول", "Deathmatch": "مباراة الإقصاء", "Tag Team": "الفريق المتناوب", "Trio Showdown": "المواجهة الثلاثية",
   "Details": "التفاصيل",
   "Dashboard": "لوحة التحكم", "Leaderboard": "لوحة الصدارة", "Reports": "التقارير", "History": "السجل",

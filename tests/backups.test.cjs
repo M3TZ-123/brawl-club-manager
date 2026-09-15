@@ -6,7 +6,7 @@ const os = require("node:os");
 const path = require("node:path");
 const { setTimeout: sleep } = require("node:timers/promises");
 const { encryptionKey, sha256, writeEncryptedBackup, readEncryptedBackup } = require("../scripts/backup-format.cjs");
-const { validateRestoreTarget } = require("../scripts/restore-backup.cjs");
+const { validateRestoreTarget, validateRestoreConnection } = require("../scripts/restore-backup.cjs");
 const next = { NextResponse: { json: (body, init) => Response.json(body, init) } };
 
 test("backup restore refuses remote, general-purpose and connection-override targets", () => {
@@ -14,6 +14,22 @@ test("backup restore refuses remote, general-purpose and connection-override tar
     assert.throws(() => validateRestoreTarget(target), /loopback-only/);
   }
   assert.equal(validateRestoreTarget("postgresql://x:pass@127.0.0.1:55432/brawl_backup_tests"), "brawl_backup_tests");
+});
+
+test("restore accepts an actual loopback TCP peer despite a container-side bridge address", () => {
+  const target = { db: "brawl_backup_restore", encoding: "UTF8", address: "172.18.0.2" };
+  for (const peer of ["127.0.0.1", "::1", "0:0:0:0:0:0:0:1", "::ffff:127.0.0.1", "::ffff:7f00:1"]) {
+    assert.doesNotThrow(() => validateRestoreConnection(peer, target, "brawl_backup_restore"));
+  }
+});
+
+test("restore fails closed for nonloopback/missing TCP peers and mismatched database or encoding", () => {
+  const target = { db: "brawl_backup_restore", encoding: "UTF8", address: "127.0.0.1" };
+  for (const peer of [undefined, null, "", "localhost", "127.0.0.1.example", "172.18.0.2", "10.0.0.1", "203.0.113.5", "2001:db8::1", "::ffff:10.0.0.1"]) {
+    assert.throws(() => validateRestoreConnection(peer, target, "brawl_backup_restore"), /local UTF8/);
+  }
+  assert.throws(() => validateRestoreConnection("127.0.0.1", { ...target, db: "postgres" }, "brawl_backup_restore"), /local UTF8/);
+  assert.throws(() => validateRestoreConnection("127.0.0.1", { ...target, encoding: "WIN1252" }, "brawl_backup_restore"), /local UTF8/);
 });
 
 test("backup key validation rejects missing, short, and noncanonical keys", () => {

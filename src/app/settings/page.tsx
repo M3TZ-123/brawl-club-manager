@@ -255,7 +255,7 @@ export default function SettingsPage() {
                     <div className="p-4 rounded-lg bg-muted/50">
                       <h4 className="font-medium mb-2"><T text="Sync Schedule" /></h4>
                       <p className="text-sm text-muted-foreground">
-                        <T text=" Automatic sync is handled by cron-job.org. Use the sidebar Sync Now button for an immediate admin sync. " /></p>
+                        <T text="Automatic sync is scheduled every 30 minutes. Use Sync Now for an immediate admin sync; recent attempts appear on the dashboard." /></p>
                     </div>
 
                     <div className="p-4 rounded-lg bg-muted/50">

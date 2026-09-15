@@ -124,25 +124,13 @@ The regression tests use isolated fixtures and mocked services. See [FIXES.md](F
 4. Add environment variables
 5. Deploy!
 
-### Setup Auto-Sync With cron-job.org
+### Scheduled operations
 
-Use cron-job.org as the production scheduler.
+GitHub Actions runs club sync every 30 minutes, notification delivery every 5 minutes, and an encrypted backup with restore verification daily. Each workflow also supports manual dispatch. GitHub may delay scheduled runs; the dashboard reports actual attempts and freshness.
 
-Create one cron-job.org job:
+Set repository secrets `VERCEL_APP_URL`, `CRON_SECRET`, and `BACKUP_ENCRYPTION_KEY`. The scheduler secret must match the private database setting `scheduler_token` or the existing server `CRON_SECRET` environment variable. Never put credentials in public settings, workflow source, URLs, or browser environment variables. Keep a separate secure copy of the backup encryption key; losing it makes the encrypted artifacts unusable.
 
-- URL: `https://brawlstatz.vercel.app/api/sync`
-- Method: `GET`
-- Schedule: every 30 minutes, or your preferred interval
-- Timeout: as high as cron-job.org allows, because a full club sync can take time
-- Custom request header:
-
-```txt
-x-cron-secret: YOUR_VERCEL_CRON_SECRET_VALUE
-```
-
-The header value must be exactly the same as the `CRON_SECRET` environment variable in Vercel. The endpoint also accepts `Authorization: Bearer YOUR_VERCEL_CRON_SECRET_VALUE`, but `x-cron-secret` is simpler for cron-job.org because it avoids basic-auth/Authorization formatting issues.
-
-The in-app refresh interval is only a browser/admin fallback. It works while an admin has the app open, but production auto-sync should rely on cron-job.org or another external scheduler.
+Apply the SQL migrations before deployment and verify the public settings allowlist before saving the dedicated scheduler token. The browser refresh interval is independent of the backend schedule. See [backup operations](docs/BACKUP_OPERATIONS_AR.md) for artifact retrieval, retention, and an isolated restore rehearsal.
 
 ## 📁 Project Structure
 

@@ -1,4 +1,5 @@
 const { Client } = require("pg");
+const { isIP } = require("node:net");
 const { readEncryptedBackup, encryptionKey, sha256 } = require("./backup-format.cjs");
 const identifier = value => `"${String(value).replaceAll('"', '""')}"`;
 const literal = value => `'${String(value).replaceAll("'", "''")}'`;
@@ -12,6 +13,20 @@ function validateRestoreTarget(connectionString) {
     throw new Error("Restore requires a loopback-only brawl_*_tests or brawl_*_restore database without URL query overrides");
   }
   return url.pathname.slice(1);
+}
+
+function validateRestoreConnection(remoteAddress, target, expectedDatabase) {
+  let loopback = remoteAddress === "127.0.0.1";
+  if (typeof remoteAddress === "string" && isIP(remoteAddress) === 6) {
+    const normalized = new URL(`http://[${remoteAddress}]/`).hostname;
+    loopback = ["[::1]", "[::ffff:7f00:1]"].includes(normalized);
+  }
+  // A locally forwarded Docker service reports its container bridge address
+  // from inet_server_addr(). Validate our actual TCP peer instead, along with
+  // the independently checked database identity and encoding.
+  if (!loopback || target.db !== expectedDatabase || target.encoding !== "UTF8") {
+    throw new Error("Restore target must be a local UTF8 test database");
+  }
 }
 
 function sequenceOptions(sequence) {
@@ -38,8 +53,8 @@ async function restoreBackup(backup, connectionString) {
   const client = new Client({ connectionString });
   await client.connect();
   try {
-    const target = (await client.query("SELECT current_database() AS db,host(inet_server_addr()) AS address,current_setting('server_encoding') AS encoding")).rows[0];
-    if (target.db !== expectedDatabase || !["127.0.0.1", "::1"].includes(target.address) || target.encoding !== "UTF8") throw new Error("Restore target must be a local UTF8 test database");
+    const target = (await client.query("SELECT current_database() AS db,current_setting('server_encoding') AS encoding")).rows[0];
+    validateRestoreConnection(client.connection?.stream?.remoteAddress, target, expectedDatabase);
     const existing = await client.query(`
       SELECT 1 FROM pg_class c JOIN pg_namespace n ON n.oid=c.relnamespace
         WHERE n.nspname NOT IN ('pg_catalog','information_schema') AND n.nspname NOT LIKE 'pg_toast%' AND c.relkind IN ('r','p','v','m','f','S')
@@ -218,4 +233,4 @@ if (require.main === module) main().catch(error => {
   console.error(`Local backup restore failed: ${error.code ? `database/file error ${error.code}` : error.message}`);
   process.exitCode = 1;
 });
-module.exports = { validateRestoreTarget, restoreBackup };
+module.exports = { validateRestoreTarget, validateRestoreConnection, restoreBackup };
