@@ -20,13 +20,18 @@ export async function GET(request: NextRequest) {
     const params = new URL(request.url).searchParams;
     const id = params.get("snapshot_id") || "";
     if (!uuid.test(id)) return response({ error: "Invalid snapshot_id" }, 400);
+    const table = params.get("table");
     const { data: snapshot, error } = await supabaseAdmin.from("backup_snapshots")
-      .select("manifest,status,expires_at").eq("id", id).maybeSingle();
+      .select("status,expires_at").eq("id", id).maybeSingle();
     if (error) throw error;
     if (!snapshot) return response({ error: "Snapshot not found" }, 404);
     if (new Date(snapshot.expires_at).getTime() <= Date.now()) return response({ error: "Snapshot expired" }, 410);
-    const table = params.get("table");
-    if (table === null) return response({ ...snapshot.manifest, status: snapshot.status });
+    if (table === null) {
+      const { data: details, error: manifestError } = await supabaseAdmin.from("backup_snapshots")
+        .select("manifest").eq("id", id).single();
+      if (manifestError) throw manifestError;
+      return response({ ...details.manifest, status: snapshot.status });
+    }
     const index = params.get("chunk");
     if (!/^[a-z][a-z0-9_]{0,62}$/.test(table) || !index || !/^\d+$/.test(index) || !Number.isSafeInteger(Number(index))) {
       return response({ error: "Invalid chunk request" }, 400);
