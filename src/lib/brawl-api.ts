@@ -9,6 +9,7 @@ const BRAWL_API_BASE = "https://bsproxy.royaleapi.dev/v1";
 // Create axios instance with default config
 const brawlApi = axios.create({
   baseURL: BRAWL_API_BASE,
+  timeout: 10000,
   proxy: false,
   headers: {
     Accept: "application/json",
@@ -170,7 +171,14 @@ function isRankBattleVictory(battle: BrawlStarsBattle): boolean {
   return rank != null && rank <= getRankWinThreshold(battle);
 }
 
-// Helper to handle API errors with detailed logging
+export class BrawlApiError extends Error {
+  constructor(message: string, public readonly status?: number, public readonly reason?: string) {
+    super(message);
+    this.name = "BrawlApiError";
+  }
+}
+
+// Preserve the upstream status when translating Axios errors for callers.
 function handleApiError(error: unknown, endpoint: string): never {
   if (axios.isAxiosError(error)) {
     const status = error.response?.status;
@@ -189,14 +197,15 @@ function handleApiError(error: unknown, endpoint: string): never {
     });
     
     if (status === 403) {
-      throw new Error(`API 403 Forbidden: ${reason}. This usually means the API key is invalid or not authorized for the RoyaleAPI proxy IP (45.79.218.79). Please generate a new key at https://developer.brawlstars.com with IP: 45.79.218.79`);
+      throw new BrawlApiError(`API 403 Forbidden: ${reason}. This usually means the API key is invalid or not authorized for the RoyaleAPI proxy IP (45.79.218.79). Please generate a new key at https://developer.brawlstars.com with IP: 45.79.218.79`, status, reason);
     }
     if (status === 404) {
-      throw new Error(`API 404 Not Found: The requested resource was not found. Check if the tag is correct.`);
+      throw new BrawlApiError(`API 404 Not Found: The requested resource was not found. Check if the tag is correct.`, status, reason);
     }
     if (status === 429) {
-      throw new Error(`API 429 Rate Limited: Too many requests. Please wait before trying again.`);
+      throw new BrawlApiError(`API 429 Rate Limited: Too many requests. Please wait before trying again.`, status, reason);
     }
+    throw new BrawlApiError(`Brawl Stars API request failed: ${status ? `${status} ${reason}` : error.message}`, status, reason);
   }
   throw error;
 }
@@ -307,7 +316,7 @@ export function formatLeagueRankFromPoints(points: number): string {
 }
 
 // Fetch real ranked data from RNT API (with retry)
-export async function getPlayerRankedData(playerTag: string): Promise<{
+export async function getPlayerRankedData(playerTag: string, options: { signal?: AbortSignal } = {}): Promise<{
   currentRank: string;
   highestRank: string;
   currentPoints: number;
@@ -315,12 +324,15 @@ export async function getPlayerRankedData(playerTag: string): Promise<{
 }> {
   const MAX_RETRIES = 1;
   const cleanTag = playerTag.replace('#', '');
+  const unavailable = { currentRank: "Unranked", highestRank: "Unranked", currentPoints: 0, highestPoints: 0 };
 
   for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
+    if (options.signal?.aborted) return unavailable;
     try {
       const response = await axios.get(`${RNT_API_URL}/profile?tag=${cleanTag}`, {
         timeout: 4000,
         proxy: false,
+        signal: options.signal,
       });
       
       if (!response.data?.ok || !response.data?.result?.stats) {
@@ -347,6 +359,7 @@ export async function getPlayerRankedData(playerTag: string): Promise<{
         highestPoints,
       };
     } catch (error) {
+      if (options.signal?.aborted || axios.isCancel(error)) return unavailable;
       if (attempt < MAX_RETRIES) {
         // Wait briefly before retrying
         await new Promise((resolve) => setTimeout(resolve, 300));

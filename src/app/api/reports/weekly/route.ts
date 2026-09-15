@@ -1,5 +1,9 @@
 import { NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabase-admin";
+import { appendMemberActivityMetrics } from "@/lib/member-activity-metrics";
+import { getWeeklyReportingPeriod } from "@/lib/reporting-period";
+
+export const dynamic = "force-dynamic";
 
 type WeeklyStatsRow = {
   player_tag: string;
@@ -22,11 +26,9 @@ export async function GET() {
     
     const currentMemberTags = currentMemberHistory?.map(h => h.player_tag) || [];
 
-    // Get activity logs from last 7 days
-    const weekAgo = new Date();
-    weekAgo.setDate(weekAgo.getDate() - 7);
-
-    const weekAgoDate = weekAgo.toISOString().slice(0, 10);
+    const now = new Date();
+    const period = getWeeklyReportingPeriod(now);
+    const weekAgoDate = period.dates[0];
     const currentMemberFilter = currentMemberTags.length > 0 ? currentMemberTags : [""];
 
     const [membersRes, weeklyStatsRes, eventsRes] = await Promise.all([
@@ -39,11 +41,13 @@ export async function GET() {
         .from("daily_stats")
         .select("player_tag, date, wins, battles, trophies_gained, trophies_lost")
         .in("player_tag", currentMemberFilter)
-        .gte("date", weekAgoDate),
+        .gte("date", weekAgoDate)
+        .lte("date", period.dates[6]),
       supabaseAdmin
         .from("club_events")
         .select("event_type, player_name, event_time")
-        .gte("event_time", weekAgo.toISOString())
+        .gte("event_time", period.start.toISOString())
+        .lte("event_time", period.end.toISOString())
         .order("event_time", { ascending: false })
         .limit(10),
     ]);
@@ -56,13 +60,10 @@ export async function GET() {
     const weeklyStats = weeklyStatsRes.data || [];
     const events = eventsRes.data || [];
 
-    if (!members) {
-      return NextResponse.json({ error: "No data available" }, { status: 404 });
-    }
-
     // Calculate report data
     const totalTrophies = members.reduce((sum, m) => sum + m.trophies, 0);
-    const activeCount = members.filter((m) => m.is_active).length;
+    const membersWithActivity = await appendMemberActivityMetrics(members, now);
+    const activeCount = membersWithActivity.filter((member) => member.activity_status === "active").length;
 
     // Trophy changes by player from pre-aggregated daily stats.
     const playerTrophyChanges: Record<string, number> = {};
@@ -112,19 +113,13 @@ export async function GET() {
 
     // Activity distribution
     const activityDistribution = {
-      active: members.filter((m) => m.is_active).length,
-      minimal: 0, // Would need more sophisticated tracking
-      inactive: members.filter((m) => !m.is_active).length,
+      active: activeCount,
+      minimal: membersWithActivity.filter((member) => member.activity_status === "minimal").length,
+      inactive: membersWithActivity.filter((member) => member.activity_status === "inactive").length,
     };
 
     const trophyTrend: { date: string; trophies: number }[] = [];
-    const trendDates: string[] = [];
-    const today = new Date();
-    for (let offset = 6; offset >= 0; offset--) {
-      const date = new Date(today);
-      date.setDate(date.getDate() - offset);
-      trendDates.push(date.toISOString().slice(0, 10));
-    }
+    const trendDates = period.dates;
 
     for (const date of trendDates) {
       const futureNet = trendDates
@@ -137,10 +132,10 @@ export async function GET() {
     }
 
     const report = {
-      generatedAt: new Date().toISOString(),
+      generatedAt: now.toISOString(),
       period: {
-        start: weekAgo.toISOString(),
-        end: new Date().toISOString(),
+        start: period.start.toISOString(),
+        end: period.end.toISOString(),
       },
       summary: {
         totalMembers: members.length,
@@ -160,7 +155,7 @@ export async function GET() {
       trophyTrend,
     };
 
-    return NextResponse.json(report);
+    return NextResponse.json(report, { headers: { "Cache-Control": "no-store" } });
   } catch (error) {
     console.error("Error generating report:", error);
     return NextResponse.json(

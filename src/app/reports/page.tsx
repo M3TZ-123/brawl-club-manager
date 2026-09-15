@@ -42,6 +42,12 @@ function escapeHtml(value: unknown) {
     .replace(/'/g, "&#39;");
 }
 
+function formatReportDate(value: string) {
+  return new Date(value).toLocaleDateString("en-US", {
+    month: "short", day: "numeric", year: "numeric", timeZone: "UTC",
+  });
+}
+
 function ReportChartSkeleton() {
   return (
     <Card>
@@ -126,8 +132,8 @@ export default function ReportsPage() {
     // For simplicity, we'll export as text/html that can be printed to PDF
     if (!report) return;
     const generatedAt = escapeHtml(formatDate(report.generatedAt));
-    const periodStart = escapeHtml(formatDate(report.period.start));
-    const periodEnd = escapeHtml(formatDate(report.period.end));
+    const periodStart = escapeHtml(formatReportDate(report.period.start));
+    const periodEnd = escapeHtml(formatReportDate(report.period.end));
 
     const content = `
       <html>
@@ -181,6 +187,7 @@ export default function ReportsPage() {
     () => report
       ? [
         { name: "Active", value: report.activityDistribution.active, color: "#22c55e" },
+        { name: "Low activity", value: report.activityDistribution.minimal, color: "#eab308" },
         { name: "Inactive", value: report.activityDistribution.inactive, color: "#ef4444" },
       ]
       : [],
@@ -194,7 +201,7 @@ export default function ReportsPage() {
           <h1 className="text-2xl font-bold">Weekly Report</h1>
           {report && (
             <p className="text-muted-foreground">
-              {formatDate(report.period.start)} - {formatDate(report.period.end)}
+              {formatReportDate(report.period.start)} - {formatReportDate(report.period.end)} (UTC)
                 </p>
               )}
             </div>
@@ -265,7 +272,7 @@ export default function ReportsPage() {
                   <CardContent>
                     <div className="text-2xl font-bold">{report.summary.activityRate}%</div>
                     <p className="text-xs text-muted-foreground">
-                      {report.summary.activeMembers} active members
+                      {report.summary.activeMembers} active in the last 24 hours
                     </p>
                   </CardContent>
                 </Card>

@@ -34,14 +34,16 @@ export async function fetchJsonCached<T>(
       if (!response.ok) {
         throw new Error(data.error || data.message || `Request failed: ${response.status}`);
       }
-      jsonCache.set(url, {
-        value: data as T,
-        expiresAt: Date.now() + staleMs,
-      });
+      if (jsonCache.get(url)?.promise === promise) {
+        jsonCache.set(url, {
+          value: data as T,
+          expiresAt: Date.now() + staleMs,
+        });
+      }
       return data as T;
     })
     .catch((error) => {
-      jsonCache.delete(url);
+      if (jsonCache.get(url)?.promise === promise) jsonCache.delete(url);
       throw error;
     });
 

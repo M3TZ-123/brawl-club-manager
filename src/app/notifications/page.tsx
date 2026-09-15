@@ -1,6 +1,6 @@
 "use client";
 
-import { ReactNode, useCallback, useEffect, useMemo, useState } from "react";
+import { ReactNode, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { cn } from "@/lib/utils";
 import { fetchJsonCached, invalidateJsonCache } from "@/lib/client-data-cache";
@@ -56,27 +56,47 @@ export default function NotificationsPage() {
   const [notifications, setNotifications] = useState<Notification[]>([]);
   const [unreadCount, setUnreadCount] = useState(0);
   const [loading, setLoading] = useState(true);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const [nextOffset, setNextOffset] = useState<number | null>(null);
+  const loadSequence = useRef(0);
   const [filter, setFilter] = useState<"all" | "unread">("all");
   const [category, setCategory] = useState<"all" | "join" | "leave" | "inactive" | "promotion" | "name_change">("all");
 
-  const loadNotifications = useCallback(async (force = false) => {
+  const loadNotifications = useCallback(async (force = false, offset = 0) => {
+    const sequence = ++loadSequence.current;
     try {
-      setLoading(true);
+      if (offset === 0) setLoading(true);
+      else setLoadingMore(true);
+      const params = new URLSearchParams({ limit: "100", offset: String(offset) });
+      if (filter === "unread") params.set("unreadOnly", "true");
+      if (category !== "all") {
+        params.set("types", category === "promotion" ? "promotion,demotion" : category);
+      }
       const data = await fetchJsonCached<{
         notifications?: Notification[];
         unreadCount?: number;
-      }>("/api/notifications?limit=100", {
+        nextOffset?: number | null;
+      }>(`/api/notifications?${params}`, {
         staleMs: 30_000,
         force,
       });
-      setNotifications(data.notifications || []);
+      if (sequence !== loadSequence.current) return;
+      setNotifications((previous) => offset === 0
+        ? data.notifications || []
+        : Array.from(new Map(
+          [...previous, ...(data.notifications || [])].map((notification) => [notification.id, notification])
+        ).values()));
       setUnreadCount(data.unreadCount || 0);
+      setNextOffset(data.nextOffset ?? null);
     } catch (error) {
       console.error("Failed to load notifications:", error);
     } finally {
-      setLoading(false);
+      if (sequence === loadSequence.current) {
+        setLoading(false);
+        setLoadingMore(false);
+      }
     }
-  }, []);
+  }, [category, filter]);
 
   useEffect(() => {
     loadNotifications();
@@ -352,6 +372,13 @@ export default function NotificationsPage() {
               })}
             </section>
           ))}
+          {nextOffset !== null && (
+            <div className="text-center">
+              <Button variant="outline" disabled={loadingMore} onClick={() => loadNotifications(false, nextOffset)}>
+                {loadingMore ? "Loading..." : "Load More"}
+              </Button>
+            </div>
+          )}
         </div>
       )}
     </div>

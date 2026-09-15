@@ -279,6 +279,7 @@ export function ActivityPieChart({ data }: ActivityChartProps) {
   const getColorLabel = (color: string) => {
     const normalized = color.toLowerCase();
     if (normalized === "#22c55e") return "Green";
+    if (normalized === "#eab308") return "Yellow";
     if (normalized === "#ef4444") return "Red";
     return "Color";
   };

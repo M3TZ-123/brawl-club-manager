@@ -86,6 +86,7 @@ interface BattleFeedResponse {
   modes?: string[];
   members?: MemberOption[];
   total?: number;
+  nextOffset?: number | null;
 }
 
 function formatMode(mode: string | null): string {
@@ -469,19 +470,21 @@ export default function BattleFeedPage() {
   const [filterDate, setFilterDate] = useState<string>("");
   const [memberSearch, setMemberSearch] = useState<string>("");
   const [showMemberDropdown, setShowMemberDropdown] = useState(false);
-  const [rawOffset, setRawOffset] = useState(0);
+  const [rawOffset, setRawOffset] = useState<number | null>(0);
   const [isLive, setIsLive] = useState(false);
   const [clockDelta, setClockDelta] = useState(0);
   const [brawlerIconByName, setBrawlerIconByName] = useState<Record<string, string>>({});
   const memberDropdownRef = useRef<HTMLDivElement>(null);
+  const loadSequence = useRef(0);
 
   const PAGE_SIZE = 50;
 
   const loadMatches = useCallback(
     async (offset = 0, append = false, force = false) => {
+      const sequence = ++loadSequence.current;
       try {
-        if (!append) setIsLoading(true);
-        else setIsLoadingMore(true);
+        if (append || force) setIsLoadingMore(true);
+        else if (!force) setIsLoading(true);
 
         const params = new URLSearchParams({
           limit: PAGE_SIZE.toString(),
@@ -503,6 +506,7 @@ export default function BattleFeedPage() {
               })
             : Promise.resolve(null),
         ]);
+        if (sequence !== loadSequence.current) return;
 
         // Compute clock delta: difference between client clock and server clock.
         // This corrects any timezone or clock discrepancy.
@@ -511,14 +515,31 @@ export default function BattleFeedPage() {
           setClockDelta(delta);
         }
         if (append) {
-          setMatches((prev) => [...prev, ...(data.matches || [])]);
+          setMatches((prev) => {
+            const matchKey = (match: Match) => `${match.battle_time}|${match.mode}|${match.map}`;
+            const merged = new Map(prev.map((match) => [matchKey(match), match]));
+            for (const match of data.matches || []) {
+              const previous = merged.get(matchKey(match));
+              merged.set(matchKey(match), previous ? {
+                ...match,
+                // Inserts can shift an offset onto a previously displayed squad.
+                // Keep its known participants when the overlapping page starts mid-match.
+                clubPlayers: Array.from(new Map(
+                  [...previous.clubPlayers, ...match.clubPlayers].map((player) => [normalizeTag(player.tag), player])
+                ).values()),
+                ourTeam: match.ourTeam || previous.ourTeam,
+                theirTeam: match.theirTeam || previous.theirTeam,
+              } : match);
+            }
+            return Array.from(merged.values());
+          });
         } else {
           setMatches(data.matches || []);
           setModes(data.modes || []);
           if (data.members) setMemberList(data.members);
         }
         setTotal(data.total || 0);
-        setRawOffset(offset + PAGE_SIZE);
+        setRawOffset(data.nextOffset ?? null);
 
         if (membersData) {
           const tags = new Set<string>((membersData.members || []).map((m) => normalizeTag(m.player_tag)));
@@ -527,8 +548,10 @@ export default function BattleFeedPage() {
       } catch (err) {
         console.error("Error loading matches:", err);
       } finally {
-        setIsLoading(false);
-        setIsLoadingMore(false);
+        if (sequence === loadSequence.current) {
+          setIsLoading(false);
+          setIsLoadingMore(false);
+        }
       }
     },
     [filterMode, filterPlayer, filterDate]
@@ -577,14 +600,16 @@ export default function BattleFeedPage() {
   loadMatchesRef.current = loadMatches;
 
   useEffect(() => {
+    let refreshTimer: ReturnType<typeof setTimeout> | undefined;
     const channel = supabase
       .channel("battle-feed-realtime")
       .on(
         "postgres_changes",
         { event: "INSERT", schema: "public", table: "battle_history" },
         () => {
-          // Reload from the top when new battles arrive
-          loadMatchesRef.current(0, false);
+          // Coalesce a sync's inserts and bypass cached data after the last one.
+          clearTimeout(refreshTimer);
+          refreshTimer = setTimeout(() => loadMatchesRef.current(0, false, true), 250);
         }
       )
       .subscribe((status) => {
@@ -592,6 +617,7 @@ export default function BattleFeedPage() {
       });
 
     return () => {
+      clearTimeout(refreshTimer);
       supabase.removeChannel(channel);
       setIsLive(false);
     };
@@ -782,7 +808,7 @@ export default function BattleFeedPage() {
               />
             ))}
 
-            {rawOffset < total && (
+            {rawOffset !== null && rawOffset < total && (
               <div className="pt-2 text-center">
                 <Button
                   variant="outline"

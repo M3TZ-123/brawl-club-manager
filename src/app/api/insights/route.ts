@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabase-admin";
 import { appendMemberActivityMetrics } from "@/lib/member-activity-metrics";
+import { getWeeklyReportingPeriod } from "@/lib/reporting-period";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -39,32 +40,27 @@ async function fetchMegaBossBattleSummaries(playerTags: string[], sinceDate: str
 export async function GET() {
   try {
     const now = new Date();
-    const weekStart = new Date(Date.UTC(
-      now.getUTCFullYear(),
-      now.getUTCMonth(),
-      now.getUTCDate() - 6
-    ));
-    const previousWeekStart = new Date(Date.UTC(
-      now.getUTCFullYear(),
-      now.getUTCMonth(),
-      now.getUTCDate() - 13
-    ));
-    const weekStartStr = weekStart.toISOString().slice(0, 10);
-    const previousWeekStartStr = previousWeekStart.toISOString().slice(0, 10);
+    const period = getWeeklyReportingPeriod(now);
+    const weekStartStr = period.dates[0];
+    const previousWeekStartStr = period.previousStart.toISOString().slice(0, 10);
+    const currentMembersRes = await supabaseAdmin.from("member_history")
+      .select("player_tag").eq("is_current_member", true);
+    if (currentMembersRes.error) throw currentMembersRes.error;
+    const currentTags = new Set<string>((currentMembersRes.data || []).map(h => h.player_tag));
+    const memberFilter = currentTags.size ? [...currentTags] : [""];
     // Parallel data fetches
-    const [currentMembersRes, membersRes, thisWeekStatsRes, prevWeekStatsRes] = await Promise.all([
-      supabaseAdmin.from("member_history").select("player_tag").eq("is_current_member", true),
-      supabaseAdmin.from("members").select("player_tag, player_name, trophies, is_active, last_updated"),
-      supabaseAdmin.from("daily_stats").select("player_tag, date, battles, wins, trophies_gained, trophies_lost").gte("date", weekStartStr),
-      supabaseAdmin.from("daily_stats").select("player_tag, battles").gte("date", previousWeekStartStr).lt("date", weekStartStr),
+    const [membersRes, thisWeekStatsRes, prevWeekStatsRes] = await Promise.all([
+      supabaseAdmin.from("members").select("player_tag, player_name, trophies, is_active, last_updated").in("player_tag", memberFilter),
+      supabaseAdmin.from("daily_stats").select("player_tag, date, battles, wins, trophies_gained, trophies_lost")
+        .in("player_tag", memberFilter).gte("date", weekStartStr).lte("date", period.dates[6]),
+      supabaseAdmin.from("daily_stats").select("player_tag, battles")
+        .in("player_tag", memberFilter).gte("date", previousWeekStartStr).lt("date", weekStartStr),
     ]);
 
-    if (currentMembersRes.error) throw currentMembersRes.error;
     if (membersRes.error) throw membersRes.error;
     if (thisWeekStatsRes.error) throw thisWeekStatsRes.error;
     if (prevWeekStatsRes.error) throw prevWeekStatsRes.error;
 
-    const currentTags = new Set((currentMembersRes.data || []).map(h => h.player_tag));
     const members = (membersRes.data || []).filter(m => currentTags.has(m.player_tag));
     // Build name lookup — normalize tags to handle any format differences
     const nameMap = new Map<string, string>();

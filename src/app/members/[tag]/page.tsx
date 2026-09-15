@@ -10,6 +10,7 @@ import { Badge } from "@/components/ui/badge";
 import { fetchJsonCached, invalidateJsonCache } from "@/lib/client-data-cache";
 import { useAdminSession } from "@/hooks/use-admin-session";
 import { Member, ActivityLog, MemberHistory } from "@/types/database";
+import type { ActivityStatus } from "@/lib/activity-status";
 import {
   formatNumber,
   formatDate,
@@ -157,8 +158,10 @@ interface PageProps {
   params: Promise<{ tag: string }>;
 }
 
+type DetailMember = Member & { activity_status: ActivityStatus };
+
 interface MemberDetailResponse {
-  member: Member;
+  member: DetailMember;
   activityHistory?: ActivityLog[];
   memberHistory?: MemberHistory | null;
   lastBattleTime?: string | null;
@@ -173,7 +176,7 @@ interface MemberDetailResponse {
 
 export default function MemberDetailPage({ params }: PageProps) {
   const resolvedParams = use(params);
-  const [member, setMember] = useState<Member | null>(null);
+  const [member, setMember] = useState<DetailMember | null>(null);
   const [activityHistory, setActivityHistory] = useState<ActivityLog[]>([]);
   const [memberHistory, setMemberHistory] = useState<MemberHistory | null>(null);
   const [lastBattleTime, setLastBattleTime] = useState<string | null>(null);
@@ -348,8 +351,8 @@ export default function MemberDetailPage({ params }: PageProps) {
                 <div>
                       <div className="flex items-center gap-2">
                         <h1 className="text-2xl font-bold">{member.player_name}</h1>
-                        <span className="text-lg">
-                          {getActivityEmoji(member.is_active ? "active" : "inactive")}
+                        <span className="text-lg" title={member.activity_status === "minimal" ? "Low activity" : member.activity_status}>
+                          {getActivityEmoji(member.activity_status)}
                         </span>
                       </div>
                       <p className="text-muted-foreground">{member.player_tag}</p>

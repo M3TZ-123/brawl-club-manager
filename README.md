@@ -18,9 +18,9 @@ A high-performance web application to track and manage your Brawl Stars club mem
 - Battle statistics (3v3, Solo, Duo victories)
 
 ### 🎯 Activity Detection
-- **🟢 Active**: Significant trophy changes (±20+)
-- **🟡 Minimal**: Just opened game (streak keeper)
-- **🔴 Inactive**: No changes in 24+ hours
+- **🟢 Active**: A recorded battle or nonzero trophy change within the last 24 hours.
+- **🟡 Minimal**: The latest such activity is older than 24 hours but within the configured inactivity threshold (48–168 hours).
+- **🔴 Inactive**: The latest activity is older than that threshold, or there is no valid recorded evidence of activity.
 
 ### 📜 Member History
 - Track when members join/leave
@@ -48,7 +48,7 @@ A high-performance web application to track and manage your Brawl Stars club mem
 ## 🚀 Getting Started
 
 ### Prerequisites
-- Node.js 18+
+- Node.js 22 LTS or newer
 - npm or yarn
 - Brawl Stars API key
 - Supabase account (free tier works!)
@@ -106,6 +106,14 @@ npm run dev
 
 Open [http://localhost:3000](http://localhost:3000) to see the app.
 
+## 🧪 Tests
+
+```bash
+npm test
+```
+
+The regression tests use isolated fixtures and mocked services. See [FIXES.md](FIXES.md) for an Arabic explanation of all 15 review fixes and their verification results.
+
 ## 🌐 Deploy to Vercel (Free)
 
 1. Push your code to GitHub
@@ -158,7 +166,7 @@ src/
 
 ## 🔧 Tech Stack
 
-- **Framework**: Next.js 14 (App Router)
+- **Framework**: Next.js 16 (App Router)
 - **Language**: TypeScript
 - **Styling**: Tailwind CSS
 - **UI Components**: Radix UI + Custom

@@ -1,0 +1,137 @@
+const test = require("node:test");
+const assert = require("node:assert/strict");
+const { loadTypeScript } = require("./helpers/load-typescript.cjs");
+const { readOnlyDatabase } = require("./helpers/read-only-database.cjs");
+
+const now = new Date("2026-09-15T22:00:00.000Z");
+class FixedDate extends Date {
+  constructor(...args) { super(...(args.length ? args : [now.getTime()])); }
+  static now() { return now.getTime(); }
+}
+const ago = hours => new Date(now.getTime() - hours * 3_600_000).toISOString();
+const responseMock = { NextResponse: { json: (body, init) => Response.json(body, init) } };
+
+function fixture(threshold = "48") {
+  return {
+    settings: [{ key: "inactivity_threshold", value: threshold }],
+    member_history: ["#A", "#B", "#C"].map(player_tag => ({ player_tag, is_current_member: true })),
+    members: [
+      { player_tag: "#A", player_name: "Active", trophies: 1000, is_active: false },
+      { player_tag: "#B", player_name: "Low", trophies: 2000, is_active: true },
+      { player_tag: "#C", player_name: "Inactive", trophies: 3000, is_active: true },
+      { player_tag: "#FORMER", player_name: "Former", trophies: 9000, is_active: true },
+    ],
+    activity_log: [{ player_tag: "#C", recorded_at: ago(1), trophy_change: 0, trophies: 3000, activity_type: "minimal" }],
+    player_tracking: [],
+    battle_history: [
+      { player_tag: "#A", battle_time: ago(1), mode: "brawlBall", trophy_change: 8 },
+      { player_tag: "#B", battle_time: ago(30), mode: "brawlBall", trophy_change: 8 },
+      { player_tag: "#C", battle_time: ago(70), mode: "brawlBall", trophy_change: 8 },
+    ],
+    daily_stats: [
+      { player_tag: "#A", date: "2026-09-08", battles: 99, wins: 99, trophies_gained: 999 },
+      { player_tag: "#A", date: "2026-09-09", battles: 10, wins: 5, trophies_gained: 100, trophies_lost: 20 },
+      { player_tag: "#A", date: "2026-09-15", battles: 20, wins: 20, trophies_gained: 200, trophies_lost: 50 },
+      { player_tag: "#A", date: "2026-09-16", battles: 999, wins: 999, trophies_gained: 999 },
+      { player_tag: "#FORMER", date: "2026-09-15", battles: 999, wins: 999 },
+    ],
+    club_events: [
+      { event_type: "join", player_name: "Old", event_time: "2026-09-08T23:59:59.999Z" },
+      { event_type: "join", player_name: "Included", event_time: "2026-09-09T00:00:00.000Z" },
+      { event_type: "join", player_name: "Future", event_time: "2026-09-16T00:00:00.000Z" },
+    ],
+  };
+}
+
+function load(file, tables) {
+  return loadTypeScript(file, {
+    "@/lib/supabase-admin": { supabaseAdmin: readOnlyDatabase(tables) },
+    "next/server": responseMock,
+  }, { Date: FixedDate });
+}
+
+test("activity ignores repeated observations and respects configured inactivity thresholds", async () => {
+  for (const [threshold, expected] of [["48", "inactive"], ["96", "minimal"]]) {
+    const tables = fixture(threshold);
+    const { appendMemberActivityMetrics } = load("src/lib/member-activity-metrics.ts", tables);
+    const members = await appendMemberActivityMetrics(tables.members.slice(0, 3), now);
+    assert.equal(members[0].activity_status, "active");
+    assert.equal(members[1].activity_status, "minimal");
+    assert.equal(members[2].activity_status, expected);
+  }
+});
+
+test("a real trophy change is activity even if the available battle log is old", async () => {
+  const tables = fixture();
+  tables.activity_log[0].trophy_change = 10;
+  const { appendMemberActivityMetrics } = load("src/lib/member-activity-metrics.ts", tables);
+  const [member] = await appendMemberActivityMetrics([tables.members[2]], now);
+  assert.equal(member.activity_status, "active");
+  assert.equal(member.last_battle_at, ago(70));
+});
+
+test("weekly totals, chart, events, and insights share the same seven UTC dates", async () => {
+  const tables = fixture();
+  const report = await (await load("src/app/api/reports/weekly/route.ts", tables).GET()).json();
+  assert.equal(report.period.start, "2026-09-09T00:00:00.000Z");
+  assert.equal(report.period.end, now.toISOString());
+  assert.equal(report.summary.totalMembers, 3);
+  assert.equal(report.summary.totalTrophies, 6000);
+  assert.equal(report.summary.weeklyBattles, 30);
+  assert.equal(report.summary.weeklyWins, 25);
+  assert.equal(report.topGainers[0].trophyChange, 230);
+  assert.equal(report.trophyTrend.length, 7);
+  assert.equal(report.trophyTrend[0].date, report.period.start.slice(0, 10));
+  assert.equal(report.trophyTrend[6].date, report.period.end.slice(0, 10));
+  assert.deepEqual(report.recentEvents.map(event => event.player_name), ["Included"]);
+  const { insights } = await (await load("src/app/api/insights/route.ts", tables).GET()).json();
+  assert.equal(insights.totalBattlesThisWeek, report.summary.weeklyBattles);
+  assert.equal(insights.totalWins, report.summary.weeklyWins);
+});
+
+test("report activity is calculated now instead of trusting old is_active flags", async () => {
+  const report = await (await load("src/app/api/reports/weekly/route.ts", fixture()).GET()).json();
+  assert.equal(report.summary.activeMembers, 1);
+  assert.equal(report.summary.activityRate, 33);
+  assert.deepEqual(report.activityDistribution, { active: 1, minimal: 1, inactive: 1 });
+});
+
+test("weekly UTC dates remain correct across year and leap-day boundaries", () => {
+  const { getWeeklyReportingPeriod } = loadTypeScript("src/lib/reporting-period.ts");
+  assert.equal(getWeeklyReportingPeriod(new Date("2026-01-02T00:15:00Z")).dates[0], "2025-12-27");
+  const leapPeriod = getWeeklyReportingPeriod(new Date("2024-03-02T23:00:00-08:00"));
+  assert.equal(leapPeriod.dates[0], "2024-02-26");
+  assert.equal(leapPeriod.dates[6], "2024-03-03");
+  assert.ok(leapPeriod.dates.includes("2024-02-29"));
+});
+
+test("activity cutoffs use actual elapsed time and reject invalid future evidence", () => {
+  const { classifyActivity } = loadTypeScript("src/lib/activity-status.ts");
+  assert.equal(classifyActivity(new Date(ago(24)), now, 48), "active");
+  assert.equal(classifyActivity(new Date(ago(48)), now, 48), "minimal");
+  assert.equal(classifyActivity(new Date(ago(48.01)), now, 48), "inactive");
+  assert.equal(classifyActivity(new Date(ago(-24)), now, 48), "inactive");
+  assert.equal(classifyActivity(new Date("invalid"), now, 48), "inactive");
+});
+
+test("member detail and roster agree when corrupt tracking dates coexist with real activity", async () => {
+  const tables = fixture();
+  tables.battle_history = [];
+  tables.brawler_snapshots = [];
+  tables.player_tracking = [{ player_tag: "#C", last_battle_date: "2026-09-18" }];
+  tables.activity_log[0].trophy_change = 10;
+  const route = loadTypeScript("src/app/api/members/[tag]/route.ts", {
+    "@/lib/supabase-admin": { supabaseAdmin: readOnlyDatabase(tables) },
+    "@/lib/brawl-api": { calculateEnhancedStats: () => null },
+    "@/lib/admin-auth": { rejectUnauthorizedAdminMutation: () => null },
+    "next/server": responseMock,
+  }, { Date: FixedDate });
+  const response = await route.GET(new Request("http://localhost/api/members/%23C"), { params: Promise.resolve({ tag: "#C" }) });
+  assert.equal(response.status, 200);
+  const detail = await response.json();
+  const { appendMemberActivityMetrics } = load("src/lib/member-activity-metrics.ts", tables);
+  const [member] = await appendMemberActivityMetrics([tables.members[2]], now);
+  assert.equal(detail.member.activity_status, "active");
+  assert.equal(detail.member.activity_status, member.activity_status);
+  assert.equal(detail.lastBattleTime, null);
+});

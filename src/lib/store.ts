@@ -39,7 +39,7 @@ interface AppState {
   setNotificationsEnabled: (enabled: boolean) => void;
   setDiscordWebhook: (webhook: string) => void;
   setRequiredTrophies: (trophies: number | null) => void;
-  loadSettingsFromDB: () => Promise<void>;
+  loadSettingsFromDB: (force?: boolean) => Promise<void>;
   saveSettingsToDB: () => Promise<void>;
 }
 
@@ -92,36 +92,39 @@ export const useAppStore = create<AppState>()(
       setRequiredTrophies: (trophies) => set({ requiredTrophies: trophies }),
       
       // Load settings from database (only once)
-      loadSettingsFromDB: async () => {
+      loadSettingsFromDB: async (force = false) => {
         // Skip if already loaded
-        if (get().hasLoadedSettings) {
+        if (get().hasLoadedSettings && !force) {
           return;
         }
         try {
-          set({ isLoadingSettings: true });
-          const response = await fetch("/api/settings");
+          if (!get().hasLoadedSettings) set({ isLoadingSettings: true });
+          const response = await fetch("/api/settings", { cache: "no-store" });
           if (response.ok) {
             const settings = await response.json();
             set({
-              clubTag: settings.club_tag || get().clubTag || "",
-              clubName: settings.club_name || get().clubName || "",
+              clubTag: settings.club_tag || "",
+              clubName: settings.club_name || "",
               apiKey: "",
-              apiKeyConfigured: settings.api_key_configured === "true" || get().apiKeyConfigured,
+              apiKeyConfigured: settings.api_key_configured === "true",
               inactivityThreshold: parseIntegerSetting(settings.inactivity_threshold, get().inactivityThreshold, 48, 168),
               refreshInterval: parseIntegerSetting(settings.refresh_interval, get().refreshInterval, 60, 1440),
               notificationsEnabled: settings.notifications_enabled == null
                 ? get().notificationsEnabled
                 : settings.notifications_enabled === "true",
               discordWebhook: "",
-              discordWebhookConfigured: settings.discord_webhook_configured === "true" || get().discordWebhookConfigured,
+              discordWebhookConfigured: settings.discord_webhook_configured === "true",
               requiredTrophies: settings.required_trophies != null
                 ? parseNullableIntegerSetting(settings.required_trophies, get().requiredTrophies)
                 : get().requiredTrophies,
-              lastSyncTime: settings.last_sync_time || get().lastSyncTime,
+              lastSyncTime: settings.last_sync_time || null,
             });
+          } else {
+            throw new Error("Failed to load settings");
           }
         } catch (error) {
           console.error("Failed to load settings from DB:", error);
+          if (force) throw error;
         } finally {
           set({ isLoadingSettings: false, hasLoadedSettings: true });
         }
@@ -139,7 +142,6 @@ export const useAppStore = create<AppState>()(
             inactivity_threshold: String(state.inactivityThreshold),
             refresh_interval: String(state.refreshInterval),
             notifications_enabled: String(state.notificationsEnabled),
-            last_sync_time: state.lastSyncTime || "",
           };
 
           if (apiKey) {
@@ -164,11 +166,14 @@ export const useAppStore = create<AppState>()(
             throw new Error(data.error || "Failed to save settings");
           }
 
+          const result = await response.json().catch(() => ({}));
+
           set({
             apiKey: "",
             discordWebhook: "",
             apiKeyConfigured: apiKey ? true : state.apiKeyConfigured,
             discordWebhookConfigured: discordWebhook ? true : state.discordWebhookConfigured,
+            ...(result.requiresSync ? { lastSyncTime: null } : {}),
           });
         } catch (error) {
           console.error("Failed to save settings to DB:", error);

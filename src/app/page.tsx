@@ -434,7 +434,6 @@ export default function DashboardPage() {
     loadSettingsFromDB,
     setLastSyncTime,
   } = useAppStore();
-  const [isSetupComplete, setIsSetupComplete] = useState(false);
   const [dashboard, setDashboard] = useState<DashboardResponse | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [mounted, setMounted] = useState(false);
@@ -443,7 +442,7 @@ export default function DashboardPage() {
   const [hasRequestedInsights, setHasRequestedInsights] = useState(false);
   const [isInsightsLoading, setIsInsightsLoading] = useState(false);
   const attentionMembersRef = useRef<HTMLDivElement | null>(null);
-  const hasCachedSetup = Boolean(clubTag && apiKeyConfigured);
+  const isSetupComplete = hasLoadedSettings && Boolean(clubTag && apiKeyConfigured && lastSyncTime);
 
   useEffect(() => {
     setMounted(true);
@@ -491,10 +490,9 @@ export default function DashboardPage() {
   }, []);
 
   useEffect(() => {
-    if (!mounted || (isLoadingSettings && !hasCachedSetup)) return;
+    if (!mounted || isLoadingSettings || !hasLoadedSettings) return;
 
-    if (clubTag && apiKeyConfigured) {
-      setIsSetupComplete(true);
+    if (isSetupComplete) {
       if (!dataLoaded) {
         loadData();
       }
@@ -502,16 +500,14 @@ export default function DashboardPage() {
         loadInsights();
       }
     } else if (!isLoadingSettings) {
-      setIsSetupComplete(false);
       setIsLoading(false);
     }
   }, [
-    apiKeyConfigured,
-    clubTag,
     dataLoaded,
-    hasCachedSetup,
+    hasLoadedSettings,
     hasRequestedInsights,
     isLoadingSettings,
+    isSetupComplete,
     loadData,
     loadInsights,
     mounted,
@@ -561,7 +557,7 @@ export default function DashboardPage() {
     };
   }, [dashboard, lastSyncTime]);
 
-  if (!mounted || (isLoadingSettings && !hasCachedSetup)) {
+  if (!mounted || isLoadingSettings || !hasLoadedSettings) {
     return (
       <div className="flex h-screen items-center justify-center bg-background">
         <div className="h-12 w-12 animate-spin rounded-full border-b-2 border-primary" />
@@ -570,7 +566,7 @@ export default function DashboardPage() {
   }
 
   if (!isSetupComplete && !isLoading && !isLoadingSettings) {
-    return <SetupWizard onComplete={() => setIsSetupComplete(true)} />;
+    return <SetupWizard />;
   }
 
   return (

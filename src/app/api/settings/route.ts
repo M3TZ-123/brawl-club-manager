@@ -13,9 +13,6 @@ const ALLOWED_SETTING_KEYS = new Set([
   "refresh_interval",
   "notifications_enabled",
   "required_trophies",
-  "last_sync_time",
-  "last_inactive_notif",
-  "last_inactive_alert",
 ]);
 
 function sanitizeSettingValue(key: string, value: unknown): string | null {
@@ -124,6 +121,23 @@ export async function POST(request: NextRequest) {
       })
       .filter((row): row is { key: string; value: string } => row != null);
 
+    let requiresSync = false;
+    const newClubTag = upserts.find((row) => row.key === "club_tag")?.value;
+    if (newClubTag !== undefined) {
+      const { data: currentClub, error } = await supabaseAdmin
+        .from("settings")
+        .select("value")
+        .eq("key", "club_tag")
+        .maybeSingle();
+      if (error) throw error;
+      const normalizeTag = (tag: string) => tag.trim().replace(/^#/, "").toUpperCase();
+      requiresSync = normalizeTag(newClubTag) !== normalizeTag(currentClub?.value || process.env.CLUB_TAG || "");
+      if (requiresSync) {
+        // A successful sync belongs to the configured club, not its replacement.
+        upserts.push({ key: "last_sync_time", value: "" });
+      }
+    }
+
     if (upserts.length > 0) {
       const { error } = await supabaseAdmin
         .from("settings")
@@ -134,7 +148,7 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    return NextResponse.json({ success: true });
+    return NextResponse.json({ success: true, requiresSync });
   } catch (error) {
     console.error("Error saving settings:", error);
     return NextResponse.json(

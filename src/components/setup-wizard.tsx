@@ -1,19 +1,20 @@
 "use client";
 
 import { useState } from "react";
+import Link from "next/link";
 import { useAppStore } from "@/lib/store";
+import { invalidateJsonCache } from "@/lib/client-data-cache";
 import { AdminGate } from "@/components/admin-gate";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Trophy, Key, CheckCircle } from "lucide-react";
 
-interface SetupWizardProps {
-  onComplete: () => void;
-}
-
-export function SetupWizard({ onComplete }: SetupWizardProps) {
-  const [step, setStep] = useState(1);
+export function SetupWizard() {
+  const [step, setStep] = useState(() => {
+    const saved = useAppStore.getState();
+    return saved.clubTag && saved.apiKeyConfigured ? 3 : 1;
+  });
   const [clubTag, setClubTag] = useState("");
   const [apiKey, setApiKey] = useState("");
   const [isLoading, setIsLoading] = useState(false);
@@ -25,6 +26,7 @@ export function SetupWizard({ onComplete }: SetupWizardProps) {
     setClubName,
     setRequiredTrophies,
     saveSettingsToDB,
+    loadSettingsFromDB,
   } = useAppStore();
 
   const handleVerifyClub = async () => {
@@ -76,7 +78,11 @@ export function SetupWizard({ onComplete }: SetupWizardProps) {
       if (!response.ok) {
         throw new Error(data.error || data.message || "Initial sync failed");
       }
-      onComplete();
+      invalidateJsonCache();
+      await loadSettingsFromDB(true);
+      if (!useAppStore.getState().lastSyncTime) {
+        throw new Error("Sync finished, but its completion could not be confirmed. Please try again.");
+      }
     } catch (err) {
       console.error(err);
       setError(err instanceof Error ? err.message : "Initial sync failed");
@@ -100,7 +106,7 @@ export function SetupWizard({ onComplete }: SetupWizardProps) {
           <CardDescription>
             {step === 1 && "Step 1: Enter your Brawl Stars API key"}
             {step === 2 && "Step 2: Enter your club tag"}
-            {step === 3 && "Setup complete!"}
+            {step === 3 && "Step 3: Sync your club"}
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
@@ -179,7 +185,7 @@ export function SetupWizard({ onComplete }: SetupWizardProps) {
             <>
               <div className="flex flex-col items-center py-6">
                 <CheckCircle className="h-16 w-16 text-green-500 mb-4" />
-                <p className="text-lg font-medium">Setup Complete!</p>
+                <p className="text-lg font-medium">Ready to Sync</p>
                 <p className="text-muted-foreground text-center">
                   Your club has been verified. Click below to start syncing data.
                 </p>
@@ -190,6 +196,9 @@ export function SetupWizard({ onComplete }: SetupWizardProps) {
                 disabled={isLoading}
               >
                 {isLoading ? "Starting sync..." : "Start Using App"}
+              </Button>
+              <Button className="w-full" variant="outline" asChild>
+                <Link href="/settings">Edit Configuration</Link>
               </Button>
               {error && (
                 <p className="text-sm text-destructive text-center">{error}</p>

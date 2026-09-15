@@ -1,4 +1,5 @@
 import { supabaseAdmin } from "@/lib/supabase-admin";
+import { classifyActivity, normalizeInactivityThreshold } from "@/lib/activity-status";
 
 type ActivitySnapshot = {
   player_tag: string;
@@ -24,7 +25,6 @@ type BattleDeltaSnapshot = {
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 const ACTIVE_BATTLE_WINDOW_MS = DAY_MS;
-const LOW_ACTIVITY_BATTLE_WINDOW_MS = 2 * DAY_MS;
 
 export type MemberActivityMetrics = {
   trophies_24h: number | null;
@@ -75,7 +75,7 @@ async function fetchTrackingSnapshots(playerTags: string[]): Promise<BattleSnaps
   return (data || []) as BattleSnapshot[];
 }
 
-async function fetchLatestBattleHistorySnapshots(playerTags: string[]): Promise<BattleHistorySnapshot[]> {
+async function fetchLatestBattleHistorySnapshots(playerTags: string[], now: Date): Promise<BattleHistorySnapshot[]> {
   if (playerTags.length === 0) return [];
 
   const pageSize = 1000;
@@ -86,6 +86,7 @@ async function fetchLatestBattleHistorySnapshots(playerTags: string[]): Promise<
       .from("battle_history")
       .select("player_tag, battle_time")
       .in("player_tag", playerTags)
+      .lte("battle_time", new Date(now.getTime() + 60_000).toISOString())
       .order("battle_time", { ascending: false })
       .order("player_tag", { ascending: true })
       .range(from, from + pageSize - 1);
@@ -102,6 +103,25 @@ async function fetchLatestBattleHistorySnapshots(playerTags: string[]): Promise<
   }
 
   return [...latestByPlayer.values()];
+}
+
+async function fetchRecentTrophyChanges(playerTags: string[], now: Date): Promise<ActivitySnapshot[]> {
+  const rows: ActivitySnapshot[] = [];
+  const pageSize = 1000;
+  for (let from = 0; ; from += pageSize) {
+    const { data, error } = await supabaseAdmin.from("activity_log")
+      .select("player_tag, trophies, recorded_at")
+      .in("player_tag", playerTags)
+      .neq("trophy_change", 0)
+      .gte("recorded_at", new Date(now.getTime() - 7 * DAY_MS).toISOString())
+      .lte("recorded_at", now.toISOString())
+      .order("recorded_at", { ascending: false })
+      .order("player_tag", { ascending: true })
+      .range(from, from + pageSize - 1);
+    if (error) throw error;
+    rows.push(...((data || []) as ActivitySnapshot[]));
+    if (!data || data.length < pageSize) return rows;
+  }
 }
 
 async function fetchBattleDeltaSnapshots(playerTags: string[], sinceISO: string): Promise<BattleDeltaSnapshot[]> {
@@ -155,11 +175,10 @@ export async function appendMemberActivityMetrics<T extends { player_tag: string
   if (playerTags.length === 0) return [];
 
   const twentyFourHoursAgo = new Date(now.getTime() - ACTIVE_BATTLE_WINDOW_MS);
-  const lowActivityCutoff = new Date(now.getTime() - LOW_ACTIVITY_BATTLE_WINDOW_MS);
   const threeDaysAgo = new Date(now.getTime() - 3 * DAY_MS);
   const sevenDaysAgo = new Date(now.getTime() - 7 * DAY_MS);
 
-  const [activityLogs24h, activityLogs3d, activityLogs7d, trackingSnapshots, latestBattleSnapshots, battleDeltaSnapshots] = await Promise.all([
+  const [activityLogs24h, activityLogs3d, activityLogs7d, trackingSnapshots, latestBattleSnapshots, battleDeltaSnapshots, trophyChanges, settingsResult] = await Promise.all([
     fetchActivitySnapshotsWindow(
       playerTags,
       new Date(twentyFourHoursAgo.getTime() - 12 * 60 * 60 * 1000).toISOString(),
@@ -176,9 +195,13 @@ export async function appendMemberActivityMetrics<T extends { player_tag: string
       new Date(sevenDaysAgo.getTime() + 24 * 60 * 60 * 1000).toISOString()
     ),
     fetchTrackingSnapshots(playerTags),
-    fetchLatestBattleHistorySnapshots(playerTags),
+    fetchLatestBattleHistorySnapshots(playerTags, now),
     fetchBattleDeltaSnapshots(playerTags, sevenDaysAgo.toISOString()),
+    fetchRecentTrophyChanges(playerTags, now),
+    supabaseAdmin.from("settings").select("value").eq("key", "inactivity_threshold").maybeSingle(),
   ]);
+  if (settingsResult.error) throw settingsResult.error;
+  const thresholdHours = normalizeInactivityThreshold(settingsResult.data?.value);
 
   const logsByPlayer = new Map<string, ActivitySnapshot[]>();
   for (const log of [...activityLogs24h, ...activityLogs3d, ...activityLogs7d]) {
@@ -197,10 +220,17 @@ export async function appendMemberActivityMetrics<T extends { player_tag: string
     if (snapshot.last_battle_date) {
       const trackingBattleDate = new Date(`${snapshot.last_battle_date}T00:00:00.000Z`);
       const currentLatest = latestBattleByPlayer.get(snapshot.player_tag);
-      if (!currentLatest || trackingBattleDate > currentLatest) {
+      if (trackingBattleDate.getTime() <= now.getTime() + 60_000 && (!currentLatest || trackingBattleDate > currentLatest)) {
         latestBattleByPlayer.set(snapshot.player_tag, trackingBattleDate);
       }
     }
+  }
+
+  const latestActivityByPlayer = new Map(latestBattleByPlayer);
+  for (const change of trophyChanges) {
+    const recordedAt = new Date(change.recorded_at);
+    const previous = latestActivityByPlayer.get(change.player_tag);
+    if (!previous || recordedAt > previous) latestActivityByPlayer.set(change.player_tag, recordedAt);
   }
 
   const battleDelta24hByPlayer = new Map<string, number>();
@@ -245,23 +275,7 @@ export async function appendMemberActivityMetrics<T extends { player_tag: string
     const trophies3d = snapshot3d != null ? snapshot3d : fallback3d;
     const trophies7d = snapshot7d != null ? snapshot7d : fallback7d;
     const lastBattleAt = latestBattleByPlayer.get(member.player_tag);
-    let activityStatus: MemberActivityMetrics["activity_status"];
-
-    if (lastBattleAt) {
-      if (lastBattleAt >= twentyFourHoursAgo) {
-        activityStatus = "active";
-      } else if (lastBattleAt >= lowActivityCutoff) {
-        activityStatus = "minimal";
-      } else {
-        activityStatus = "inactive";
-      }
-    } else if (trophies24h != null && trophies24h !== 0) {
-      activityStatus = "active";
-    } else if (trophies7d != null && trophies7d !== 0) {
-      activityStatus = "minimal";
-    } else {
-      activityStatus = "inactive";
-    }
+    const activityStatus = classifyActivity(latestActivityByPlayer.get(member.player_tag), now, thresholdHours);
 
     return {
       ...member,

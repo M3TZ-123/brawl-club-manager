@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabase-admin";
 import { getPlayer, getPlayerRankedData, calculateEnhancedStats, calculateWinRateFromBattleLog, getPlayerBattleLog, processBattleLog, BrawlStarsBattleLog } from "@/lib/brawl-api";
 import { rejectUnauthorizedAdminMutation } from "@/lib/admin-auth";
+import { classifyActivity, normalizeInactivityThreshold } from "@/lib/activity-status";
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 const ACTIVE_BATTLE_WINDOW_MS = DAY_MS;
@@ -165,14 +166,14 @@ async function rebuildDailyStatsForBattles(playerTag: string, battleTimes: strin
 }
 
 async function getInactivityThresholdHours(): Promise<number> {
-  const { data } = await supabaseAdmin
+  const { data, error } = await supabaseAdmin
     .from("settings")
     .select("value")
     .eq("key", "inactivity_threshold")
-    .single();
+    .maybeSingle();
 
-  const parsed = Number.parseInt(data?.value || "", 10);
-  return Number.isFinite(parsed) ? Math.min(Math.max(parsed, 48), 168) : 48;
+  if (error) throw error;
+  return normalizeInactivityThreshold(data?.value);
 }
 
 async function getConfiguredApiKey(): Promise<string | undefined> {
@@ -211,6 +212,7 @@ export async function GET(
       dailyStatsRes,
       playerTrackingRes,
       snapshotRowsRes,
+      inactivityThreshold,
     ] = await Promise.all([
       supabaseAdmin
         .from("members")
@@ -228,6 +230,7 @@ export async function GET(
         .from("battle_history")
         .select("battle_time, mode, map, result, trophy_change, is_star_player, brawler_name, brawler_power")
         .eq("player_tag", playerTag)
+        .lte("battle_time", new Date(Date.now() + 60_000).toISOString())
         .order("battle_time", { ascending: false })
         .limit(25),
       supabaseAdmin
@@ -252,6 +255,7 @@ export async function GET(
         .eq("player_tag", playerTag)
         .order("recorded_at", { ascending: false })
         .limit(500),
+      getInactivityThresholdHours(),
     ]);
 
     const { data: member, error } = memberRes;
@@ -284,8 +288,22 @@ export async function GET(
     }
 
     const dailyRows = dailyStats || [];
+    const now = new Date();
+    const trackingBattleTime = playerTracking?.last_battle_date
+      ? new Date(`${playerTracking.last_battle_date}T00:00:00.000Z`)
+      : null;
+    const validTrackingTime = trackingBattleTime && Number.isFinite(trackingBattleTime.getTime())
+      && trackingBattleTime.getTime() <= now.getTime() + 60_000;
     const lastBattleTime = recentMatches?.[0]?.battle_time
-      || (playerTracking?.last_battle_date ? `${playerTracking.last_battle_date}T00:00:00.000Z` : null);
+      || (validTrackingTime ? trackingBattleTime.toISOString() : null);
+    let lastActivityAt = lastBattleTime ? new Date(lastBattleTime) : null;
+    for (const activity of activityHistory) {
+      const recordedAt = new Date(activity.recorded_at);
+      if (typeof activity.trophy_change === "number" && activity.trophy_change !== 0 && recordedAt <= now && (!lastActivityAt || recordedAt > lastActivityAt)) {
+        lastActivityAt = recordedAt;
+      }
+    }
+    const activityStatus = classifyActivity(lastActivityAt, now, inactivityThreshold);
     const totalBattles = dailyRows.reduce((sum, stat) => sum + (stat.battles || 0), 0);
     const totalWins = dailyRows.reduce((sum, stat) => sum + (stat.wins || 0), 0);
     const totalLosses = dailyRows.reduce((sum, stat) => sum + (stat.losses || 0), 0);
@@ -404,7 +422,7 @@ export async function GET(
     }
 
     return NextResponse.json({
-      member,
+      member: { ...member, activity_status: activityStatus },
       activityHistory: activityHistory || [],
       memberHistory,
       lastBattleTime,

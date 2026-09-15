@@ -94,13 +94,15 @@ async function main() {
   const limit = getArgValue("limit", 50);
 
   const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
-  const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+  const supabaseServiceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
 
-  if (!supabaseUrl || !supabaseAnonKey) {
-    throw new Error("Missing NEXT_PUBLIC_SUPABASE_URL or NEXT_PUBLIC_SUPABASE_ANON_KEY");
+  if (!supabaseUrl || !supabaseServiceRoleKey) {
+    throw new Error("Missing NEXT_PUBLIC_SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY");
   }
 
-  const supabase = createClient(supabaseUrl, supabaseAnonKey);
+  const supabase = createClient(supabaseUrl, supabaseServiceRoleKey, {
+    auth: { persistSession: false, autoRefreshToken: false },
+  });
   const sinceIso = new Date(Date.now() - days * 24 * 60 * 60 * 1000).toISOString();
 
   const { data: rows, error: rowsError } = await supabase
@@ -119,11 +121,13 @@ async function main() {
     return;
   }
 
-  const { data: settingsRows } = await supabase
+  const { data: settingsRows, error: settingsError } = await supabase
     .from("settings")
     .select("key,value")
     .eq("key", "api_key")
     .limit(1);
+
+  if (settingsError) throw settingsError;
 
   const apiKey = settingsRows?.[0]?.value || process.env.BRAWL_API_KEY;
   if (!apiKey) throw new Error("Missing Brawl API key in settings(api_key) and BRAWL_API_KEY");
@@ -162,6 +166,7 @@ async function main() {
   let matched = 0;
   let noMatch = 0;
   let errors = 0;
+  let skipped = 0;
 
   for (const row of rows) {
     const perTime = battleMapByTag.get(row.player_tag);
@@ -177,18 +182,24 @@ async function main() {
 
     if (!apply) continue;
 
-    const { error: updateError } = await supabase
+    const { data: updatedRows, error: updateError } = await supabase
       .from("battle_history")
       .update({ teams_json: teamsJson })
       .eq("id", row.id)
-      .is("teams_json", null);
+      .is("teams_json", null)
+      .select("id");
 
     if (updateError) {
       errors++;
       continue;
     }
 
-    updated++;
+    if (updatedRows?.some((updatedRow) => updatedRow.id === row.id)) {
+      updated++;
+    } else {
+      // Another sync may have filled or removed this row since it was selected.
+      skipped++;
+    }
   }
 
   console.log(
@@ -201,15 +212,24 @@ async function main() {
         matched,
         noMatch,
         updated,
+        skipped,
         errors,
       },
       null,
       2
     )
   );
+
+  if (apply && errors > 0) {
+    throw new Error(`Backfill failed to update ${errors} battle row(s). See the summary above.`);
+  }
 }
 
-main().catch((error) => {
-  console.error(error?.message || error);
-  process.exit(1);
-});
+module.exports = { main };
+
+if (require.main === module) {
+  main().catch((error) => {
+    console.error(error?.message || error);
+    process.exit(1);
+  });
+}

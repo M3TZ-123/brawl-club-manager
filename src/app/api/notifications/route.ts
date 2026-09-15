@@ -49,12 +49,13 @@ async function getUnreadCount() {
   return count || 0;
 }
 
-// GET — Fetch notifications (with optional ?unreadOnly=true and ?limit=50)
+// GET — Fetch notifications with filters applied before pagination.
 export async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url);
     const unreadOnly = searchParams.get("unreadOnly") === "true";
     const limit = parseBoundedInt(searchParams.get("limit"), 50, 1, 100);
+    const offset = parseBoundedInt(searchParams.get("offset"), 0, 0, Number.MAX_SAFE_INTEGER);
     const typesParam = searchParams.get("types");
     const hasTypeFilter = typesParam != null && typesParam.trim().length > 0;
     const types = hasTypeFilter
@@ -70,6 +71,7 @@ export async function GET(request: NextRequest) {
       return notificationResponse({
         notifications: [],
         unreadCount: await getUnreadCount(),
+        nextOffset: null,
       });
     }
 
@@ -77,7 +79,8 @@ export async function GET(request: NextRequest) {
       .from("notifications")
       .select("id, type, title, message, player_tag, player_name, is_read, created_at")
       .order("created_at", { ascending: false })
-      .limit(limit);
+      .order("id", { ascending: false })
+      .range(offset, offset + limit);
 
     if (unreadOnly) {
       query = query.eq("is_read", false);
@@ -99,9 +102,11 @@ export async function GET(request: NextRequest) {
       throw notificationsRes.error;
     }
 
+    const rows = notificationsRes.data || [];
     return notificationResponse({
-      notifications: notificationsRes.data || [],
+      notifications: rows.slice(0, limit),
       unreadCount: unreadCountRes,
+      nextOffset: rows.length > limit ? offset + limit : null,
     });
   } catch (error) {
     if (isMissingNotificationsTable(error)) {

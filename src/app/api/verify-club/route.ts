@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getClub } from "@/lib/brawl-api";
+import { BrawlApiError, getClub } from "@/lib/brawl-api";
 import { rejectUnauthorizedAdminMutation } from "@/lib/admin-auth";
 
 export async function POST(request: NextRequest) {
@@ -28,17 +28,23 @@ export async function POST(request: NextRequest) {
   } catch (error: unknown) {
     console.error("Club verification error:", error);
     
-    const axiosError = error as { response?: { status: number } };
-    if (axiosError.response?.status === 403) {
+    const upstreamStatus = error instanceof BrawlApiError ? error.status : undefined;
+    if (upstreamStatus === 403) {
       return NextResponse.json(
         { error: "Invalid API key. Please check your key and try again." },
         { status: 403 }
       );
     }
-    if (axiosError.response?.status === 404) {
+    if (upstreamStatus === 404) {
       return NextResponse.json(
         { error: "Club not found. Please check the club tag." },
         { status: 404 }
+      );
+    }
+    if (upstreamStatus === 429) {
+      return NextResponse.json(
+        { error: "Brawl Stars API rate limit reached. Please try again shortly." },
+        { status: 429 }
       );
     }
 

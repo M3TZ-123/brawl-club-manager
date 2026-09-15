@@ -37,51 +37,67 @@ export async function GET(request: Request) {
     const date = searchParams.get("date") || null; // YYYY-MM-DD
 
     // Get only current club member tags from member_history
-    const { data: currentMemberHistory } = await supabaseAdmin
+    const { data: currentMemberHistory, error: historyError } = await supabaseAdmin
       .from("member_history")
       .select("player_tag")
       .eq("is_current_member", true);
+    if (historyError) throw historyError;
 
     const currentMemberTags = currentMemberHistory?.map((m) => m.player_tag) || [];
 
     // Get current member names from members table
-    const { data: members } = await supabaseAdmin
+    const { data: members, error: membersError } = await supabaseAdmin
       .from("members")
       .select("player_tag, player_name")
       .in("player_tag", currentMemberTags.length > 0 ? currentMemberTags : [""]);
+    if (membersError) throw membersError;
 
     const nameMap = new Map((members || []).map((m) => [m.player_tag, m.player_name]));
     const clubTags = new Set(nameMap.keys());
 
-    // Build query - fetch raw battles
-    let query = supabaseAdmin
-      .from("battle_history")
-      .select(
-        "player_tag, battle_time, mode, map, result, trophy_change, is_star_player, brawler_name, brawler_power, teams_json",
-        { count: "exact" }
-      )
-      .in("player_tag", currentMemberTags.length > 0 ? currentMemberTags : [""])
-      .order("battle_time", { ascending: false })
-      .order("player_tag", { ascending: true })
-      .range(offset, offset + limit - 1);
+    const buildBattleQuery = () => {
+      let query = supabaseAdmin
+        .from("battle_history")
+        .select(
+          "player_tag, battle_time, mode, map, result, trophy_change, is_star_player, brawler_name, brawler_power, teams_json",
+          { count: "exact" }
+        )
+        .in("player_tag", currentMemberTags.length > 0 ? currentMemberTags : [""])
+        .order("battle_time", { ascending: false })
+        .order("player_tag", { ascending: true });
 
-    if (mode) {
-      query = query.eq("mode", mode);
-    }
+      if (mode) query = query.eq("mode", mode);
+      if (player) query = query.eq("player_tag", player);
 
-    if (player) {
-      query = query.eq("player_tag", player);
-    }
+      if (date) {
+        const dayStart = `${date}T00:00:00.000Z`;
+        const dayEnd = `${date}T23:59:59.999Z`;
+        query = query.gte("battle_time", dayStart).lte("battle_time", dayEnd);
+      }
+      return query;
+    };
 
-    if (date) {
-      // Filter battles for a specific day (YYYY-MM-DD)
-      const dayStart = `${date}T00:00:00.000Z`;
-      const dayEnd = `${date}T23:59:59.999Z`;
-      query = query.gte("battle_time", dayStart).lte("battle_time", dayEnd);
-    }
-
-    const { data: battles, error, count } = await query;
+    const { data: page, error, count } = await buildBattleQuery().range(offset, offset + limit - 1);
     if (error) throw error;
+    const battles = [...(page || [])];
+
+    // Finish every match at the boundary timestamp before advancing the cursor.
+    // Team members can straddle the raw row limit, and same-time matches can interleave.
+    const boundaryTime = battles.at(-1)?.battle_time;
+    if (boundaryTime && offset + battles.length < (count || 0)) {
+      const boundaryRows = battles.filter((battle) => battle.battle_time === boundaryTime).length;
+      battles.splice(battles.length - boundaryRows, boundaryRows);
+      const batchSize = 200;
+      for (let boundaryOffset = 0; ; boundaryOffset += batchSize) {
+        const { data: tail, error: tailError } = await buildBattleQuery()
+          .eq("battle_time", boundaryTime)
+          .range(boundaryOffset, boundaryOffset + batchSize - 1);
+        if (tailError) throw tailError;
+        battles.push(...(tail || []));
+        if (!tail || tail.length < batchSize) break;
+      }
+    }
+    const nextOffset = offset + battles.length;
 
     // Group battles into matches
     // Key: battle_time + mode + map (battles at the same time on the same map = same match)
@@ -322,6 +338,7 @@ export async function GET(request: Request) {
     return NextResponse.json({
       matches: enrichedMatches,
       total: count || 0,
+      nextOffset: nextOffset < (count || 0) ? nextOffset : null,
       modes: uniqueModes,
       members: memberList,
       serverTime: new Date().toISOString(),

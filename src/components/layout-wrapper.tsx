@@ -89,15 +89,9 @@ function SimpleSidebar() {
         console.error("Sync error:", data.error);
         alert(`Sync failed: ${data.error}`);
       } else {
-        const syncTime = new Date().toISOString();
+        const syncTime = typeof data.timestamp === "string" ? data.timestamp : null;
         invalidateJsonCache();
         useAppStore.getState().setLastSyncTime(syncTime);
-        // Persist last_sync_time to DB immediately (before potential reload)
-        fetch("/api/settings", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ last_sync_time: syncTime }),
-        }).catch(() => {});
         // Check if there were any member changes (joins/leaves)
         const hasChanges = data.changes?.joins?.length > 0 || data.changes?.leaves?.length > 0;
         window.dispatchEvent(new CustomEvent("club-data-updated", {
