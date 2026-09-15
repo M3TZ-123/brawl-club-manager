@@ -1,11 +1,13 @@
 "use client";
+import { T, LanguageSelector, LocalDate } from "@/components/locale-provider";
+
 
 import { ReactNode, createContext, useContext, useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useAppStore } from "@/lib/store";
 import { useAdminSession } from "@/hooks/use-admin-session";
-import { cn, formatDateTime } from "@/lib/utils";
+import { cn } from "@/lib/utils";
 import { fetchJsonCached, invalidateJsonCache } from "@/lib/client-data-cache";
 import {
   LayoutDashboard,
@@ -37,6 +39,7 @@ const navigation = [
   { name: "Battle Feed", href: "/battle-feed", icon: Swords },
   { name: "Reports", href: "/reports", icon: FileText },
   { name: "History", href: "/history", icon: History },
+  { name: "Member reviews", href: "/reviews", icon: ShieldCheck, adminOnly: true },
   { name: "Notifications", href: "/notifications", icon: Bell },
   { name: "Settings", href: "/settings", icon: Settings, adminOnly: true },
   { name: "Admin", href: "/admin", icon: ShieldCheck, adminOnly: true },
@@ -131,8 +134,8 @@ function SimpleSidebar() {
       {/* Sidebar */}
       <aside
         className={cn(
-          "fixed top-0 left-0 z-50 h-full w-64 bg-card border-r border-border transform transition-transform duration-200 ease-in-out",
-          isOpen ? "translate-x-0" : "-translate-x-full"
+          "fixed top-0 start-0 z-50 h-full w-64 bg-card border-e border-border transform transition-transform duration-200 ease-in-out",
+          isOpen ? "translate-x-0" : "-translate-x-full rtl:translate-x-full"
         )}
       >
         <div className="flex flex-col h-full">
@@ -143,7 +146,7 @@ function SimpleSidebar() {
                 <Trophy className="size-6 text-white" />
               </div>
               <div className="flex flex-col">
-                <span className="font-bold text-base text-foreground">Club Manager</span>
+                <span className="font-bold text-base text-foreground"><T text="Club Manager" /></span>
                 {clubName && (
                   <span className="text-xs text-muted-foreground truncate max-w-[120px]">{clubName}</span>
                 )}
@@ -178,7 +181,7 @@ function SimpleSidebar() {
                   )}
                 >
                   <item.icon className="size-5" />
-                  <span>{item.name}</span>
+                  <span><T text={item.name} /></span>
                 </Link>
               );
             })}
@@ -193,11 +196,11 @@ function SimpleSidebar() {
               className="w-full justify-center gap-2 border-border"
             >
               <RefreshCw className={cn("size-4", isSyncing && "animate-spin")} />
-              <span>{isSyncing ? "Syncing..." : "Sync Now"}</span>
+              <span>{isSyncing ? <T text="Syncing..." /> : <T text="Sync Now" />}</span>
             </Button>
             {lastSyncTime && (
               <p className="text-xs text-muted-foreground text-center mt-2">
-                Last: {new Date(lastSyncTime).toLocaleTimeString()}
+                <T text=" Last: " /><LocalDate value={lastSyncTime} time />
               </p>
             )}
           </div>
@@ -395,11 +398,12 @@ function SimpleHeader() {
           className="h-9 w-9"
         >
           <PanelLeft className="h-5 w-5" />
-          <span className="sr-only">Toggle Sidebar</span>
+          <span className="sr-only"><T text="Toggle Sidebar" /></span>
         </Button>
         <h1 className="text-lg md:text-xl font-semibold truncate">{clubName || "Brawl Stars Club Manager"}</h1>
       </div>
       <div className="flex items-center gap-2">
+        <LanguageSelector />
         <Button
           variant="ghost"
           size="icon"
@@ -421,30 +425,28 @@ function SimpleHeader() {
           >
             <Bell className="h-5 w-5" />
             {unreadCount > 0 && (
-              <span className="absolute -top-1 -right-1 h-5 w-5 rounded-full bg-red-500 text-white text-xs flex items-center justify-center">
+              <span className="absolute -top-1 -end-1 h-5 w-5 rounded-full bg-red-500 text-white text-xs flex items-center justify-center">
                 {unreadCount > 9 ? "9+" : unreadCount}
               </span>
             )}
           </Button>
 
           {showNotifications && (
-            <Card className="absolute right-0 top-12 w-96 z-50 shadow-lg">
+            <Card className="absolute end-0 top-12 w-[min(24rem,calc(100vw-2rem))] z-50 shadow-lg">
               <CardContent className="p-0">
                 <div className="p-3 border-b flex items-center justify-between">
-                  <h3 className="font-semibold">Notifications</h3>
+                  <h3 className="font-semibold"><T text="Notifications" /></h3>
                   {unreadCount > 0 && isAdmin && (
                     <button
                       onClick={markAllAsRead}
                       className="text-xs text-primary hover:underline"
                     >
-                      Mark all as read
-                    </button>
+                      <T text=" Mark all as read " /></button>
                   )}
                 </div>
                 {notifications.length === 0 ? (
                   <p className="p-6 text-sm text-muted-foreground text-center">
-                    No notifications yet
-                  </p>
+                    <T text=" No notifications yet " /></p>
                 ) : (
                   <div className="max-h-80 overflow-y-auto">
                     {notifications.map((notif) => {
@@ -469,7 +471,7 @@ function SimpleHeader() {
                             <div className="flex-1 min-w-0">
                               <div className="flex items-center gap-2">
                                 <span className={cn("text-xs font-semibold", style.color)}>
-                                  {notif.title}
+                                  {<T text={notif.title} />}
                                 </span>
                                 {!notif.is_read && (
                                   <span className="w-1.5 h-1.5 rounded-full bg-primary shrink-0" />
@@ -479,7 +481,7 @@ function SimpleHeader() {
                                 {renderMessageWithMemberLinks(notif.message)}
                               </p>
                               <p className="text-xs text-muted-foreground/70 mt-1">
-                                {formatDateTime(notif.created_at)}
+                                <LocalDate value={notif.created_at} time />
                               </p>
                             </div>
                           </div>
@@ -493,8 +495,7 @@ function SimpleHeader() {
                   onClick={() => setShowNotifications(false)}
                   className="block p-3 border-t text-center text-sm text-primary hover:bg-muted/50 transition-colors"
                 >
-                  View all notifications
-                </Link>
+                  <T text=" View all notifications " /></Link>
               </CardContent>
             </Card>
           )}
@@ -506,6 +507,9 @@ function SimpleHeader() {
 
 export function LayoutWrapper({ children }: { children: ReactNode }) {
   const { sidebarOpen, toggleSidebar, setSidebarOpen } = useAppStore();
+  useEffect(() => {
+    if (window.matchMedia("(max-width: 767px)").matches) setSidebarOpen(false);
+  }, [setSidebarOpen]);
   
   const close = useCallback(() => setSidebarOpen(false), [setSidebarOpen]);
 
@@ -518,7 +522,7 @@ export function LayoutWrapper({ children }: { children: ReactNode }) {
         <div 
           className={cn(
             "min-h-screen transition-all duration-200",
-            sidebarOpen ? "md:ml-64" : "md:ml-0"
+            sidebarOpen ? "md:ms-64" : "md:ms-0"
           )}
         >
           <SimpleHeader />

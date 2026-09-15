@@ -14,6 +14,10 @@ const responseMock = { NextResponse: { json: (body, init) => Response.json(body,
 function fixture(threshold = "48") {
   return {
     settings: [{ key: "inactivity_threshold", value: threshold }],
+    activity_summary: [1, 30, 70].map((hours, index) => ({
+      player_tag: ["#A", "#B", "#C"][index], last_battle_at: ago(hours), last_activity_at: ago(hours),
+      trophies_24h: index === 0 ? 8 : null, trophies_3d: 8, trophies_7d: 8,
+    })),
     member_history: ["#A", "#B", "#C"].map(player_tag => ({ player_tag, is_current_member: true })),
     members: [
       { player_tag: "#A", player_name: "Active", trophies: 1000, is_active: false },
@@ -45,12 +49,20 @@ function fixture(threshold = "48") {
 
 function load(file, tables) {
   return loadTypeScript(file, {
-    "@/lib/supabase-admin": { supabaseAdmin: readOnlyDatabase(tables) },
+    "@/lib/supabase-admin": { supabaseAdmin: database(tables) },
     "next/server": responseMock,
   }, { Date: FixedDate });
 }
 
-test("activity ignores repeated observations and respects configured inactivity thresholds", async () => {
+function database(tables) {
+  return { ...readOnlyDatabase(tables), async rpc(name, args) {
+    assert.equal(name, "sync_activity_summary");
+    assert.equal(args.p_now, now.toISOString());
+    return { data: tables.activity_summary.filter(row => args.p_player_tags.includes(row.player_tag)), error: null };
+  } };
+}
+
+test("activity classifies durable evidence using configured inactivity thresholds", async () => {
   for (const [threshold, expected] of [["48", "inactive"], ["96", "minimal"]]) {
     const tables = fixture(threshold);
     const { appendMemberActivityMetrics } = load("src/lib/member-activity-metrics.ts", tables);
@@ -64,6 +76,7 @@ test("activity ignores repeated observations and respects configured inactivity 
 test("a real trophy change is activity even if the available battle log is old", async () => {
   const tables = fixture();
   tables.activity_log[0].trophy_change = 10;
+  tables.activity_summary[2].last_activity_at = ago(1);
   const { appendMemberActivityMetrics } = load("src/lib/member-activity-metrics.ts", tables);
   const [member] = await appendMemberActivityMetrics([tables.members[2]], now);
   assert.equal(member.activity_status, "active");
@@ -120,8 +133,10 @@ test("member detail and roster agree when corrupt tracking dates coexist with re
   tables.brawler_snapshots = [];
   tables.player_tracking = [{ player_tag: "#C", last_battle_date: "2026-09-18" }];
   tables.activity_log[0].trophy_change = 10;
+  tables.activity_summary[2].last_activity_at = ago(1);
+  tables.activity_summary[2].last_battle_at = null;
   const route = loadTypeScript("src/app/api/members/[tag]/route.ts", {
-    "@/lib/supabase-admin": { supabaseAdmin: readOnlyDatabase(tables) },
+    "@/lib/supabase-admin": { supabaseAdmin: database(tables) },
     "@/lib/brawl-api": { calculateEnhancedStats: () => null },
     "@/lib/admin-auth": { rejectUnauthorizedAdminMutation: () => null },
     "next/server": responseMock,

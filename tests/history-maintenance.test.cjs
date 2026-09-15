@@ -26,7 +26,7 @@ function historyMember(player_tag, overrides = {}) {
 function loadHistory(tables) {
   return loadTypeScript("src/app/api/history/route.ts", {
     "@/lib/supabase-admin": { supabaseAdmin: readOnlyDatabase(tables) },
-    "@/lib/admin-auth": { rejectUnauthorizedAdminMutation: () => null },
+    "@/lib/admin-auth": { rejectUnauthorizedAdminMutation: () => null, verifyAdminSession: () => false },
     "next/server": { NextResponse: { json: (body, init) => Response.json(body, init) } },
   }, { Date: FixedDate });
 }

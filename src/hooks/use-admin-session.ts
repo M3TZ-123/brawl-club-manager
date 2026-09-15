@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
+import { invalidateJsonCache } from "@/lib/client-data-cache";
 
 type AdminStatus = {
   configured: boolean;
@@ -52,12 +53,14 @@ export function useAdminSession() {
     if (!response.ok) {
       throw new Error(data.error || "Admin login failed");
     }
+    invalidateJsonCache();
     setStatus({ configured: true, isAdmin: true });
     window.dispatchEvent(new CustomEvent("admin-session-changed"));
   }, []);
 
   const logout = useCallback(async () => {
     await fetch("/api/admin/session", { method: "DELETE" });
+    invalidateJsonCache();
     setStatus((current) => ({ ...current, isAdmin: false }));
     window.dispatchEvent(new CustomEvent("admin-session-changed"));
   }, []);

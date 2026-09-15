@@ -1,7 +1,10 @@
 "use client";
+import { T, useI18n } from "@/components/locale-provider";
+
 
 import { memo, useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
 import Link from "next/link";
+import { DataConfidenceNotice } from "@/components/sync-health";
 import { LayoutWrapper } from "@/components/layout-wrapper";
 import { fetchJsonCached } from "@/lib/client-data-cache";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
@@ -146,31 +149,11 @@ function RankBadge({ rank }: { rank: number }) {
   return <span className="text-sm text-muted-foreground w-7 text-center inline-block">{rank}</span>;
 }
 
-function formatNumber(n: number): string {
-  if (n >= 1000) return `${(n / 1000).toFixed(1)}k`;
-  return n.toString();
-}
 
-function formatRelativeTime(value: string | null | undefined) {
-  if (!value) return "No battle";
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return "Unknown";
 
-  const diffMs = Math.max(Date.now() - date.getTime(), 0);
-  const minutes = Math.floor(diffMs / 60_000);
-  if (minutes < 1) return "Just now";
-  if (minutes < 60) return `${minutes}m ago`;
-  const hours = Math.floor(minutes / 60);
-  if (hours < 24) return `${hours}h ago`;
-  return `${Math.floor(hours / 24)}d ago`;
-}
 
-function formatSyncTime(value: string | null | undefined) {
-  if (!value) return "No sync recorded";
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return "Sync time unknown";
-  return `Last sync ${formatRelativeTime(value)}`;
-}
+
+
 
 function normalizeRole(role: string) {
   return role.toLowerCase().replace(/\s+/g, "");
@@ -190,8 +173,7 @@ const Podium = memo(function Podium({
   if (top3.length === 0) {
     return (
       <p className="text-center text-muted-foreground py-8">
-        No tracked data available yet. Run Sync Now or wait for the next automatic update.
-      </p>
+        <T text=" No tracked data available yet. Run Sync Now or wait for the next automatic update. " /></p>
     );
   }
 
@@ -249,10 +231,10 @@ const LeaderboardTable = memo(function LeaderboardTable({
           <TableHeader>
             <TableRow>
               <TableHead className="w-12">#</TableHead>
-              <TableHead>Player</TableHead>
+              <TableHead><T text="Player" /></TableHead>
               {columns.map((col) => (
                 <TableHead key={col.header} className={col.className}>
-                  {col.header}
+                  <T text={col.header} />
                 </TableHead>
               ))}
             </TableRow>
@@ -291,8 +273,7 @@ const LeaderboardTable = memo(function LeaderboardTable({
               disabled={safePage === 0}
               className="h-7 px-2 text-xs"
             >
-              Previous
-            </Button>
+              <T text=" Previous " /></Button>
             <Button
               variant="outline"
               size="sm"
@@ -300,8 +281,7 @@ const LeaderboardTable = memo(function LeaderboardTable({
               disabled={safePage >= totalPages - 1}
               className="h-7 px-2 text-xs"
             >
-              Next
-            </Button>
+              <T text=" Next " /></Button>
           </div>
         </div>
       )}
@@ -309,15 +289,17 @@ const LeaderboardTable = memo(function LeaderboardTable({
   );
 });
 
-const categories = [
+function useCategories() {
+  const { t, number: formatNumber, relative: formatRelativeTime } = useI18n();
+  return [
   {
     key: "trophyLeaders" as const,
     label: "Trophies",
     icon: Trophy,
-    description: () => "Current trophy rankings",
-    help: () => "Sorted by each member's current trophy total. Time range does not change this tab.",
+    description: () => t("Current trophy rankings"),
+    help: () => t("Sorted by each member's current trophy total. Time range does not change this tab."),
     formatValue: (m: LeaderboardMember) => formatNumber(m.trophies),
-    subtitle: (m: LeaderboardMember) => `Peak: ${formatNumber(m.highestTrophies)}`,
+    subtitle: (m: LeaderboardMember) => t("Peak: {value0}", { value0: formatNumber(m.highestTrophies) }),
     columns: [
       { header: "Trophies", value: (m: LeaderboardMember) => formatNumber(m.trophies), className: "text-right" },
       { header: "Peak", value: (m: LeaderboardMember) => formatNumber(m.highestTrophies), className: "text-right" },
@@ -328,22 +310,22 @@ const categories = [
     key: "weeklyTrophyGainers" as const,
     label: "Progress",
     icon: TrendingUp,
-    description: (rangeLabel: string) => `Best trophy movement over the ${rangeLabel}`,
-    help: () => "Net trophies means gained minus lost. Players with missing progress data are not ranked here.",
+    description: (rangeLabel: string) => t("Best trophy movement over the {value0}", { value0: rangeLabel }),
+    help: () => t("Net trophies means gained minus lost. Players with missing progress data are not ranked here."),
     formatValue: (m: LeaderboardMember) => {
       const n = m.weekly.netTrophies;
-      if (n == null) return "No data";
+      if (n == null) return t("No data");
       return n >= 0 ? `+${n}` : `${n}`;
     },
-    subtitle: (m: LeaderboardMember) => `${formatNumber(m.trophies)} current trophies`,
+    subtitle: (m: LeaderboardMember) => t("{value0} current trophies", { value0: formatNumber(m.trophies) }),
     columns: [
       {
         header: "Net",
         value: (m: LeaderboardMember) => {
           const n = m.weekly.netTrophies;
-          if (n == null) return <span className="text-muted-foreground">No data</span>;
+          if (n == null) return <span className="text-muted-foreground"><T text="No data" /></span>;
           const color = n > 0 ? "text-green-500" : n < 0 ? "text-red-500" : "";
-          return <span className={`font-semibold ${color}`}>{n >= 0 ? `+${n}` : n}</span>;
+          return <span className={`font-semibold ${color}`}>{n >= 0 ? <T text="+{value0}" values={{ value0: String(n) }} /> : n}</span>;
         },
         className: "text-right",
       },
@@ -355,8 +337,8 @@ const categories = [
     key: "weeklyBattlers" as const,
     label: "Battles",
     icon: Swords,
-    description: (rangeLabel: string) => `Most battles played in the ${rangeLabel}`,
-    help: () => "Counts tracked battles stored by BrawlStatz syncs for the selected range.",
+    description: (rangeLabel: string) => t("Most battles played in the {value0}", { value0: rangeLabel }),
+    help: () => t("Counts tracked battles stored by BrawlStatz syncs for the selected range."),
     formatValue: (m: LeaderboardMember) => m.weekly.battles.toString(),
     subtitle: (m: LeaderboardMember) => {
       const draws = m.weekly.battles - m.weekly.wins - m.weekly.losses;
@@ -365,20 +347,20 @@ const categories = [
     columns: [
       { header: "Battles", value: (m: LeaderboardMember) => m.weekly.battles, className: "text-right" },
       { header: "Wins", value: (m: LeaderboardMember) => m.weekly.wins, className: "text-right" },
-      { header: "Win %", value: (m: LeaderboardMember) => `${m.weekly.winRate}%`, className: "text-right" },
+      { header: "Win %", value: (m: LeaderboardMember) => t("{value0}%", { value0: m.weekly.winRate }), className: "text-right" },
     ],
   },
   {
     key: "weeklyWinRate" as const,
     label: "Win Rate",
     icon: Target,
-    description: (rangeLabel: string) => `Highest win rate in the ${rangeLabel}`,
-    help: (_rangeLabel: string, minBattles: number) => `Only players with at least ${minBattles} tracked battles are ranked here.`,
-    formatValue: (m: LeaderboardMember) => `${m.weekly.winRate}%`,
-    subtitle: (m: LeaderboardMember) => `${m.weekly.battles} battles`,
+    description: (rangeLabel: string) => t("Highest win rate in the {value0}", { value0: rangeLabel }),
+    help: (_rangeLabel: string, minBattles: number) => t("Only players with at least {value0} tracked battles are ranked here.", { value0: minBattles }),
+    formatValue: (m: LeaderboardMember) => t("{value0}%", { value0: m.weekly.winRate }),
+    subtitle: (m: LeaderboardMember) => t("{value0} battles", { value0: m.weekly.battles }),
     columns: [
       { header: "Win %", value: (m: LeaderboardMember) => <span className="font-semibold">{m.weekly.winRate}%</span>, className: "text-right" },
-      { header: "W / L", value: (m: LeaderboardMember) => `${m.weekly.wins} / ${m.weekly.losses}`, className: "text-right" },
+      { header: "W / L", value: (m: LeaderboardMember) => t("{value0} / {value1}", { value0: m.weekly.wins, value1: m.weekly.losses }), className: "text-right" },
       { header: "Battles", value: (m: LeaderboardMember) => m.weekly.battles, className: "text-right" },
     ],
   },
@@ -386,10 +368,10 @@ const categories = [
     key: "weeklyStarPlayers" as const,
     label: "Stars",
     icon: Star,
-    description: (rangeLabel: string) => `Most Star Player awards in the ${rangeLabel}`,
-    help: () => "Counts tracked Star Player awards from stored battle history.",
-    formatValue: (m: LeaderboardMember) => `${m.weekly.starPlayer}`,
-    subtitle: (m: LeaderboardMember) => `${m.weekly.battles} battles`,
+    description: (rangeLabel: string) => t("Most Star Player awards in the {value0}", { value0: rangeLabel }),
+    help: () => t("Counts tracked Star Player awards from stored battle history."),
+    formatValue: (m: LeaderboardMember) => t("{value0}", { value0: m.weekly.starPlayer }),
+    subtitle: (m: LeaderboardMember) => t("{value0} battles", { value0: m.weekly.battles }),
     columns: [
       { header: "Stars", value: (m: LeaderboardMember) => <span className="font-semibold text-yellow-500">{m.weekly.starPlayer}</span>, className: "text-right" },
       { header: "Battles", value: (m: LeaderboardMember) => m.weekly.battles, className: "text-right" },
@@ -397,7 +379,7 @@ const categories = [
         header: "Star %",
         value: (m: LeaderboardMember) => {
           const pct = m.weekly.battles > 0 ? Math.round((m.weekly.starPlayer / m.weekly.battles) * 100) : 0;
-          return `${pct}%`;
+          return t("{value0}%", { value0: pct });
         },
         className: "text-right",
       },
@@ -407,10 +389,10 @@ const categories = [
     key: "mostActive" as const,
     label: "Activity",
     icon: Flame,
-    description: (rangeLabel: string) => `Most active members in the ${rangeLabel}`,
-    help: () => "Activity means days with at least one tracked battle. It is capped by the selected range, so 24h maxes at 1 day, 3d at 3 days, and 7d at 7 days.",
-    formatValue: (m: LeaderboardMember) => `${m.weekly.activeDays}d`,
-    subtitle: (m: LeaderboardMember) => `${m.weekly.battles} battles`,
+    description: (rangeLabel: string) => t("Most active members in the {value0}", { value0: rangeLabel }),
+    help: () => t("Activity means days with at least one tracked battle. It is capped by the selected range, so 24h maxes at 1 day, 3d at 3 days, and 7d at 7 days."),
+    formatValue: (m: LeaderboardMember) => t("{value0}d", { value0: m.weekly.activeDays }),
+    subtitle: (m: LeaderboardMember) => t("{value0} battles", { value0: m.weekly.battles }),
     columns: [
       { header: "Active Days", value: (m: LeaderboardMember) => m.weekly.activeDays, className: "text-right" },
       { header: "Battles", value: (m: LeaderboardMember) => m.weekly.battles, className: "text-right" },
@@ -421,8 +403,8 @@ const categories = [
     key: "allTimeBattlers" as const,
     label: "Battle Records",
     icon: Zap,
-    description: () => "Battle totals recorded by BrawlStatz syncs",
-    help: () => "This is app-recorded history, not the player's full lifetime Brawl Stars history.",
+    description: () => t("Battle totals recorded by BrawlStatz syncs"),
+    help: () => t("This is app-recorded history, not the player's full lifetime Brawl Stars history."),
     formatValue: (m: LeaderboardMember) => formatNumber(m.allTime.battles),
     subtitle: (m: LeaderboardMember) => {
       const draws = m.allTime.battles - m.allTime.wins - m.allTime.losses;
@@ -435,8 +417,12 @@ const categories = [
     ],
   },
 ];
+}
 
 export default function LeaderboardPage() {
+  const categories = useCategories();
+  const { relative } = useI18n();
+  const { t } = useI18n();
   const [leaderboards, setLeaderboards] = useState<Leaderboards | null>(null);
   const [memberCount, setMemberCount] = useState(0);
   const [rangeMeta, setRangeMeta] = useState<LeaderboardResponse["range"]>({
@@ -516,19 +502,18 @@ export default function LeaderboardPage() {
   const minWinRateBattles = rangeMeta?.minWinRateBattles || 10;
 
   return (
-    <LayoutWrapper>
+    <LayoutWrapper><DataConfidenceNotice />
       <div className="space-y-4">
         <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
           <div>
             <h1 className="text-2xl font-bold flex items-center gap-2">
               <Trophy className="h-6 w-6 text-yellow-500" />
-              Club Leaderboard
-            </h1>
+              <T text=" Club Leaderboard " /></h1>
             <p className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-sm text-muted-foreground">
-              <span>{memberCount} members tracked</span>
+              <span>{memberCount} <T text=" members tracked" /></span>
               <span className="inline-flex items-center gap-1.5">
                 <Clock3 className="h-3.5 w-3.5" />
-                {formatSyncTime(lastSyncTime)}
+                <T text="Last sync {time}" values={{time:relative(lastSyncTime)}} />
               </span>
             </p>
           </div>
@@ -545,7 +530,7 @@ export default function LeaderboardPage() {
                     : "border-border bg-background text-muted-foreground hover:bg-muted hover:text-foreground"
                 }`}
               >
-                {option.label}
+                {<T text={option.label} />}
               </button>
             ))}
           </div>
@@ -554,12 +539,12 @@ export default function LeaderboardPage() {
         <div className="rounded-lg border border-border bg-card/40 p-3">
           <div className="flex flex-col gap-3 xl:flex-row xl:items-center">
             <div className="relative min-w-0 flex-1">
-              <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+              <Search className="pointer-events-none absolute start-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
               <input
                 value={searchQuery}
                 onChange={(event) => setSearchQuery(event.target.value)}
-                placeholder="Search player or tag"
-                className="h-10 w-full rounded-md border border-border bg-background pl-9 pr-3 text-sm outline-none transition-colors placeholder:text-muted-foreground focus:border-primary"
+                placeholder={t("Search player or tag")}
+                className="h-10 w-full rounded-md border border-border bg-background ps-9 pe-3 text-sm outline-none transition-colors placeholder:text-muted-foreground focus:border-primary"
               />
             </div>
 
@@ -570,10 +555,10 @@ export default function LeaderboardPage() {
                   value={roleFilter}
                   onChange={(event) => setRoleFilter(event.target.value as RoleFilter)}
                   className="h-10 bg-transparent text-sm outline-none"
-                  aria-label="Filter by role"
+                  aria-label={t("Filter by role")}
                 >
                   {roleOptions.map((option) => (
-                    <option key={option.value} value={option.value}>{option.label}</option>
+                    <option key={option.value} value={option.value}>{<T text={option.label} />}</option>
                   ))}
                 </select>
               </label>
@@ -582,10 +567,10 @@ export default function LeaderboardPage() {
                 value={activityFilter}
                 onChange={(event) => setActivityFilter(event.target.value as ActivityFilter)}
                 className="h-10 rounded-md border border-border bg-background px-3 text-sm outline-none"
-                aria-label="Filter by activity"
+                aria-label={t("Filter by activity")}
               >
                 {activityOptions.map((option) => (
-                  <option key={option.value} value={option.value}>{option.label}</option>
+                  <option key={option.value} value={option.value}>{<T text={option.label} />}</option>
                 ))}
               </select>
 
@@ -594,16 +579,15 @@ export default function LeaderboardPage() {
                 onChange={(event) => setMinBattles(event.target.value)}
                 inputMode="numeric"
                 pattern="[0-9]*"
-                placeholder="Min battles"
+                placeholder={t("Min battles")}
                 className="h-10 rounded-md border border-border bg-background px-3 text-sm outline-none placeholder:text-muted-foreground focus:border-primary"
-                aria-label="Minimum tracked battles"
+                aria-label={t("Minimum tracked battles")}
               />
             </div>
 
             {(searchQuery || roleFilter !== "all" || activityFilter !== "all" || minBattles) && (
               <Button variant="outline" size="sm" onClick={resetFilters} className="h-10">
-                Reset
-              </Button>
+                <T text=" Reset " /></Button>
             )}
           </div>
         </div>
@@ -615,8 +599,7 @@ export default function LeaderboardPage() {
         ) : !leaderboards ? (
           <Card>
             <CardContent className="py-12 text-center text-muted-foreground">
-              Failed to load leaderboard data. Try syncing your club first.
-            </CardContent>
+              <T text=" Failed to load leaderboard data. Try syncing your club first. " /></CardContent>
           </Card>
         ) : (
           <Tabs value={activeTab} onValueChange={setActiveTab}>
@@ -630,7 +613,7 @@ export default function LeaderboardPage() {
                     className="flex items-center gap-1.5 px-3 py-2 data-[state=active]:bg-accent rounded-lg border border-border/60 data-[state=active]:border-border text-xs sm:text-sm"
                   >
                     <Icon className="h-3.5 w-3.5" />
-                    <span className="hidden sm:inline">{cat.label}</span>
+                    <span className="hidden sm:inline">{<T text={cat.label} />}</span>
                   </TabsTrigger>
                 );
               })}
@@ -647,18 +630,17 @@ export default function LeaderboardPage() {
                         <div className="flex items-start gap-2">
                           <cat.icon className="mt-1 h-5 w-5 text-muted-foreground" />
                           <div>
-                            <CardTitle className="text-lg">{cat.label}</CardTitle>
-                            <CardDescription>{cat.description(rangeLabel)}</CardDescription>
-                            <p className="mt-1 text-xs text-muted-foreground">{cat.help(rangeLabel, minWinRateBattles)}</p>
+                            <CardTitle className="text-lg">{<T text={cat.label} />}</CardTitle>
+                            <CardDescription>{cat.description(t(rangeLabel))}</CardDescription>
+                            <p className="mt-1 text-xs text-muted-foreground">{cat.help(t(rangeLabel), minWinRateBattles)}</p>
                           </div>
                         </div>
-                        <div className="text-sm text-muted-foreground sm:text-right">
+                        <div className="text-sm text-muted-foreground sm:text-end">
                           <p>
-                            <span className="font-semibold text-foreground">{data.length}</span> shown
-                            {data.length !== rawData.length && ` / ${rawData.length}`}
+                            <span className="font-semibold text-foreground">{data.length}</span> <T text=" shown " />{data.length !== rawData.length && ` / ${rawData.length}`}
                           </p>
                           {cat.key !== "trophyLeaders" && cat.key !== "allTimeBattlers" && (
-                            <p>{rangeLabel}</p>
+                            <p><T text={rangeLabel} /></p>
                           )}
                         </div>
                       </div>

@@ -3,6 +3,12 @@ import { supabaseAdmin } from "@/lib/supabase-admin";
 import { rejectUnauthorizedAdminMutation } from "@/lib/admin-auth";
 
 const SENSITIVE_KEYS = new Set(["api_key", "discord_webhook"]);
+// New settings are private by default. In particular, scheduler credentials
+// must never become public simply because they share this table.
+const PUBLIC_SETTING_KEYS = new Set([
+  "club_tag", "club_name", "inactivity_threshold", "refresh_interval",
+  "notifications_enabled", "required_trophies", "last_sync_time",
+]);
 
 const ALLOWED_SETTING_KEYS = new Set([
   "club_tag",
@@ -59,7 +65,8 @@ export async function GET() {
   try {
     const { data, error } = await supabaseAdmin
       .from("settings")
-      .select("key, value");
+      .select("key, value")
+      .in("key", [...PUBLIC_SETTING_KEYS, ...SENSITIVE_KEYS]);
 
     if (error) {
       throw error;
@@ -73,7 +80,7 @@ export async function GET() {
       if (SENSITIVE_KEYS.has(row.key)) {
         if (row.key === "api_key") apiKeyConfigured = apiKeyConfigured || Boolean(row.value);
         if (row.key === "discord_webhook") discordWebhookConfigured = discordWebhookConfigured || Boolean(row.value);
-      } else {
+      } else if (PUBLIC_SETTING_KEYS.has(row.key)) {
         settings[row.key] = row.value;
       }
     }
@@ -84,7 +91,7 @@ export async function GET() {
     settings.api_key_configured = String(apiKeyConfigured);
     settings.discord_webhook_configured = String(discordWebhookConfigured);
 
-    return NextResponse.json(settings);
+    return NextResponse.json(settings, { headers: { "Cache-Control": "no-store" } });
   } catch (error) {
     console.error("Error fetching settings:", error);
     return NextResponse.json(

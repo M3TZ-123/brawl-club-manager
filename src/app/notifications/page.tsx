@@ -1,4 +1,6 @@
 "use client";
+import { T, useI18n, LocalDate } from "@/components/locale-provider";
+
 
 import { ReactNode, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
@@ -36,7 +38,7 @@ type NotificationMutationResponse = {
   error?: string;
 };
 
-function getDateHeading(date: Date) {
+function getDateHeading(date: Date, locale: string) {
   const today = new Date();
   const yesterday = new Date();
   yesterday.setDate(today.getDate() - 1);
@@ -44,7 +46,7 @@ function getDateHeading(date: Date) {
   if (date.toDateString() === today.toDateString()) return "Today";
   if (date.toDateString() === yesterday.toDateString()) return "Yesterday";
 
-  return new Intl.DateTimeFormat("en-US", {
+  return new Intl.DateTimeFormat(locale === "ar" ? "ar-TN" : "en-GB", {
     month: "short",
     day: "numeric",
     year: "numeric",
@@ -52,6 +54,7 @@ function getDateHeading(date: Date) {
 }
 
 export default function NotificationsPage() {
+  const { locale } = useI18n();
   const { isAdmin } = useAdminSession();
   const [notifications, setNotifications] = useState<Notification[]>([]);
   const [unreadCount, setUnreadCount] = useState(0);
@@ -233,14 +236,14 @@ export default function NotificationsPage() {
 
         groups.push({
           key,
-          label: getDateHeading(date),
+          label: getDateHeading(date, locale),
           items: [notif],
         });
         return groups;
       },
       []
     ),
-    [filtered]
+    [filtered, locale]
   );
 
   return (
@@ -251,10 +254,9 @@ export default function NotificationsPage() {
         <div>
           <h1 className="text-2xl font-bold flex items-center gap-2">
             <Bell className="h-6 w-6" />
-            Notifications
-          </h1>
+            <T text=" Notifications " /></h1>
           <p className="text-sm text-muted-foreground mt-1">
-            {unreadCount > 0 ? `${unreadCount} unread` : "All caught up!"}
+            {unreadCount > 0 ? <T text="{value0} unread" values={{ value0: String(unreadCount) }} /> : <T text="All caught up!" />}
           </p>
         </div>
         <div className="flex items-center gap-2">
@@ -269,8 +271,7 @@ export default function NotificationsPage() {
                   : "text-muted-foreground hover:text-foreground"
               )}
             >
-              All
-            </button>
+              <T text=" All " /></button>
             <button
               onClick={() => setFilter("unread")}
               className={cn(
@@ -280,25 +281,24 @@ export default function NotificationsPage() {
                   : "text-muted-foreground hover:text-foreground"
               )}
             >
-              Unread{unreadCount > 0 && ` (${unreadCount})`}
+              <T text=" Unread" />{unreadCount > 0 && ` (${unreadCount})`}
             </button>
           </div>
           {unreadCount > 0 && isAdmin && (
             <Button variant="outline" size="sm" onClick={markAllAsRead}>
-              <CheckCheck className="h-4 w-4 mr-1" />
-              Mark all read
-            </Button>
+              <CheckCheck className="h-4 w-4 me-1" />
+              <T text=" Mark all read " /></Button>
           )}
         </div>
       </div>
 
       <div className="flex flex-wrap gap-2">
-        <Button size="sm" variant={category === "all" ? "default" : "outline"} onClick={() => setCategory("all")}>All Types</Button>
-        <Button size="sm" variant={category === "join" ? "default" : "outline"} onClick={() => setCategory("join")}>Joined</Button>
-        <Button size="sm" variant={category === "leave" ? "default" : "outline"} onClick={() => setCategory("leave")}>Left</Button>
-        <Button size="sm" variant={category === "inactive" ? "default" : "outline"} onClick={() => setCategory("inactive")}>Inactive</Button>
-        <Button size="sm" variant={category === "promotion" ? "default" : "outline"} onClick={() => setCategory("promotion")}>Promotions</Button>
-        <Button size="sm" variant={category === "name_change" ? "default" : "outline"} onClick={() => setCategory("name_change")}>Name Changes</Button>
+        <Button size="sm" variant={category === "all" ? "default" : "outline"} onClick={() => setCategory("all")}><T text="All Types" /></Button>
+        <Button size="sm" variant={category === "join" ? "default" : "outline"} onClick={() => setCategory("join")}><T text="Joined" /></Button>
+        <Button size="sm" variant={category === "leave" ? "default" : "outline"} onClick={() => setCategory("leave")}><T text="Left" /></Button>
+        <Button size="sm" variant={category === "inactive" ? "default" : "outline"} onClick={() => setCategory("inactive")}><T text="Inactive" /></Button>
+        <Button size="sm" variant={category === "promotion" ? "default" : "outline"} onClick={() => setCategory("promotion")}><T text="Promotions" /></Button>
+        <Button size="sm" variant={category === "name_change" ? "default" : "outline"} onClick={() => setCategory("name_change")}><T text="Name Changes" /></Button>
       </div>
 
       {/* Notification list */}
@@ -311,12 +311,12 @@ export default function NotificationsPage() {
           <CardContent className="flex flex-col items-center justify-center py-16 text-muted-foreground">
             <Bell className="h-10 w-10 mb-3 opacity-40" />
             <p className="text-lg font-medium">
-              {filter === "unread" ? "No unread notifications" : "No notifications found"}
+              {filter === "unread" ? <T text="No unread notifications" /> : <T text="No notifications found" />}
             </p>
             <p className="text-sm mt-1">
               {filter === "unread"
-                ? "You've read all your notifications."
-                : "Try changing filters or wait for new club events."}
+                ? <T text="You've read all your notifications." />
+                : <T text="Try changing filters or wait for new club events." />}
             </p>
           </CardContent>
         </Card>
@@ -324,7 +324,7 @@ export default function NotificationsPage() {
         <div className="space-y-6">
           {groupedByDate.map((group) => (
             <section key={group.key} className="space-y-2">
-              <h2 className="text-base font-semibold text-foreground/90">{group.label}</h2>
+              <h2 className="text-base font-semibold text-foreground/90">{<T text={group.label} />}</h2>
               {group.items.map((notif) => {
                 const style = getStyle(notif.type);
                 const Icon = style.icon;
@@ -350,19 +350,18 @@ export default function NotificationsPage() {
                         <div className="flex-1 min-w-0">
                           <div className="flex items-center gap-2 flex-wrap">
                             <span className={cn("text-sm font-semibold", style.color)}>
-                              {notif.title}
+                              {<T text={notif.title} />}
                             </span>
                             {!notif.is_read && (
                               <span className="text-[10px] uppercase tracking-wider font-bold text-primary bg-primary/10 px-1.5 py-0.5 rounded">
-                                New
-                              </span>
+                                <T text=" New " /></span>
                             )}
                           </div>
                           <p className="text-sm text-muted-foreground mt-1 break-words">
                             {renderMessageWithMemberLinks(notif.message)}
                           </p>
                           <p className="text-xs text-muted-foreground/60 mt-2">
-                            {new Date(notif.created_at).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}
+                            <LocalDate value={notif.created_at} time />
                           </p>
                         </div>
                       </div>
@@ -375,7 +374,7 @@ export default function NotificationsPage() {
           {nextOffset !== null && (
             <div className="text-center">
               <Button variant="outline" disabled={loadingMore} onClick={() => loadNotifications(false, nextOffset)}>
-                {loadingMore ? "Loading..." : "Load More"}
+                {loadingMore ? <T text="Loading..." /> : <T text="Load More" />}
               </Button>
             </div>
           )}

@@ -1,4 +1,6 @@
 "use client";
+import { T } from "@/components/locale-provider";
+
 
 import { useState, useEffect } from "react";
 import { useAppStore } from "@/lib/store";
@@ -147,19 +149,18 @@ export default function SettingsPage() {
       <AdminGate>
       <div className="max-w-4xl mx-auto space-y-6">
         <div>
-          <h1 className="text-2xl font-bold">Settings</h1>
+          <h1 className="text-2xl font-bold"><T text="Settings" /></h1>
           <p className="text-muted-foreground">
-            Configure your club manager preferences
-          </p>
+            <T text=" Configure your club manager preferences " /></p>
         </div>
 
         <Tabs defaultValue="general" className="space-y-4">
               <TabsList className="flex flex-wrap h-auto gap-1 p-1">
-                <TabsTrigger value="general" className="text-xs sm:text-sm">General</TabsTrigger>
-                <TabsTrigger value="activity" className="text-xs sm:text-sm">Activity</TabsTrigger>
-                <TabsTrigger value="notifications" className="text-xs sm:text-sm">Notifications</TabsTrigger>
-                <TabsTrigger value="appearance" className="text-xs sm:text-sm">Appearance</TabsTrigger>
-                <TabsTrigger value="data" className="text-xs sm:text-sm">Data</TabsTrigger>
+                <TabsTrigger value="general" className="text-xs sm:text-sm"><T text="General" /></TabsTrigger>
+                <TabsTrigger value="activity" className="text-xs sm:text-sm"><T text="Activity" /></TabsTrigger>
+                <TabsTrigger value="notifications" className="text-xs sm:text-sm"><T text="Notifications" /></TabsTrigger>
+                <TabsTrigger value="appearance" className="text-xs sm:text-sm"><T text="Appearance" /></TabsTrigger>
+                <TabsTrigger value="data" className="text-xs sm:text-sm"><T text="Data" /></TabsTrigger>
               </TabsList>
 
               {/* General Settings */}
@@ -168,27 +169,24 @@ export default function SettingsPage() {
                   <CardHeader>
                     <CardTitle className="flex items-center gap-2">
                       <Key className="h-5 w-5" />
-                      API Configuration
-                    </CardTitle>
+                      <T text=" API Configuration " /></CardTitle>
                     <CardDescription>
-                      Configure your Brawl Stars API connection
-                    </CardDescription>
+                      <T text=" Configure your Brawl Stars API connection " /></CardDescription>
                   </CardHeader>
                   <CardContent className="space-y-4">
                     <div className="space-y-2">
-                      <label className="text-sm font-medium">Club Tag</label>
+                      <label className="text-sm font-medium"><T text="Club Tag" /></label>
                       <Input
                         placeholder="#ABC123"
                         value={effectiveClubTag}
                         onChange={(e) => setLocalClubTag(e.target.value.toUpperCase())}
                       />
                       <p className="text-xs text-muted-foreground">
-                        Your club&apos;s unique tag (found in-game)
-                      </p>
+                        <T text=" Your club&apos;s unique tag (found in-game) " /></p>
                     </div>
 
                     <div className="space-y-2">
-                      <label className="text-sm font-medium">API Key</label>
+                      <label className="text-sm font-medium"><T text="API Key" /></label>
                       <Input
                         type="password"
                         placeholder={apiKeyConfigured ? "Stored API key configured" : "Enter your API key"}
@@ -197,16 +195,15 @@ export default function SettingsPage() {
                         autoComplete="off"
                       />
                       <p className="text-xs text-muted-foreground">
-                        {apiKeyConfigured ? "Leave blank to keep the saved key. " : ""}
-                        Get your API key from{" "}
+                        {apiKeyConfigured ? <T text="Leave blank to keep the saved key. " /> : ""}
+                        <T text=" Get your API key from" />{" "}
                         <a
                           href="https://developer.brawlstars.com"
                           target="_blank"
                           rel="noopener noreferrer"
                           className="text-primary hover:underline inline-flex items-center gap-1"
                         >
-                          developer.brawlstars.com
-                          <ExternalLink className="h-3 w-3" />
+                          <T text=" developer.brawlstars.com " /><ExternalLink className="h-3 w-3" />
                         </a>
                       </p>
                     </div>
@@ -216,14 +213,12 @@ export default function SettingsPage() {
                         "Saving..."
                       ) : generalStatus === "saved" ? (
                         <>
-                          <CheckCircle className="h-4 w-4 mr-2" />
-                          Saved!
-                        </>
+                          <CheckCircle className="h-4 w-4 me-2" />
+                          <T text=" Saved! " /></>
                       ) : (
                         <>
-                          <Save className="h-4 w-4 mr-2" />
-                          Save Changes
-                        </>
+                          <Save className="h-4 w-4 me-2" />
+                          <T text=" Save Changes " /></>
                       )}
                     </Button>
                   </CardContent>
@@ -236,17 +231,14 @@ export default function SettingsPage() {
                   <CardHeader>
                     <CardTitle className="flex items-center gap-2">
                       <Clock className="h-5 w-5" />
-                      Activity Tracking
-                    </CardTitle>
+                      <T text=" Activity Tracking " /></CardTitle>
                     <CardDescription>
-                      Configure how activity is tracked and measured
-                    </CardDescription>
+                      <T text=" Configure how activity is tracked and measured " /></CardDescription>
                   </CardHeader>
                   <CardContent className="space-y-4">
                     <div className="space-y-2">
                       <label className="text-sm font-medium">
-                        Inactivity Threshold (hours)
-                      </label>
+                        <T text=" Inactivity Threshold (hours) " /></label>
                       <Input
                         type="number"
                         min="48"
@@ -257,23 +249,21 @@ export default function SettingsPage() {
                         }
                       />
                       <p className="text-xs text-muted-foreground">
-                        Players with no tracked battle past this threshold are marked inactive
-                      </p>
+                        <T text=" Players with no tracked battle past this threshold are marked inactive " /></p>
                     </div>
 
                     <div className="p-4 rounded-lg bg-muted/50">
-                      <h4 className="font-medium mb-2">Sync Schedule</h4>
+                      <h4 className="font-medium mb-2"><T text="Sync Schedule" /></h4>
                       <p className="text-sm text-muted-foreground">
-                        Automatic sync is handled by cron-job.org. Use the sidebar Sync Now button for an immediate admin sync.
-                      </p>
+                        <T text=" Automatic sync is handled by cron-job.org. Use the sidebar Sync Now button for an immediate admin sync. " /></p>
                     </div>
 
                     <div className="p-4 rounded-lg bg-muted/50">
-                      <h4 className="font-medium mb-2">Activity Detection</h4>
+                      <h4 className="font-medium mb-2"><T text="Activity Detection" /></h4>
                       <ul className="text-sm text-muted-foreground space-y-1">
-                        <li>Active: played in the last 24 hours</li>
-                        <li>Low activity: played between 24 and {effectiveInactivityThreshold} hours ago</li>
-                        <li>Inactive: no tracked battle for more than {effectiveInactivityThreshold} hours</li>
+                        <li><T text="Active: played in the last 24 hours" /></li>
+                        <li><T text="Low activity: played between 24 and " />{effectiveInactivityThreshold} <T text=" hours ago" /></li>
+                        <li><T text="Inactive: no tracked battle for more than " />{effectiveInactivityThreshold} <T text=" hours" /></li>
                       </ul>
                     </div>
 
@@ -282,14 +272,12 @@ export default function SettingsPage() {
                         "Saving..."
                       ) : activityStatus === "saved" ? (
                         <>
-                          <CheckCircle className="h-4 w-4 mr-2" />
-                          Saved!
-                        </>
+                          <CheckCircle className="h-4 w-4 me-2" />
+                          <T text=" Saved! " /></>
                       ) : (
                         <>
-                          <Save className="h-4 w-4 mr-2" />
-                          Save Changes
-                        </>
+                          <Save className="h-4 w-4 me-2" />
+                          <T text=" Save Changes " /></>
                       )}
                     </Button>
                   </CardContent>
@@ -302,19 +290,16 @@ export default function SettingsPage() {
                   <CardHeader>
                     <CardTitle className="flex items-center gap-2">
                       <Bell className="h-5 w-5" />
-                      Notifications
-                    </CardTitle>
+                      <T text=" Notifications " /></CardTitle>
                     <CardDescription>
-                      Configure alerts and notifications
-                    </CardDescription>
+                      <T text=" Configure alerts and notifications " /></CardDescription>
                   </CardHeader>
                   <CardContent className="space-y-4">
                     <div className="flex items-center justify-between">
                       <div>
-                        <p className="font-medium">Enable Notifications</p>
+                        <p className="font-medium"><T text="Enable Notifications" /></p>
                         <p className="text-sm text-muted-foreground">
-                          Receive alerts for important events
-                        </p>
+                          <T text=" Receive alerts for important events " /></p>
                       </div>
                       <Switch
                         checked={notificationsEnabled}
@@ -323,7 +308,7 @@ export default function SettingsPage() {
                     </div>
 
                     <div className="space-y-2">
-                      <label className="text-sm font-medium">Discord Webhook URL</label>
+                      <label className="text-sm font-medium"><T text="Discord Webhook URL" /></label>
                       <Input
                         type="url"
                         placeholder={discordWebhookConfigured ? "Stored webhook configured" : "https://discord.com/api/webhooks/..."}
@@ -332,17 +317,16 @@ export default function SettingsPage() {
                         autoComplete="off"
                       />
                       <p className="text-xs text-muted-foreground">
-                        Optional: Send notifications to a Discord channel.
-                        {discordWebhookConfigured ? " Leave blank to keep the saved webhook." : ""}
+                        <T text=" Optional: Send notifications to a Discord channel. " />{discordWebhookConfigured ? <T text=" Leave blank to keep the saved webhook." /> : ""}
                       </p>
                     </div>
 
                     <div className="p-4 rounded-lg bg-muted/50">
-                      <h4 className="font-medium mb-2">Notification Events</h4>
+                      <h4 className="font-medium mb-2"><T text="Notification Events" /></h4>
                       <ul className="text-sm text-muted-foreground space-y-1">
-                        <li>• Member joins the club</li>
-                        <li>• Member leaves the club</li>
-                        <li>• Inactive members summary (once per day)</li>
+                        <li><T text="• Member joins the club" /></li>
+                        <li><T text="• Member leaves the club" /></li>
+                        <li><T text="• Inactive members summary (once per day)" /></li>
                       </ul>
                     </div>
 
@@ -351,14 +335,12 @@ export default function SettingsPage() {
                         "Saving..."
                       ) : notifStatus === "saved" ? (
                         <>
-                          <CheckCircle className="h-4 w-4 mr-2" />
-                          Saved!
-                        </>
+                          <CheckCircle className="h-4 w-4 me-2" />
+                          <T text=" Saved! " /></>
                       ) : (
                         <>
-                          <Save className="h-4 w-4 mr-2" />
-                          Save Changes
-                        </>
+                          <Save className="h-4 w-4 me-2" />
+                          <T text=" Save Changes " /></>
                       )}
                     </Button>
                   </CardContent>
@@ -371,15 +353,13 @@ export default function SettingsPage() {
                   <CardHeader>
                     <CardTitle className="flex items-center gap-2">
                       <Palette className="h-5 w-5" />
-                      Appearance
-                    </CardTitle>
+                      <T text=" Appearance " /></CardTitle>
                     <CardDescription>
-                      Customize the look and feel
-                    </CardDescription>
+                      <T text=" Customize the look and feel " /></CardDescription>
                   </CardHeader>
                   <CardContent className="space-y-4">
                     <div>
-                      <label className="text-sm font-medium mb-3 block">Theme</label>
+                      <label className="text-sm font-medium mb-3 block"><T text="Theme" /></label>
                       <div className="flex gap-3">
                         <button
                           onClick={() => setTheme("light")}
@@ -390,7 +370,7 @@ export default function SettingsPage() {
                           }`}
                         >
                           <div className="h-20 rounded bg-white border mb-2"></div>
-                          <p className="font-medium">Light</p>
+                          <p className="font-medium"><T text="Light" /></p>
                         </button>
                         <button
                           onClick={() => setTheme("dark")}
@@ -401,7 +381,7 @@ export default function SettingsPage() {
                           }`}
                         >
                           <div className="h-20 rounded bg-zinc-900 border border-zinc-700 mb-2"></div>
-                          <p className="font-medium">Dark</p>
+                          <p className="font-medium"><T text="Dark" /></p>
                         </button>
                       </div>
                     </div>
@@ -415,19 +395,17 @@ export default function SettingsPage() {
                   <CardHeader>
                     <CardTitle className="flex items-center gap-2">
                       <Database className="h-5 w-5" />
-                      Data Management
-                    </CardTitle>
+                      <T text=" Data Management " /></CardTitle>
                     <CardDescription>
-                      Manage your stored data
-                    </CardDescription>
+                      <T text=" Manage your stored data " /></CardDescription>
                   </CardHeader>
                   <CardContent className="space-y-4">
                     <div className="p-4 rounded-lg bg-muted/50">
-                      <h4 className="font-medium mb-2">Storage Info</h4>
+                      <h4 className="font-medium mb-2"><T text="Storage Info" /></h4>
                       <ul className="text-sm text-muted-foreground space-y-1">
-                        <li>• Local settings stored in browser</li>
-                        <li>• Member data synced to Supabase database</li>
-                        <li>• Activity logs retained for 30 days</li>
+                        <li><T text="• Local settings stored in browser" /></li>
+                        <li><T text="• Member data synced to Supabase database" /></li>
+                        <li><T text="• Activity logs retained for 90 days; daily summaries for 365 days" /></li>
                       </ul>
                     </div>
 
@@ -436,11 +414,9 @@ export default function SettingsPage() {
                       <div className="flex items-start gap-3 p-4 rounded-lg bg-blue-500/10 border border-blue-500/20">
                         <RotateCcw className="h-5 w-5 text-blue-500 mt-0.5" />
                         <div>
-                          <h4 className="font-medium text-blue-500">Reset Join/Leave Tracking</h4>
+                          <h4 className="font-medium text-blue-500"><T text="Reset Join/Leave Tracking" /></h4>
                           <p className="text-sm text-muted-foreground mb-3">
-                            Clear all existing join/leave events and start tracking fresh from today.
-                            Current members will be set as the baseline - only new joins and leaves will be recorded.
-                          </p>
+                            <T text=" Clear all existing join/leave events and start tracking fresh from today. Current members will be set as the baseline - only new joins and leaves will be recorded. " /></p>
                           <Button 
                             variant="outline" 
                             onClick={handleResetTracking}
@@ -451,14 +427,12 @@ export default function SettingsPage() {
                               "Resetting..."
                             ) : resetStatus === "done" ? (
                               <>
-                                <CheckCircle className="h-4 w-4 mr-2" />
-                                Tracking Reset!
-                              </>
+                                <CheckCircle className="h-4 w-4 me-2" />
+                                <T text=" Tracking Reset! " /></>
                             ) : (
                               <>
-                                <RotateCcw className="h-4 w-4 mr-2" />
-                                Reset Tracking from Today
-                              </>
+                                <RotateCcw className="h-4 w-4 me-2" />
+                                <T text=" Reset Tracking from Today " /></>
                             )}
                           </Button>
                         </div>
@@ -469,14 +443,11 @@ export default function SettingsPage() {
                       <div className="flex items-start gap-3 p-4 rounded-lg bg-destructive/10 border border-destructive/20">
                         <AlertTriangle className="h-5 w-5 text-destructive mt-0.5" />
                         <div>
-                          <h4 className="font-medium text-destructive">Danger Zone</h4>
+                          <h4 className="font-medium text-destructive"><T text="Danger Zone" /></h4>
                           <p className="text-sm text-muted-foreground mb-3">
-                            Clear all locally stored data. This will reset your settings and
-                            require reconfiguration.
-                          </p>
+                            <T text=" Clear all locally stored data. This will reset your settings and require reconfiguration. " /></p>
                           <Button variant="destructive" onClick={handleClearData}>
-                            Clear Local Data
-                          </Button>
+                            <T text=" Clear Local Data " /></Button>
                         </div>
                       </div>
                     </div>

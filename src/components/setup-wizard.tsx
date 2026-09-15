@@ -1,4 +1,6 @@
 "use client";
+import { T, useI18n, LanguageSelector } from "@/components/locale-provider";
+
 
 import { useState } from "react";
 import Link from "next/link";
@@ -11,6 +13,7 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/com
 import { Trophy, Key, CheckCircle } from "lucide-react";
 
 export function SetupWizard() {
+  const { t } = useI18n();
   const [step, setStep] = useState(() => {
     const saved = useAppStore.getState();
     return saved.clubTag && saved.apiKeyConfigured ? 3 : 1;
@@ -93,16 +96,17 @@ export function SetupWizard() {
 
   return (
     <AdminGate
-      title="Admin Setup Required"
+      title={t("Admin Setup Required")}
       description="Sign in before adding the Brawl Stars API key and creating the initial club setup."
     >
     <div className="min-h-screen flex items-center justify-center bg-background p-4">
+      <div className="fixed end-4 top-4"><LanguageSelector /></div>
       <Card className="w-full max-w-md">
         <CardHeader className="text-center">
           <div className="flex justify-center mb-4">
             <Trophy className="h-12 w-12 text-yellow-500" />
           </div>
-          <CardTitle className="text-2xl">Brawl Stars Club Manager</CardTitle>
+          <CardTitle className="text-2xl"><T text="Brawl Stars Club Manager" /></CardTitle>
           <CardDescription>
             {step === 1 && "Step 1: Enter your Brawl Stars API key"}
             {step === 2 && "Step 2: Enter your club tag"}
@@ -113,27 +117,26 @@ export function SetupWizard() {
           {step === 1 && (
             <>
               <div className="space-y-2">
-                <label className="text-sm font-medium">API Key</label>
+                <label className="text-sm font-medium"><T text="API Key" /></label>
                 <div className="relative">
                   <Key className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
                   <Input
                     type="password"
-                    placeholder="Enter your Brawl Stars API key"
+                    placeholder={t("Enter your Brawl Stars API key")}
                     value={apiKey}
                     onChange={(e) => setApiKey(e.target.value)}
                     className="pl-10"
                   />
                 </div>
                 <p className="text-xs text-muted-foreground">
-                  Get your API key from{" "}
+                  <T text=" Get your API key from" />{" "}
                   <a
                     href="https://developer.brawlstars.com"
                     target="_blank"
                     rel="noopener noreferrer"
                     className="text-primary hover:underline"
                   >
-                    developer.brawlstars.com
-                  </a>
+                    <T text=" developer.brawlstars.com " /></a>
                 </p>
               </div>
               <Button
@@ -141,15 +144,14 @@ export function SetupWizard() {
                 onClick={() => setStep(2)}
                 disabled={!apiKey}
               >
-                Continue
-              </Button>
+                <T text=" Continue " /></Button>
             </>
           )}
 
           {step === 2 && (
             <>
               <div className="space-y-2">
-                <label className="text-sm font-medium">Club Tag</label>
+                <label className="text-sm font-medium"><T text="Club Tag" /></label>
                 <div className="relative">
                   <Trophy className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
                   <Input
@@ -160,22 +162,20 @@ export function SetupWizard() {
                   />
                 </div>
                 <p className="text-xs text-muted-foreground">
-                  Find your club tag in-game under Club Info
-                </p>
+                  <T text=" Find your club tag in-game under Club Info " /></p>
               </div>
               {error && (
                 <p className="text-sm text-destructive">{error}</p>
               )}
               <div className="flex gap-2">
                 <Button variant="outline" onClick={() => setStep(1)}>
-                  Back
-                </Button>
+                  <T text=" Back " /></Button>
                 <Button
                   className="flex-1"
                   onClick={handleVerifyClub}
                   disabled={!clubTag || isLoading}
                 >
-                  {isLoading ? "Verifying..." : "Verify Club"}
+                  {isLoading ? <T text="Verifying..." /> : <T text="Verify Club" />}
                 </Button>
               </div>
             </>
@@ -185,20 +185,19 @@ export function SetupWizard() {
             <>
               <div className="flex flex-col items-center py-6">
                 <CheckCircle className="h-16 w-16 text-green-500 mb-4" />
-                <p className="text-lg font-medium">Ready to Sync</p>
+                <p className="text-lg font-medium"><T text="Ready to Sync" /></p>
                 <p className="text-muted-foreground text-center">
-                  Your club has been verified. Click below to start syncing data.
-                </p>
+                  <T text=" Your club has been verified. Click below to start syncing data. " /></p>
               </div>
               <Button
                 className="w-full"
                 onClick={handleComplete}
                 disabled={isLoading}
               >
-                {isLoading ? "Starting sync..." : "Start Using App"}
+                {isLoading ? <T text="Starting sync..." /> : <T text="Start Using App" />}
               </Button>
               <Button className="w-full" variant="outline" asChild>
-                <Link href="/settings">Edit Configuration</Link>
+                <Link href="/settings"><T text="Edit Configuration" /></Link>
               </Button>
               {error && (
                 <p className="text-sm text-destructive text-center">{error}</p>

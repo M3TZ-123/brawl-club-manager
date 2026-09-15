@@ -2,6 +2,8 @@
 
 A high-performance web application to track and manage your Brawl Stars club members, their activity, and performance.
 
+The app supports Arabic/English with RTL, private administrator reviews, immutable membership provenance, fenced transactional syncs, and encrypted backups with automated restore verification. See [the Arabic operations guide](docs/BACKUP_OPERATIONS_AR.md) for backup recovery and key custody.
+
 ## ✨ Features
 
 ### 📊 Dashboard
@@ -69,7 +71,7 @@ npm install
 ### 3. Setup Supabase
 
 1. Create a free project at [supabase.com](https://supabase.com)
-2. Go to SQL Editor and run the schema from `supabase/schema.sql`
+2. Go to SQL Editor and run `supabase/schema.sql`, then every file in `supabase/migrations/` in filename order. Existing installations need only the migrations; apply them before deploying the matching application code.
 3. Copy your project URL and keys from Project Settings > API
 
 ### 4. Configure Environment

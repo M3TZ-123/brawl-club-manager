@@ -1,8 +1,13 @@
 "use client";
+import { T, useI18n } from "@/components/locale-provider";
+
 
 import dynamic from "next/dynamic";
 import { use, useCallback, useEffect, useMemo, useState } from "react";
 import Image from "next/image";
+import { DataConfidenceNotice } from "@/components/sync-health";
+import { MemberReviewButton } from "@/components/member-review";
+import { MembershipTimeline } from "@/components/membership-timeline";
 import { LayoutWrapper } from "@/components/layout-wrapper";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -11,13 +16,7 @@ import { fetchJsonCached, invalidateJsonCache } from "@/lib/client-data-cache";
 import { useAdminSession } from "@/hooks/use-admin-session";
 import { Member, ActivityLog, MemberHistory } from "@/types/database";
 import type { ActivityStatus } from "@/lib/activity-status";
-import {
-  formatNumber,
-  formatDate,
-  formatRelativeTime,
-  getActivityEmoji,
-  getRankColor,
-} from "@/lib/utils";
+import { getActivityEmoji, getRankColor } from "@/lib/utils";
 import { getProfileIconUrl } from "@/lib/brawl-assets";
 import {
   Trophy,
@@ -175,6 +174,8 @@ interface MemberDetailResponse {
 }
 
 export default function MemberDetailPage({ params }: PageProps) {
+  const { locale } = useI18n();
+  const { number: formatNumber, relative: formatRelativeTime, date: formatDate } = useI18n();
   const resolvedParams = use(params);
   const [member, setMember] = useState<DetailMember | null>(null);
   const [activityHistory, setActivityHistory] = useState<ActivityLog[]>([]);
@@ -258,24 +259,24 @@ export default function MemberDetailPage({ params }: PageProps) {
     if (!memberHistory) return null;
     
     if (memberHistory.times_joined <= 1 && memberHistory.times_left === 0) {
-      return <Badge variant="success">⭐ Original Member</Badge>;
+      return <Badge variant="success"><T text="No recorded departures" /></Badge>;
     } else if (memberHistory.times_joined > 1) {
-      return <Badge variant="warning">🔄 Returned ({memberHistory.times_joined}x)</Badge>;
+      return <Badge variant="warning"><T text="Returned" /></Badge>;
     }
-    return <Badge variant="success">⭐ Original Member</Badge>;
+    return <Badge variant="success"><T text="⭐ Original Member" /></Badge>;
   };
 
   const trophyChartData = useMemo(() => activityHistory
     .slice()
     .reverse()
     .map((log) => ({
-      date: new Date(log.recorded_at).toLocaleDateString("en-US", {
+      date: new Date(log.recorded_at).toLocaleDateString(locale === "ar" ? "ar-TN" : "en-GB", {
         month: "short",
         day: "numeric",
       }),
       trophies: log.trophies,
       recorded_at: log.recorded_at,
-    })), [activityHistory]);
+    })), [activityHistory, locale]);
 
   const totalPowerTracked = useMemo(() => powerDistribution
     ? powerDistribution.distribution.reduce((sum, count) => sum + count, 0)
@@ -306,12 +307,11 @@ export default function MemberDetailPage({ params }: PageProps) {
         <div className="flex-1 flex items-center justify-center">
           <Card className="w-96">
             <CardContent className="pt-6 text-center">
-              <p className="text-muted-foreground">Member not found</p>
+              <p className="text-muted-foreground"><T text="Member not found" /></p>
               <Link href="/members">
                 <Button className="mt-4">
-                  <ArrowLeft className="h-4 w-4 mr-2" />
-                  Back to Members
-                </Button>
+                  <ArrowLeft className="h-4 w-4 me-2" />
+                  <T text=" Back to Members " /></Button>
               </Link>
             </CardContent>
           </Card>
@@ -324,9 +324,8 @@ export default function MemberDetailPage({ params }: PageProps) {
     <LayoutWrapper>
       {/* Back Button */}
       <Link href="/members" className="inline-flex items-center text-muted-foreground hover:text-foreground mb-4">
-        <ArrowLeft className="h-4 w-4 mr-2" />
-        Back to Members
-      </Link>
+        <ArrowLeft className="h-4 w-4 me-2" />
+        <T text=" Back to Members " /></Link>
 
       <div className="space-y-6">
         {/* Player Header */}
@@ -355,9 +354,9 @@ export default function MemberDetailPage({ params }: PageProps) {
                           {getActivityEmoji(member.activity_status)}
                         </span>
                       </div>
-                      <p className="text-muted-foreground">{member.player_tag}</p>
+                      <p className="text-muted-foreground"><bdi dir="ltr">{member.player_tag}</bdi></p>
                       <div className="flex items-center gap-2 mt-1">
-                        <Badge>{member.role}</Badge>
+                        <Badge>{<T text={member.role} />}</Badge>
                         {getMemberBadge()}
                       </div>
                       {playerTags.length > 0 && (
@@ -369,9 +368,10 @@ export default function MemberDetailPage({ params }: PageProps) {
                       )}
                     </div>
                   </div>
+                  <MemberReviewButton member={member} />
                   <Button onClick={handleRefresh} disabled={isRefreshing || !isAdmin}>
                     <RefreshCw className={`h-4 w-4 mr-2 ${isRefreshing ? "animate-spin" : ""}`} />
-                    {isAdmin ? "Refresh Stats" : "Admin Only"}
+                    {isAdmin ? <T text="Refresh Stats" /> : <T text="Admin Only" />}
                   </Button>
                 </div>
               </CardContent>
@@ -381,20 +381,20 @@ export default function MemberDetailPage({ params }: PageProps) {
             <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
               <Card>
                 <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                  <CardTitle className="text-sm font-medium">Trophies</CardTitle>
+                  <CardTitle className="text-sm font-medium"><T text="Trophies" /></CardTitle>
                   <Trophy className="h-4 w-4 text-yellow-500" />
                 </CardHeader>
                 <CardContent>
                   <div className="text-2xl font-bold">{formatNumber(member.trophies)}</div>
                   <p className="text-xs text-muted-foreground">
-                    Highest: {formatNumber(member.highest_trophies)}
+                    <T text=" Highest: " />{formatNumber(member.highest_trophies)}
                   </p>
                 </CardContent>
               </Card>
 
               <Card>
                 <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                  <CardTitle className="text-sm font-medium">Rank</CardTitle>
+                  <CardTitle className="text-sm font-medium"><T text="Rank" /></CardTitle>
                   <Star className="h-4 w-4 text-purple-500" />
                 </CardHeader>
                 <CardContent>
@@ -402,32 +402,31 @@ export default function MemberDetailPage({ params }: PageProps) {
                     {member.rank_current || "Unranked"}
                   </div>
                   <p className="text-xs text-muted-foreground">
-                    Highest: {member.rank_highest || "N/A"}
+                    <T text=" Highest: " />{member.rank_highest || "N/A"}
                   </p>
                 </CardContent>
               </Card>
 
               <Card>
                 <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                  <CardTitle className="text-sm font-medium">Experience</CardTitle>
+                  <CardTitle className="text-sm font-medium"><T text="Experience" /></CardTitle>
                   <TrendingUp className="h-4 w-4 text-blue-500" />
                 </CardHeader>
                 <CardContent>
-                  <div className="text-2xl font-bold">Level {member.exp_level}</div>
+                  <div className="text-2xl font-bold"><T text="Level " />{member.exp_level}</div>
                   <p className="text-xs text-muted-foreground">
-                    {member.brawlers_count} Brawlers
-                  </p>
+                    {member.brawlers_count} <T text=" Brawlers " /></p>
                 </CardContent>
               </Card>
 
               <Card>
                 <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                  <CardTitle className="text-sm font-medium">Victories</CardTitle>
+                  <CardTitle className="text-sm font-medium"><T text="Victories" /></CardTitle>
                   <Gamepad2 className="h-4 w-4 text-green-500" />
                 </CardHeader>
                 <CardContent>
                   <div className="text-2xl font-bold">{formatNumber(member.trio_victories)}</div>
-                  <p className="text-xs text-muted-foreground">3v3 Victories</p>
+                  <p className="text-xs text-muted-foreground"><T text="3v3 Victories" /></p>
                 </CardContent>
               </Card>
             </div>
@@ -438,7 +437,7 @@ export default function MemberDetailPage({ params }: PageProps) {
                 <CardContent className="pt-6">
                   <div className="flex items-center justify-between">
                     <div>
-                      <p className="text-sm text-muted-foreground">3v3 Victories</p>
+                      <p className="text-sm text-muted-foreground"><T text="3v3 Victories" /></p>
                       <p className="text-2xl font-bold">{formatNumber(member.trio_victories)}</p>
                     </div>
                     <Users className="h-6 w-6 text-blue-500" />
@@ -449,7 +448,7 @@ export default function MemberDetailPage({ params }: PageProps) {
                 <CardContent className="pt-6">
                   <div className="flex items-center justify-between">
                     <div>
-                      <p className="text-sm text-muted-foreground">Solo Victories</p>
+                      <p className="text-sm text-muted-foreground"><T text="Solo Victories" /></p>
                       <p className="text-2xl font-bold">{formatNumber(member.solo_victories)}</p>
                     </div>
                     <Target className="h-6 w-6 text-orange-500" />
@@ -460,7 +459,7 @@ export default function MemberDetailPage({ params }: PageProps) {
                 <CardContent className="pt-6">
                   <div className="flex items-center justify-between">
                     <div>
-                      <p className="text-sm text-muted-foreground">Duo Victories</p>
+                      <p className="text-sm text-muted-foreground"><T text="Duo Victories" /></p>
                       <p className="text-2xl font-bold">{formatNumber(member.duo_victories)}</p>
                     </div>
                     <Users className="h-6 w-6 text-green-500" />
@@ -473,7 +472,7 @@ export default function MemberDetailPage({ params }: PageProps) {
             {topBrawlers.length > 0 && (
               <Card>
                 <CardHeader>
-                  <CardTitle>Top Brawlers</CardTitle>
+                  <CardTitle><T text="Top Brawlers" /></CardTitle>
                 </CardHeader>
                 <CardContent>
                   <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
@@ -489,13 +488,13 @@ export default function MemberDetailPage({ params }: PageProps) {
                           />
                           <div className="min-w-0">
                             <p className="text-sm font-semibold truncate">{brawler.name}</p>
-                            <p className="text-xs text-muted-foreground">Rank {brawler.rank}</p>
+                            <p className="text-xs text-muted-foreground"><T text="Rank " />{brawler.rank}</p>
                           </div>
                         </div>
                         <div className="text-sm space-y-1">
-                          <div className="flex justify-between"><span className="text-muted-foreground">Trophies</span><span className="font-medium">{formatNumber(brawler.trophies)}</span></div>
-                          <div className="flex justify-between"><span className="text-muted-foreground">Highest</span><span className="font-medium">{formatNumber(brawler.highestTrophies)}</span></div>
-                          <div className="flex justify-between"><span className="text-muted-foreground">Power</span><span className="font-medium">{brawler.power}</span></div>
+                          <div className="flex justify-between"><span className="text-muted-foreground"><T text="Trophies" /></span><span className="font-medium">{formatNumber(brawler.trophies)}</span></div>
+                          <div className="flex justify-between"><span className="text-muted-foreground"><T text="Highest" /></span><span className="font-medium">{formatNumber(brawler.highestTrophies)}</span></div>
+                          <div className="flex justify-between"><span className="text-muted-foreground"><T text="Power" /></span><span className="font-medium">{brawler.power}</span></div>
                         </div>
                       </div>
                     ))}
@@ -524,16 +523,16 @@ export default function MemberDetailPage({ params }: PageProps) {
                   hasDominantPower ? (
                     <Card>
                       <CardHeader className="pb-2">
-                        <CardTitle className="text-sm font-medium">BY POWER LEVEL</CardTitle>
+                        <CardTitle className="text-sm font-medium"><T text="BY POWER LEVEL" /></CardTitle>
                       </CardHeader>
                       <CardContent>
                         <div className="rounded-md border border-border/70 bg-card/50 p-4 text-center">
-                          <p className="text-lg font-semibold">Maxed Account</p>
+                          <p className="text-lg font-semibold"><T text="Maxed Account" /></p>
                           <p className="text-sm text-muted-foreground mt-1">
-                            {dominantPower.count}/{totalPowerTracked} at Power {dominantPower.level}
+                            {dominantPower.count}/{totalPowerTracked} <T text=" at Power " />{dominantPower.level}
                           </p>
                           <p className="text-xs text-muted-foreground mt-2">
-                            Average Power: {powerDistribution.avgPower.toFixed(1)}
+                            <T text=" Average Power: " />{powerDistribution.avgPower.toFixed(1)}
                           </p>
                         </div>
                       </CardContent>
@@ -583,12 +582,12 @@ export default function MemberDetailPage({ params }: PageProps) {
             {/* Recent Matches */}
             <Card>
               <CardHeader className="flex flex-row items-center justify-between">
-                <CardTitle>Recent Matches</CardTitle>
-                <Badge variant="outline">Last 25</Badge>
+                <CardTitle><T text="Recent Matches" /></CardTitle>
+                <Badge variant="outline"><T text="Last 25" /></Badge>
               </CardHeader>
               <CardContent>
                 {recentMatches.length === 0 ? (
-                  <p className="text-sm text-muted-foreground">No recent matches tracked yet.</p>
+                  <p className="text-sm text-muted-foreground"><T text="No recent matches tracked yet." /></p>
                 ) : (
                   <div className="space-y-2">
                     {recentMatches.map((match, index) => {
@@ -597,17 +596,17 @@ export default function MemberDetailPage({ params }: PageProps) {
                         <div key={`${match.battle_time}-${index}`} className="flex items-center justify-between rounded-md border border-border/60 px-3 py-2">
                           <div className="min-w-0">
                             <div className="flex items-center gap-2">
-                              <span className={`text-sm font-medium ${result.className}`}>{result.label}</span>
+                              <span className={`text-sm font-medium ${result.className}`}>{<T text={result.label} />}</span>
                               <span className="text-sm text-muted-foreground">{match.mode || "Unknown mode"}</span>
                             </div>
                             <p className="text-xs text-muted-foreground truncate">
                               {match.map || "Unknown map"} • {match.brawler_name || "Unknown brawler"}
-                              {typeof match.brawler_power === "number" ? ` (P${match.brawler_power})` : ""}
+                              {typeof match.brawler_power === "number" ? <T text=" (P{value0})" values={{ value0: String(match.brawler_power) }} /> : ""}
                             </p>
                           </div>
-                          <div className="text-right ml-3">
+                          <div className="text-end ms-3">
                             <p className={`text-sm font-semibold ${match.trophy_change > 0 ? "text-green-500" : match.trophy_change < 0 ? "text-red-500" : "text-muted-foreground"}`}>
-                              {match.trophy_change > 0 ? `+${match.trophy_change}` : match.trophy_change}
+                              {match.trophy_change > 0 ? <T text="+{value0}" values={{ value0: String(match.trophy_change) }} /> : match.trophy_change}
                             </p>
                             <p className="text-xs text-muted-foreground inline-flex items-center gap-1">
                               <Clock3 className="h-3 w-3" />
@@ -622,49 +621,49 @@ export default function MemberDetailPage({ params }: PageProps) {
               </CardContent>
             </Card>
 
+            <DataConfidenceNotice />
+            <MembershipTimeline playerTag={member.player_tag} />
             {/* Member History */}
             {memberHistory && (
               <Card>
                 <CardHeader>
-                  <CardTitle>Membership History</CardTitle>
+                  <CardTitle><T text="Membership History" /></CardTitle>
                 </CardHeader>
                 <CardContent>
                   <div className="grid gap-4 md:grid-cols-2">
                     <div className="flex items-center gap-3">
                       <Calendar className="h-5 w-5 text-muted-foreground" />
                       <div>
-                        <p className="text-sm font-medium">First Joined</p>
+                        <p className="text-sm font-medium"><T text="First observed" /></p><p className="text-xs text-muted-foreground"><T text="First observed is when tracking first recorded this player, not necessarily their actual join date." /></p>
                         <p className="text-sm text-muted-foreground">
                           {memberHistory.first_seen && new Date(memberHistory.first_seen).getFullYear() > 1970
                             ? formatDate(memberHistory.first_seen)
-                            : "Since before tracking"}
+                            : <T text="Since before tracking" />}
                         </p>
                       </div>
                     </div>
                     <div className="flex items-center gap-3">
                       <Users className="h-5 w-5 text-muted-foreground" />
                       <div>
-                        <p className="text-sm font-medium">Times Joined</p>
+                        <p className="text-sm font-medium"><T text="Times Joined" /></p>
                         <p className="text-sm text-muted-foreground">
-                          {memberHistory.times_joined ?? 0} time(s)
-                        </p>
+                          {memberHistory.times_joined ?? 0} <T text=" time(s) " /></p>
                       </div>
                     </div>
                     <div className="flex items-center gap-3">
                       <Target className="h-5 w-5 text-muted-foreground" />
                       <div>
-                        <p className="text-sm font-medium">Times Left</p>
+                        <p className="text-sm font-medium"><T text="Times Left" /></p>
                         <p className="text-sm text-muted-foreground">
-                          {memberHistory.times_left ?? 0} time(s)
-                        </p>
+                          {memberHistory.times_left ?? 0} <T text=" time(s) " /></p>
                       </div>
                     </div>
                     <div className="flex items-center gap-3">
                       <Calendar className="h-5 w-5 text-muted-foreground" />
                       <div>
-                        <p className="text-sm font-medium">Last Active</p>
+                        <p className="text-sm font-medium"><T text="Last Active" /></p>
                         <p className="text-sm text-muted-foreground">
-                          {lastBattleTime ? formatRelativeTime(lastBattleTime) : "No recent battles"}
+                          {lastBattleTime ? formatRelativeTime(lastBattleTime) : <T text="No recent battles" />}
                         </p>
                       </div>
                     </div>

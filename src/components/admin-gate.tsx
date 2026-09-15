@@ -1,4 +1,6 @@
 "use client";
+import { T, useI18n, LanguageSelector } from "@/components/locale-provider";
+
 
 import { FormEvent, ReactNode, useState } from "react";
 import { LockKeyhole, ShieldAlert, ShieldCheck } from "lucide-react";
@@ -18,6 +20,7 @@ export function AdminGate({
   title = "Admin Access",
   description = "Sign in to manage sync, settings, API keys, webhooks, and destructive data actions.",
 }: AdminGateProps) {
+  const { t } = useI18n();
   const { configured, isAdmin, isLoading, login } = useAdminSession();
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
@@ -49,25 +52,23 @@ export function AdminGate({
   if (!configured) {
     return (
       <div className="flex min-h-[60vh] items-center justify-center p-4">
+        <div className="absolute end-4 top-4"><LanguageSelector /></div>
         <Card className="w-full max-w-lg border-amber-500/30 bg-amber-500/5">
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
               <ShieldAlert className="h-5 w-5 text-amber-500" />
-              Admin Not Configured
-            </CardTitle>
+              <T text=" Admin Not Configured " /></CardTitle>
             <CardDescription>
-              Add server-only admin environment variables before managing this app.
-            </CardDescription>
+              <T text=" Add server-only admin environment variables before managing this app. " /></CardDescription>
           </CardHeader>
           <CardContent className="space-y-3 text-sm text-muted-foreground">
             <p>
-              Set <code className="rounded bg-muted px-1.5 py-0.5">ADMIN_PASSWORD</code> in Vercel.
-              For stronger cookie signing, also set{" "}
-              <code className="rounded bg-muted px-1.5 py-0.5">ADMIN_SESSION_SECRET</code>.
+              <T text=" Set " /><code className="rounded bg-muted px-1.5 py-0.5"><T text="ADMIN_PASSWORD" /></code> <T text=" in Vercel. For stronger cookie signing, also set" />{" "}
+              <code className="rounded bg-muted px-1.5 py-0.5"><T text="ADMIN_SESSION_SECRET" /></code>.
             </p>
             <p>
-              These values must stay private. Do not prefix them with{" "}
-              <code className="rounded bg-muted px-1.5 py-0.5">NEXT_PUBLIC_</code>.
+              <T text=" These values must stay private. Do not prefix them with" />{" "}
+              <code className="rounded bg-muted px-1.5 py-0.5"><T text="NEXT_PUBLIC_" /></code>.
             </p>
           </CardContent>
         </Card>
@@ -83,22 +84,22 @@ export function AdminGate({
             <div className="mx-auto mb-3 flex h-12 w-12 items-center justify-center rounded-lg bg-primary/10 text-primary">
               <LockKeyhole className="h-6 w-6" />
             </div>
-            <CardTitle>{title}</CardTitle>
-            <CardDescription>{description}</CardDescription>
+            <div className="mx-auto mb-2"><LanguageSelector /></div>
+            <CardTitle><T text={title} /></CardTitle>
+            <CardDescription><T text={description} /></CardDescription>
           </CardHeader>
           <CardContent>
             <form className="space-y-4" onSubmit={handleSubmit}>
               <div className="space-y-2">
                 <label className="text-sm font-medium" htmlFor="admin-password">
-                  Admin Password
-                </label>
+                  <T text=" Admin Password " /></label>
                 <Input
                   id="admin-password"
                   type="password"
                   value={password}
                   onChange={(event) => setPassword(event.target.value)}
                   autoComplete="current-password"
-                  placeholder="Enter admin password"
+                  placeholder={t("Enter admin password")}
                 />
               </div>
 
@@ -110,7 +111,7 @@ export function AdminGate({
 
               <Button className="w-full gap-2" disabled={!password || isSubmitting}>
                 <ShieldCheck className="h-4 w-4" />
-                {isSubmitting ? "Signing in..." : "Sign In"}
+                {isSubmitting ? <T text="Signing in..." /> : <T text="Sign In" />}
               </Button>
             </form>
           </CardContent>

@@ -1,4 +1,6 @@
 "use client";
+import { T, useI18n } from "@/components/locale-provider";
+
 
 import { useEffect, useState, useCallback, useMemo, useRef } from "react";
 import Image from "next/image";
@@ -6,6 +8,7 @@ import Link from "next/link";
 import { supabase } from "@/lib/supabase";
 import { fetchJsonCached } from "@/lib/client-data-cache";
 import { getBrawlerIconFromMap, normalizeBrawlerName } from "@/lib/brawl-assets";
+import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetDescription } from "@/components/ui/sheet";
 import { LayoutWrapper } from "@/components/layout-wrapper";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -128,30 +131,7 @@ function getMatchType(mode: string, totalTrophyChange: number, result: string) {
 // Compute time-ago using a server-relative clock to avoid client timezone/clock issues.
 // clockDelta = clientNow - serverNow at the moment the API responded.
 // adjustedNow = Date.now() - clockDelta ≈ current server time.
-function timeAgo(dateStr: string, clockDelta = 0): string {
-  const now = Date.now() - clockDelta;
-  const date = new Date(dateStr).getTime();
-  const seconds = Math.floor((now - date) / 1000);
-  // Handle small future values (clock skew / remaining offset)
-  if (seconds < 0) {
-    if (seconds > -120) return "just now";
-    // Larger future gap: show absolute value as approximate relative time
-    const absSec = Math.abs(seconds);
-    const m = Math.floor(absSec / 60);
-    if (m < 60) return `${m}m ago`;
-    const h = Math.floor(m / 60);
-    if (h < 24) return `${h}h ago`;
-    return new Date(dateStr).toLocaleDateString();
-  }
-  if (seconds < 60) return "just now";
-  const minutes = Math.floor(seconds / 60);
-  if (minutes < 60) return `${minutes}m ago`;
-  const hours = Math.floor(minutes / 60);
-  if (hours < 24) return `${hours}h ago`;
-  const days = Math.floor(hours / 24);
-  if (days < 7) return `${days}d ago`;
-  return new Date(dateStr).toLocaleDateString();
-}
+
 
 function BrawlerChip({ brawler, power, brawlerIconByName }: {
   brawler: string | null;
@@ -161,7 +141,7 @@ function BrawlerChip({ brawler, power, brawlerIconByName }: {
   const [imgError, setImgError] = useState(false);
 
   if (!brawler) {
-    return <span className="text-xs text-muted-foreground">Unknown Brawler</span>;
+    return <span className="text-xs text-muted-foreground"><T text="Unknown Brawler" /></span>;
   }
 
   const iconUrl = getBrawlerIconFromMap(brawler, brawlerIconByName);
@@ -186,7 +166,7 @@ function BrawlerChip({ brawler, power, brawlerIconByName }: {
           )}
         </div>
         {power ? (
-          <span className="absolute right-0 bottom-0 translate-x-1/4 translate-y-1/4 min-w-[15px] h-[15px] rounded-full bg-black text-white border border-white/40 text-[9px] leading-[15px] text-center font-bold shadow">
+          <span className="absolute end-0 bottom-0 translate-x-1/4 translate-y-1/4 min-w-[15px] h-[15px] rounded-full bg-black text-white border border-white/40 text-[9px] leading-[15px] text-center font-bold shadow">
             {power}
           </span>
         ) : null}
@@ -216,19 +196,18 @@ function PlayerRow({ tag, name, brawler, power, isClub, trophyChange, isStar, re
         </span>
         {isStar && <Star className="h-3 w-3 text-yellow-500 fill-yellow-500 flex-shrink-0" />}
       </div>
-      <div className="flex items-center gap-2 flex-shrink-0 ml-2">
+      <div className="flex items-center gap-2 flex-shrink-0 ms-2">
         <BrawlerChip brawler={brawler} power={power} brawlerIconByName={brawlerIconByName} />
         {trophyChange !== undefined && (
           <span className={`text-xs font-bold min-w-[34px] text-right ${
             trophyChange > 0 ? "text-green-500" : trophyChange < 0 ? "text-red-500" : "text-muted-foreground"
           }`}>
-            {trophyChange > 0 ? `+${trophyChange}` : trophyChange < 0 ? trophyChange : (result && result !== "unknown" ? "N/A" : "±0")}
+            {trophyChange > 0 ? <T text="+{value0}" values={{ value0: String(trophyChange) }} /> : trophyChange < 0 ? trophyChange : (result && result !== "unknown" ? "N/A" : "±0")}
           </span>
         )}
         {result === "unknown" && (
           <Badge variant="outline" className="text-[10px] h-5 px-1.5 text-muted-foreground border-border">
-            Friendly
-          </Badge>
+            <T text=" Friendly " /></Badge>
         )}
       </div>
     </div>
@@ -250,6 +229,7 @@ function MatchCard({ match, clubTags, clockDelta, brawlerIconByName }: {
   clockDelta: number;
   brawlerIconByName: Record<string, string>;
 }) {
+  const { relative, t } = useI18n();
   const [expanded, setExpanded] = useState(false);
   const mainResult = match.clubPlayers[0]?.result || "unknown";
   const style = RESULT_STYLES[mainResult] || RESULT_STYLES.draw;
@@ -264,50 +244,48 @@ function MatchCard({ match, clubTags, clockDelta, brawlerIconByName }: {
   return (
     <div className={`rounded-xl border ${style.border} ${style.bg} overflow-hidden`}>
       {/* Match header */}
-      <div className="flex items-center justify-between px-4 py-2.5 border-b border-border/50">
+      <div className="flex flex-wrap items-center justify-between gap-2 px-4 py-2.5 border-b border-border/50">
         <div className="flex items-center gap-2">
           <span className="text-lg">{getModeIcon(match.mode)}</span>
           <div>
-            <span className="text-sm font-semibold">{formatMode(match.mode)}</span>
-            <span className="text-xs text-muted-foreground ml-2">{match.map !== "unknown" ? match.map : ""}</span>
+            <span className="text-sm font-semibold">{t(formatMode(match.mode))}</span>
+            <span className="text-xs text-muted-foreground ms-2">{match.map !== "unknown" ? match.map : ""}</span>
           </div>
         </div>
-        <div className="flex items-center gap-3">
+        <div className="flex flex-wrap items-center gap-2">
           <Badge variant="outline" className={`text-xs ${matchType.className}`}>
-            {matchType.label}
+            {<T text={matchType.label} />}
           </Badge>
           {isPremade && (
             <Badge variant="outline" className="text-xs text-cyan-400 border-cyan-500/40">
-              <Users className="h-3 w-3 mr-1" />Club Squad
-            </Badge>
+              <Users className="h-3 w-3 me-1" /><T text="Club Squad " /></Badge>
           )}
           <Badge variant="outline" className={`${style.text} border-current text-xs`}>
-            {style.label}
+            {<T text={style.label} />}
           </Badge>
           {hasPointData ? (
             <span className={`text-sm font-bold ${
               totalTrophyChange > 0 ? "text-green-500" : totalTrophyChange < 0 ? "text-red-500" : "text-muted-foreground"
             }`}>
-              {totalTrophyChange > 0 ? `+${totalTrophyChange}` : totalTrophyChange < 0 ? totalTrophyChange : "±0"}
+              {totalTrophyChange > 0 ? <T text="+{value0}" values={{ value0: String(totalTrophyChange) }} /> : totalTrophyChange < 0 ? totalTrophyChange : "±0"}
             </span>
           ) : (
             <Badge variant="outline" className="text-[10px] h-5 px-1.5 text-muted-foreground border-border">
-              Points N/A
-            </Badge>
+              <T text=" Points N/A " /></Badge>
           )}
-          <span className="text-xs text-muted-foreground">{timeAgo(match.battle_time, clockDelta)}</span>
+          <span className="text-xs text-muted-foreground">{relative(new Date(new Date(match.battle_time).getTime() + clockDelta))}</span>
         </div>
       </div>
 
       <div className="px-4 py-2.5 border-b border-border/40">
         <div className="flex items-center justify-between mb-1.5">
-          <span className="text-[11px] uppercase tracking-wide text-muted-foreground font-semibold">Club Players</span>
+          <span className="text-[11px] uppercase tracking-wide text-muted-foreground font-semibold"><T text="Club Players" /></span>
           <button
             type="button"
             onClick={() => setExpanded((v) => !v)}
             className="inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground"
           >
-            {expanded ? "Hide Teams" : "Show Teams"}
+            {expanded ? <T text="Hide Teams" /> : <T text="Show Teams" />}
             {expanded ? <ChevronUp className="h-3.5 w-3.5" /> : <ChevronDown className="h-3.5 w-3.5" />}
           </button>
         </div>
@@ -335,7 +313,7 @@ function MatchCard({ match, clubTags, clockDelta, brawlerIconByName }: {
         <div className="px-4 py-3">
           <div className="flex items-center gap-1.5 mb-2">
             <Shield className="h-3.5 w-3.5 text-blue-500" />
-            <span className="text-xs font-semibold text-blue-500 uppercase tracking-wide">Players</span>
+            <span className="text-xs font-semibold text-blue-500 uppercase tracking-wide"><T text="Players" /></span>
           </div>
           <div className="space-y-0.5">
             {(match.ourTeam || match.clubPlayers).map((p) => {
@@ -361,7 +339,7 @@ function MatchCard({ match, clubTags, clockDelta, brawlerIconByName }: {
             <>
               <div className="flex items-center gap-1.5 mb-2 mt-3">
                 <ShieldAlert className="h-3.5 w-3.5 text-red-500" />
-                <span className="text-xs font-semibold text-red-500 uppercase tracking-wide">Other Players</span>
+                <span className="text-xs font-semibold text-red-500 uppercase tracking-wide"><T text="Other Players" /></span>
               </div>
               <div className="space-y-0.5">
                 {match.theirTeam.map((p) => (
@@ -385,7 +363,7 @@ function MatchCard({ match, clubTags, clockDelta, brawlerIconByName }: {
           <div className="px-4 py-3">
             <div className="flex items-center gap-1.5 mb-2">
               <Shield className="h-3.5 w-3.5 text-blue-500" />
-              <span className="text-xs font-semibold text-blue-500 uppercase tracking-wide">Your Team</span>
+              <span className="text-xs font-semibold text-blue-500 uppercase tracking-wide"><T text="Your Team" /></span>
             </div>
             <div className="space-y-0.5">
               {match.ourTeam ? (
@@ -429,7 +407,7 @@ function MatchCard({ match, clubTags, clockDelta, brawlerIconByName }: {
           <div className="px-4 py-3">
             <div className="flex items-center gap-1.5 mb-2">
               <ShieldAlert className="h-3.5 w-3.5 text-red-500" />
-              <span className="text-xs font-semibold text-red-500 uppercase tracking-wide">Opponents</span>
+              <span className="text-xs font-semibold text-red-500 uppercase tracking-wide"><T text="Opponents" /></span>
             </div>
             <div className="space-y-0.5">
               {match.theirTeam ? (
@@ -446,8 +424,7 @@ function MatchCard({ match, clubTags, clockDelta, brawlerIconByName }: {
                 ))
               ) : (
                 <p className="text-xs text-muted-foreground italic py-2">
-                  No opponent data available
-                </p>
+                  <T text=" No opponent data available " /></p>
               )}
             </div>
           </div>
@@ -458,6 +435,8 @@ function MatchCard({ match, clubTags, clockDelta, brawlerIconByName }: {
 }
 
 export default function BattleFeedPage() {
+  const { number } = useI18n();
+  const { t, locale } = useI18n();
   const [matches, setMatches] = useState<Match[]>([]);
   const [total, setTotal] = useState(0);
   const [modes, setModes] = useState<string[]>([]);
@@ -465,6 +444,7 @@ export default function BattleFeedPage() {
   const [clubTags, setClubTags] = useState<Set<string>>(new Set());
   const [isLoading, setIsLoading] = useState(true);
   const [isLoadingMore, setIsLoadingMore] = useState(false);
+  const [filtersOpen, setFiltersOpen] = useState(false);
   const [filterMode, setFilterMode] = useState<string>("");
   const [filterPlayer, setFilterPlayer] = useState<string>("");
   const [filterDate, setFilterDate] = useState<string>("");
@@ -474,7 +454,6 @@ export default function BattleFeedPage() {
   const [isLive, setIsLive] = useState(false);
   const [clockDelta, setClockDelta] = useState(0);
   const [brawlerIconByName, setBrawlerIconByName] = useState<Record<string, string>>({});
-  const memberDropdownRef = useRef<HTMLDivElement>(null);
   const loadSequence = useRef(0);
 
   const PAGE_SIZE = 50;
@@ -634,7 +613,7 @@ export default function BattleFeedPage() {
   // Close member dropdown on outside click
   useEffect(() => {
     function handleClickOutside(e: MouseEvent) {
-      if (memberDropdownRef.current && !memberDropdownRef.current.contains(e.target as Node)) {
+      if (!(e.target instanceof Element) || !e.target.closest("[data-member-filter]")) {
         setShowMemberDropdown(false);
       }
     }
@@ -661,54 +640,31 @@ export default function BattleFeedPage() {
     const now = new Date();
     for (let i = 0; i < 14; i++) {
       const d = new Date(now);
-      d.setDate(d.getDate() - i);
+      d.setUTCDate(d.getUTCDate() - i);
       const value = d.toISOString().slice(0, 10);
       let label: string;
       if (i === 0) label = "Today";
       else if (i === 1) label = "Yesterday";
-      else label = d.toLocaleDateString("en-US", { month: "short", day: "numeric" });
+      else label = d.toLocaleDateString(locale === "ar" ? "ar-TN" : "en-GB", { month: "short", day: "numeric", timeZone: "UTC" });
       days.push({ label, value });
     }
     return days;
-  }, []);
+  }, [locale]);
 
-  return (
-    <LayoutWrapper>
-      <div className="space-y-4">
-        {/* Header + Filters */}
-        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-          <div>
-            <h1 className="text-2xl font-bold flex items-center gap-2">
-              <Swords className="h-6 w-6 text-blue-500" />
-              Battle Feed
-            </h1>
-            <div className="flex items-center gap-3">
-              <p className="text-sm text-muted-foreground">
-                {total.toLocaleString()} battles tracked
-              </p>
-              {isLive && (
-                <span className="flex items-center gap-1.5 text-xs font-medium text-green-500">
-                  <Radio className="h-3 w-3 animate-pulse" />
-                  Live
-                </span>
-              )}
-            </div>
-          </div>
-
-          <div className="flex items-center gap-2">
+  const filterControls = (<div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:gap-2">
             <select
-              value={filterMode}
+              aria-label={t("Game mode")} value={filterMode}
               onChange={(e) => setFilterMode(e.target.value)}
               className="h-9 rounded-md border border-border bg-background px-2 text-sm"
             >
-              <option value="">All Modes</option>
+              <option value=""><T text="All Modes" /></option>
               {modes.map((m) => (
                 <option key={m} value={m}>
-                  {getModeIcon(m)} {formatMode(m)}
+                  {getModeIcon(m)} {t(formatMode(m))}
                 </option>
               ))}
             </select>
-            <div className="relative" ref={memberDropdownRef}>
+            <div className="relative" data-member-filter>
               <div className="relative">
                 <input
                   type="text"
@@ -719,32 +675,32 @@ export default function BattleFeedPage() {
                     setShowMemberDropdown(true);
                   }}
                   onFocus={() => setShowMemberDropdown(true)}
-                  placeholder="All Members / Search..."
-                  className="h-9 w-44 rounded-md border border-border bg-background px-2 text-sm placeholder:text-muted-foreground/50 pr-7"
+                  placeholder={t("All Members / Search...")}
+                  className="h-9 w-full sm:w-44 rounded-md border border-border bg-background px-2 text-sm placeholder:text-muted-foreground/50 pe-7"
                 />
                 {filterPlayer && (
                   <button
                     onClick={() => { setFilterPlayer(""); setMemberSearch(""); }}
-                    className="absolute right-1.5 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+                    className="absolute end-1.5 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
                   >
                     <X className="h-3.5 w-3.5" />
                   </button>
                 )}
                 {showMemberDropdown && !filterPlayer && (
-                  <div className="absolute right-0 z-50 mt-1 w-56 max-h-52 overflow-y-auto rounded-md border border-border bg-background shadow-lg">
+                  <div className="absolute end-0 z-50 mt-1 w-56 max-h-52 overflow-y-auto rounded-md border border-border bg-background shadow-lg">
                     <button
                       onClick={() => {
                         setFilterPlayer("");
                         setMemberSearch("");
                         setShowMemberDropdown(false);
                       }}
-                      className="w-full text-left px-3 py-1.5 text-sm hover:bg-accent/50 flex justify-between items-center border-b border-border/50"
+                      className="w-full text-start px-3 py-1.5 text-sm hover:bg-accent/50 flex justify-between items-center border-b border-border/50"
                     >
-                      <span>All Members</span>
-                      <span className="text-xs text-muted-foreground">Any</span>
+                      <span><T text="All Members" /></span>
+                      <span className="text-xs text-muted-foreground"><T text="Any" /></span>
                     </button>
                     {filteredMembers.length === 0 ? (
-                      <div className="px-3 py-2 text-xs text-muted-foreground">No members found</div>
+                      <div className="px-3 py-2 text-xs text-muted-foreground"><T text="No members found" /></div>
                     ) : (
                       filteredMembers.map((m) => (
                         <button
@@ -754,10 +710,10 @@ export default function BattleFeedPage() {
                             setMemberSearch("");
                             setShowMemberDropdown(false);
                           }}
-                          className="w-full text-left px-3 py-1.5 text-sm hover:bg-accent/50 flex justify-between items-center"
+                          className="w-full text-start px-3 py-1.5 text-sm hover:bg-accent/50 flex justify-between items-center"
                         >
                           <span>{m.name}</span>
-                          <span className="text-xs text-muted-foreground">{m.tag}</span>
+                          <span className="text-xs text-muted-foreground"><bdi dir="ltr">{m.tag}</bdi></span>
                         </button>
                       ))
                     )}
@@ -766,21 +722,44 @@ export default function BattleFeedPage() {
               </div>
             </div>
             <select
-              value={filterDate}
+              aria-label={t("Date (UTC)")} value={filterDate}
               onChange={(e) => setFilterDate(e.target.value)}
               className="h-9 rounded-md border border-border bg-background px-2 text-sm"
             >
-              <option value="">All Days</option>
+              <option value=""><T text="All Days" /></option>
               {dateOptions.map((d) => (
-                <option key={d.value} value={d.value}>{d.label}</option>
+                <option key={d.value} value={d.value}>{<T text={d.label} />}</option>
               ))}
             </select>
             {(filterMode || filterPlayer || filterDate) && (
-              <Button variant="ghost" size="sm" className="h-9 px-2" onClick={() => { setFilterMode(""); setFilterPlayer(""); setFilterDate(""); setMemberSearch(""); }}>
+              <Button variant="ghost" size="sm" className="h-9 px-2" aria-label={t("Clear filters")} onClick={() => { setFilterMode(""); setFilterPlayer(""); setFilterDate(""); setMemberSearch(""); }}>
                 <X className="h-3.5 w-3.5" />
               </Button>
             )}
+          </div>);
+
+  return (
+    <LayoutWrapper>
+      <div className="space-y-4">
+        {/* Header + Filters */}
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <div>
+            <h1 className="text-2xl font-bold flex items-center gap-2">
+              <Swords className="h-6 w-6 text-blue-500" />
+              <T text=" Battle Feed " /></h1>
+            <div className="flex items-center gap-3">
+              <p className="text-sm text-muted-foreground">
+                {number(total)} <T text=" battles tracked " /></p>
+              {isLive && (
+                <span className="flex items-center gap-1.5 text-xs font-medium text-green-500">
+                  <Radio className="h-3 w-3 animate-pulse" />
+                  <T text=" Live " /></span>
+              )}
+            </div>
           </div>
+
+          <div className="hidden sm:block">{filterControls}</div>
+          <div className="sm:hidden"><Button variant="outline" onClick={() => setFiltersOpen(true)}>{t("Filters")}</Button><Sheet open={filtersOpen} onOpenChange={setFiltersOpen}><SheetContent side="bottom" className="max-h-[85dvh] overflow-y-auto"><SheetHeader><SheetTitle>{t("Filters")}</SheetTitle><SheetDescription>{t("Choose mode, member and UTC day.")}</SheetDescription></SheetHeader><div className="mt-5">{filterControls}</div><Button className="mt-5 w-full" onClick={() => setFiltersOpen(false)}>{t("Apply filters")}</Button></SheetContent></Sheet></div>
         </div>
 
         {/* Matches */}
@@ -792,8 +771,8 @@ export default function BattleFeedPage() {
           <Card>
             <CardContent className="py-12 text-center text-muted-foreground">
               <Swords className="h-12 w-12 mx-auto mb-3 opacity-30" />
-              <p className="font-medium">No matches recorded yet</p>
-              <p className="text-sm mt-1">Matches will appear here after syncing your club.</p>
+              <p className="font-medium"><T text="No matches recorded yet" /></p>
+              <p className="text-sm mt-1"><T text="Matches will appear here after syncing your club." /></p>
             </CardContent>
           </Card>
         ) : (
@@ -822,8 +801,7 @@ export default function BattleFeedPage() {
                   ) : (
                     <ChevronDown className="h-3.5 w-3.5" />
                   )}
-                  Load More
-                </Button>
+                  <T text=" Load More " /></Button>
               </div>
             )}
           </div>

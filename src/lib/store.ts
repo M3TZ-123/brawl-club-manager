@@ -14,6 +14,7 @@ interface AppState {
   isLoadingSettings: boolean;
   hasLoadedSettings: boolean;
   theme: "light" | "dark";
+  locale: "en" | "ar";
   sidebarOpen: boolean;
   
   // Settings
@@ -32,6 +33,7 @@ interface AppState {
   setIsSyncing: (syncing: boolean) => void;
   setIsLoadingSettings: (loading: boolean) => void;
   setTheme: (theme: "light" | "dark") => void;
+  setLocale: (locale: "en" | "ar") => void;
   setSidebarOpen: (open: boolean) => void;
   toggleSidebar: () => void;
   setInactivityThreshold: (hours: number) => void;
@@ -67,6 +69,7 @@ export const useAppStore = create<AppState>()(
       isLoadingSettings: true,
       hasLoadedSettings: false,
       theme: "dark",
+      locale: "en",
       sidebarOpen: true,
       inactivityThreshold: 48,
       refreshInterval: 60, // 1 hour
@@ -83,6 +86,7 @@ export const useAppStore = create<AppState>()(
       setIsSyncing: (syncing) => set({ isSyncing: syncing }),
       setIsLoadingSettings: (loading) => set({ isLoadingSettings: loading }),
       setTheme: (theme) => set({ theme }),
+      setLocale: (locale) => set({ locale }),
       setSidebarOpen: (open) => set({ sidebarOpen: open }),
       toggleSidebar: () => set((state) => ({ sidebarOpen: !state.sidebarOpen })),
       setInactivityThreshold: (hours) => set({ inactivityThreshold: hours }),
@@ -185,6 +189,7 @@ export const useAppStore = create<AppState>()(
       name: "brawl-club-manager-storage",
       partialize: (state) => ({
         theme: state.theme,
+        locale: state.locale,
         sidebarOpen: state.sidebarOpen,
         clubTag: state.clubTag,
         clubName: state.clubName,

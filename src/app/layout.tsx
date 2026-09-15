@@ -1,9 +1,11 @@
 import type { Metadata } from "next";
-import { Inter } from "next/font/google";
+import { Inter, Noto_Sans_Arabic } from "next/font/google";
 import "./globals.css";
 import { ThemeProvider } from "@/components/theme-provider";
+import { LocaleProvider } from "@/components/locale-provider";
 
 const inter = Inter({ subsets: ["latin"] });
+const arabic = Noto_Sans_Arabic({ subsets: ["arabic"], variable: "--font-arabic" });
 
 const siteUrl = process.env.NEXT_PUBLIC_SITE_URL || "https://brawl-club-manager.vercel.app";
 const siteName = "BrawlStatz";
@@ -66,6 +68,9 @@ const themeScript = `
       if (stored) {
         const parsed = JSON.parse(stored);
         const theme = parsed.state?.theme || 'dark';
+        const locale = parsed.state?.locale === 'ar' ? 'ar' : 'en';
+        document.documentElement.lang = locale;
+        document.documentElement.dir = locale === 'ar' ? 'rtl' : 'ltr';
         document.documentElement.classList.add(theme);
       } else {
         document.documentElement.classList.add('dark');
@@ -111,9 +116,11 @@ export default function RootLayout({
           dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }}
         />
       </head>
-      <body className={`${inter.className} antialiased`}>
+      <body className={`${inter.className} ${arabic.variable} antialiased`}>
         <ThemeProvider>
+          <LocaleProvider>
           {children}
+          </LocaleProvider>
         </ThemeProvider>
       </body>
     </html>

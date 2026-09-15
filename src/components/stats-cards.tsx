@@ -1,8 +1,10 @@
 "use client";
+import { T, useI18n } from "@/components/locale-provider";
+
 
 import { memo, useMemo } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { formatNumber } from "@/lib/utils";
+
 import { Trophy, Users, TrendingUp, Activity } from "lucide-react";
 
 interface StatsCardsProps {
@@ -18,6 +20,7 @@ export const StatsCards = memo(function StatsCards({
   activeMembers,
   avgTrophies,
 }: StatsCardsProps) {
+  const { number: formatNumber, t } = useI18n();
   const cards = useMemo(() => [
     {
       title: "Total Members",
@@ -37,7 +40,7 @@ export const StatsCards = memo(function StatsCards({
       title: "Active Players",
       value: activeMembers,
       icon: Activity,
-      description: `${totalMembers > 0 ? Math.round((activeMembers / totalMembers) * 100) : 0}% active`,
+      description: t("{percent}% active", {percent: totalMembers > 0 ? Math.round((activeMembers / totalMembers) * 100) : 0}),
       color: "text-green-500",
     },
     {
@@ -47,19 +50,19 @@ export const StatsCards = memo(function StatsCards({
       description: "Per member",
       color: "text-purple-500",
     },
-  ], [activeMembers, avgTrophies, totalMembers, totalTrophies]);
+  ], [activeMembers, avgTrophies, totalMembers, totalTrophies, formatNumber, t]);
 
   return (
     <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
       {cards.map((card) => (
         <Card key={card.title}>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">{card.title}</CardTitle>
+            <CardTitle className="text-sm font-medium">{<T text={card.title} />}</CardTitle>
             <card.icon className={`h-5 w-5 ${card.color}`} />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">{card.value}</div>
-            <p className="text-xs text-muted-foreground">{card.description}</p>
+            <div className="text-2xl font-bold"><T text={card.value} /></div>
+            <p className="text-xs text-muted-foreground">{<T text={card.description} />}</p>
           </CardContent>
         </Card>
       ))}

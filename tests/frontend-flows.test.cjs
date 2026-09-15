@@ -163,7 +163,12 @@ function hookRenderer() {
   } };
 }
 
+const i18n = { t: (text, values = {}) => text.replace(/\{(\w+)\}/g, (_, key) => String(values[key] ?? `{${key}}`)), locale: "en", direction: "ltr", number: value => Number(value).toLocaleString("en-GB"), delta: value => String(value), date: value => value || "Unknown", dateTime: value => value || "Unknown", reportDate: value => value, relative: value => value || "Unknown" };
 const componentMocks = {
+  "@/components/locale-provider": { T: "T", LocalDate: "LocalDate", LanguageSelector: "LanguageSelector", useI18n: () => i18n },
+  "@/components/sync-health": { SyncHealthCard: "SyncHealthCard", DataConfidenceNotice: "DataConfidenceNotice" },
+  "@/components/member-review": { MemberReviewButton: "MemberReviewButton", MemberReviewSheet: "MemberReviewSheet" },
+  "@/components/ui/sheet": Object.fromEntries(["Sheet", "SheetContent", "SheetHeader", "SheetTitle", "SheetDescription"].map(name => [name, name])),
   "@/components/admin-gate": { AdminGate: "AdminGate" },
   "@/components/layout-wrapper": { LayoutWrapper: "LayoutWrapper" },
   "@/components/stats-cards": { StatsCards: "StatsCards" },
@@ -185,10 +190,11 @@ function elements(tree) {
 function textContent(tree) {
   if (tree == null) return "";
   if (Array.isArray(tree)) return tree.map(textContent).join("");
+  if (tree?.type === "T") return i18n.t(String(tree.props.text || ""), tree.props.values);
   return typeof tree === "object" ? textContent(tree.props?.children) : String(tree);
 }
 function action(tree, text) {
-  const match = elements(tree).find(element => element.props?.onClick && textContent(element) === text);
+  const match = elements(tree).find(element => element.props?.onClick && textContent(element).replace(/\s+/g, " ").trim() === text);
   assert.ok(match, `Missing action: ${text}`);
   return match.props.onClick;
 }

@@ -1,47 +1,24 @@
 name: Auto Sync Club Data
-
 on:
+  schedule:
+    - cron: '17,47 * * * *'
   workflow_dispatch:
-
+permissions:
+  contents: read
+concurrency:
+  group: club-sync
+  cancel-in-progress: false
 jobs:
   sync:
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 8
     steps:
-      - name: Trigger Sync
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Sync with a stable request ID
         env:
           CRON_SECRET: ${{ secrets.CRON_SECRET }}
           VERCEL_APP_URL: ${{ secrets.VERCEL_APP_URL }}
-        run: |
-          if [ -z "$CRON_SECRET" ]; then
-            echo "Missing GitHub secret: CRON_SECRET"
-            exit 1
-          fi
-
-          APP_URL="${VERCEL_APP_URL:-https://brawlstatz.vercel.app}"
-          APP_URL="${APP_URL%/}"
-          SYNC_URL="$APP_URL/api/sync"
-
-          echo "Triggering sync at $SYNC_URL"
-          HTTP_CODE=$(curl \
-            --silent \
-            --show-error \
-            --max-time 300 \
-            --retry 2 \
-            --retry-delay 10 \
-            --output response.json \
-            --write-out "%{http_code}" \
-            -X GET \
-            -H "Authorization: Bearer $CRON_SECRET" \
-            "$SYNC_URL")
-
-          echo "Response:"
-          cat response.json
-          echo "HTTP Code: $HTTP_CODE"
-
-          if [ "$HTTP_CODE" -ge 200 ] && [ "$HTTP_CODE" -lt 300 ]; then
-            echo "Sync successful."
-          else
-            echo "Sync failed."
-            exit 1
-          fi
+        run: node scripts/scheduled-sync.cjs

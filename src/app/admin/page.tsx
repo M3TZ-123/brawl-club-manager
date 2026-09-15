@@ -1,4 +1,6 @@
 "use client";
+import { T } from "@/components/locale-provider";
+
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
@@ -23,15 +25,13 @@ function AdminPanel() {
       <div className="mx-auto max-w-5xl space-y-6">
         <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <div>
-            <h1 className="text-2xl font-bold">Admin</h1>
+            <h1 className="text-2xl font-bold"><T text="Admin" /></h1>
             <p className="text-muted-foreground">
-              Manage protected operations and sensitive configuration.
-            </p>
+              <T text=" Manage protected operations and sensitive configuration. " /></p>
           </div>
           <Button variant="outline" className="gap-2" onClick={handleLogout}>
             <LogOut className="h-4 w-4" />
-            Sign Out
-          </Button>
+            <T text=" Sign Out " /></Button>
         </div>
 
         <div className="grid gap-4 md:grid-cols-3">
@@ -39,11 +39,9 @@ function AdminPanel() {
             <CardHeader>
               <CardTitle className="flex items-center gap-2 text-base">
                 <ShieldCheck className="h-5 w-5 text-green-500" />
-                Protected
-              </CardTitle>
+                <T text=" Protected " /></CardTitle>
               <CardDescription>
-                Admin session is active on this browser.
-              </CardDescription>
+                <T text=" Admin session is active on this browser. " /></CardDescription>
             </CardHeader>
           </Card>
 
@@ -51,15 +49,13 @@ function AdminPanel() {
             <CardHeader>
               <CardTitle className="flex items-center gap-2 text-base">
                 <KeyRound className="h-5 w-5 text-primary" />
-                Settings
-              </CardTitle>
+                <T text=" Settings " /></CardTitle>
               <CardDescription>
-                API keys and webhooks are editable only after admin login.
-              </CardDescription>
+                <T text=" API keys and webhooks are editable only after admin login. " /></CardDescription>
             </CardHeader>
             <CardContent>
               <Button asChild variant="outline" className="w-full">
-                <Link href="/settings">Open Settings</Link>
+                <Link href="/settings"><T text="Open Settings" /></Link>
               </Button>
             </CardContent>
           </Card>
@@ -68,15 +64,13 @@ function AdminPanel() {
             <CardHeader>
               <CardTitle className="flex items-center gap-2 text-base">
                 <RotateCw className="h-5 w-5 text-amber-500" />
-                Sync
-              </CardTitle>
+                <T text=" Sync " /></CardTitle>
               <CardDescription>
-                Manual sync and player refresh actions are admin-only.
-              </CardDescription>
+                <T text=" Manual sync and player refresh actions are admin-only. " /></CardDescription>
             </CardHeader>
             <CardContent>
               <Button asChild variant="outline" className="w-full">
-                <Link href="/">Go to Dashboard</Link>
+                <Link href="/"><T text="Go to Dashboard" /></Link>
               </Button>
             </CardContent>
           </Card>
@@ -86,17 +80,14 @@ function AdminPanel() {
           <CardHeader>
             <CardTitle className="flex items-center gap-2 text-base">
               <Database className="h-5 w-5 text-cyan-500" />
-              Database Security
-            </CardTitle>
+              <T text=" Database Security " /></CardTitle>
             <CardDescription>
-              Public reads stay available, while writes and sensitive settings go through server API routes.
-            </CardDescription>
+              <T text=" Public reads stay available, while writes and sensitive settings go through server API routes. " /></CardDescription>
           </CardHeader>
           <CardContent className="text-sm text-muted-foreground">
-            Keep <code className="rounded bg-muted px-1.5 py-0.5">SUPABASE_SERVICE_ROLE_KEY</code>,{" "}
-            <code className="rounded bg-muted px-1.5 py-0.5">ADMIN_PASSWORD</code>, and{" "}
-            <code className="rounded bg-muted px-1.5 py-0.5">ADMIN_SESSION_SECRET</code> private in Vercel.
-          </CardContent>
+            <T text=" Keep " /><code className="rounded bg-muted px-1.5 py-0.5"><T text="SUPABASE_SERVICE_ROLE_KEY" /></code>,{" "}
+            <code className="rounded bg-muted px-1.5 py-0.5"><T text="ADMIN_PASSWORD" /></code><T text=", and" />{" "}
+            <code className="rounded bg-muted px-1.5 py-0.5"><T text="ADMIN_SESSION_SECRET" /></code> <T text=" private in Vercel. " /></CardContent>
         </Card>
       </div>
     </LayoutWrapper>

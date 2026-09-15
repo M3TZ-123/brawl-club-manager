@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabase-admin";
-import { ClubEvent, Member } from "@/types/database";
+import { Member } from "@/types/database";
 import {
   appendMemberActivityMetrics,
   MemberActivityMetrics,
@@ -75,7 +75,7 @@ export async function GET() {
         .eq("is_current_member", true),
       supabaseAdmin
         .from("club_events")
-        .select("*")
+        .select("id, event_type, player_tag, player_name, event_time")
         .order("event_time", { ascending: false })
         .limit(5),
     ]);
@@ -176,7 +176,9 @@ export async function GET() {
           source: "cron-job.org",
           intervalMinutes: 30,
         },
-        recentEvents: (eventsRes.data || []) as ClubEvent[],
+        recentEvents: (eventsRes.data || []).map(({ id, event_type, player_tag, player_name, event_time }) => ({
+          id, event_type, player_tag, player_name, event_time,
+        })),
         generatedAt: now.toISOString(),
       },
       { headers: { "Cache-Control": "no-store" } }

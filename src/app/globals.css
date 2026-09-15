@@ -1,5 +1,10 @@
 @import "tailwindcss";
 
+html[lang="ar"] body { font-family: var(--font-arabic), sans-serif; }
+[dir="rtl"] .recharts-wrapper { direction: ltr; }
+.player-tag { direction: ltr; unicode-bidi: isolate; display: inline-block; }
+[dir="rtl"] .lucide-arrow-left { transform: scaleX(-1); }
+
 @theme {
   --color-background: hsl(var(--background));
   --color-foreground: hsl(var(--foreground));
@@ -138,4 +143,3 @@ body {
 .scrollbar-hide::-webkit-scrollbar {
   display: none;
 }
-

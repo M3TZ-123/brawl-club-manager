@@ -1,12 +1,15 @@
 "use client";
+import { T, useI18n } from "@/components/locale-provider";
+
 
 import dynamic from "next/dynamic";
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { DataConfidenceNotice } from "@/components/sync-health";
 import { LayoutWrapper } from "@/components/layout-wrapper";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { fetchJsonCached, invalidateJsonCache } from "@/lib/client-data-cache";
-import { formatNumber, formatDate } from "@/lib/utils";
+
 import { Download, RefreshCw, TrendingUp, TrendingDown, Users, Trophy } from "lucide-react";
 
 interface WeeklyReport {
@@ -42,11 +45,7 @@ function escapeHtml(value: unknown) {
     .replace(/'/g, "&#39;");
 }
 
-function formatReportDate(value: string) {
-  return new Date(value).toLocaleDateString("en-US", {
-    month: "short", day: "numeric", year: "numeric", timeZone: "UTC",
-  });
-}
+
 
 function ReportChartSkeleton() {
   return (
@@ -91,6 +90,8 @@ const ActivityPieChart = dynamic(
 );
 
 export default function ReportsPage() {
+  const { t, locale, direction } = useI18n();
+  const { date: formatDate, reportDate: formatReportDate, number: formatNumber } = useI18n();
   const [report, setReport] = useState<WeeklyReport | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [isRefreshing, setIsRefreshing] = useState(false);
@@ -136,38 +137,39 @@ export default function ReportsPage() {
     const periodEnd = escapeHtml(formatReportDate(report.period.end));
 
     const content = `
-      <html>
+      <html lang="${locale}" dir="${direction}">
         <head>
-          <title>Club Weekly Report - ${generatedAt}</title>
+          <title>${escapeHtml(t("Club Weekly Report"))} - ${generatedAt}</title>
           <style>
             body { font-family: Arial, sans-serif; padding: 20px; }
             h1 { color: #333; }
             .stat { margin: 10px 0; }
             table { border-collapse: collapse; width: 100%; margin: 20px 0; }
-            th, td { border: 1px solid #ddd; padding: 8px; text-align: left; }
+            th, td { border: 1px solid #ddd; padding: 8px; text-align: start; }
             th { background-color: #f4f4f4; }
           </style>
         </head>
         <body>
-          <h1>Club Weekly Report</h1>
-          <p>Generated: ${generatedAt}</p>
-          <p>Period: ${periodStart} - ${periodEnd}</p>
+          <h1>${escapeHtml(t("Club Weekly Report"))}</h1>
+          <p>${escapeHtml(t("Generated"))}: ${generatedAt}</p>
+          <p>${escapeHtml(t("Period"))}: ${periodStart} - ${periodEnd} (UTC)</p>
+          <p>${escapeHtml(t("Reports use UTC day boundaries. Other times use your device timezone."))}</p>
           
-          <h2>Summary</h2>
-          <div class="stat">Total Members: ${report.summary.totalMembers}</div>
-          <div class="stat">Total Trophies: ${formatNumber(report.summary.totalTrophies)}</div>
-          <div class="stat">Average Trophies: ${formatNumber(report.summary.avgTrophies)}</div>
-          <div class="stat">Active Members: ${report.summary.activeMembers} (${report.summary.activityRate}%)</div>
+          <h2>${escapeHtml(t("Summary"))}</h2>
+          <div class="stat">${escapeHtml(t("Total Members"))}: ${report.summary.totalMembers}</div>
+          <div class="stat">${escapeHtml(t("Total Trophies"))}: ${formatNumber(report.summary.totalTrophies)}</div>
+          <div class="stat">${escapeHtml(t("Average Trophies"))}: ${formatNumber(report.summary.avgTrophies)}</div>
+          <div class="stat">${escapeHtml(t("Active Members"))}: ${report.summary.activeMembers} (${report.summary.activityRate}%)</div>
           
-          <h2>Top Trophy Gainers</h2>
+          <h2>${escapeHtml(t("Top Trophy Gainers"))}</h2>
           <table>
-            <tr><th>Player</th><th>Change</th></tr>
+            <tr><th>${escapeHtml(t("Player"))}</th><th>${escapeHtml(t("Change"))}</th></tr>
             ${report.topGainers.map((p) => `<tr><td>${escapeHtml(p.playerName)}</td><td>+${escapeHtml(formatNumber(p.trophyChange))}</td></tr>`).join("")}
           </table>
           
-          <h2>Most Trophy Lost</h2>
+          <h2>${escapeHtml(t("Most Trophy Lost"))}</h2>
           <table>
-            <tr><th>Player</th><th>Change</th></tr>
+            <tr><th>${escapeHtml(t("Player"))}</th><th>${escapeHtml(t("Change"))}</th></tr>
             ${report.topLosers.map((p) => `<tr><td>${escapeHtml(p.playerName)}</td><td>${escapeHtml(formatNumber(p.trophyChange))}</td></tr>`).join("")}
           </table>
         </body>
@@ -195,14 +197,13 @@ export default function ReportsPage() {
   );
 
   return (
-    <LayoutWrapper>
+    <LayoutWrapper><DataConfidenceNotice />
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
         <div>
-          <h1 className="text-2xl font-bold">Weekly Report</h1>
+          <h1 className="text-2xl font-bold"><T text="Weekly Report" /></h1><p className="text-xs text-muted-foreground">{t("Reports use UTC day boundaries. Other times use your device timezone.")}</p>
           {report && (
             <p className="text-muted-foreground">
-              {formatReportDate(report.period.start)} - {formatReportDate(report.period.end)} (UTC)
-                </p>
+              {formatReportDate(report.period.start)} - {formatReportDate(report.period.end)} <T text=" (UTC) " /></p>
               )}
             </div>
             <div className="flex gap-2">
@@ -214,11 +215,11 @@ export default function ReportsPage() {
                 disabled={isRefreshing}
               >
                 <RefreshCw className={`h-4 w-4 sm:mr-2 ${isRefreshing ? "animate-spin" : ""}`} />
-                <span className="hidden sm:inline">{isRefreshing ? "Refreshing..." : "Refresh"}</span>
+                <span className="hidden sm:inline">{isRefreshing ? <T text="Refreshing..." /> : <T text="Refresh" />}</span>
               </Button>
               <Button onClick={handleExportReport} size="sm" className="sm:size-default">
-                <Download className="h-4 w-4 sm:mr-2" />
-                <span className="hidden sm:inline">Export</span>
+                <Download className="h-4 w-4 sm:me-2" />
+                <span className="hidden sm:inline"><T text="Export" /></span>
               </Button>
             </div>
           </div>
@@ -231,7 +232,7 @@ export default function ReportsPage() {
               <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-5">
                 <Card>
                   <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                    <CardTitle className="text-sm font-medium">Total Members</CardTitle>
+                    <CardTitle className="text-sm font-medium"><T text="Total Members" /></CardTitle>
                     <Users className="h-4 w-4 text-blue-500" />
                   </CardHeader>
                   <CardContent>
@@ -241,7 +242,7 @@ export default function ReportsPage() {
 
                 <Card>
                   <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                    <CardTitle className="text-sm font-medium">Total Trophies</CardTitle>
+                    <CardTitle className="text-sm font-medium"><T text="Total Trophies" /></CardTitle>
                     <Trophy className="h-4 w-4 text-yellow-500" />
                   </CardHeader>
                   <CardContent>
@@ -253,33 +254,31 @@ export default function ReportsPage() {
 
                 <Card>
                   <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                    <CardTitle className="text-sm font-medium">Weekly Win Rate</CardTitle>
+                    <CardTitle className="text-sm font-medium"><T text="Weekly Win Rate" /></CardTitle>
                     <TrendingUp className="h-4 w-4 text-green-500" />
                   </CardHeader>
                   <CardContent>
                     <div className="text-2xl font-bold">{report.summary.weeklyWinRate}%</div>
                     <p className="text-xs text-muted-foreground">
-                      {formatNumber(report.summary.weeklyWins)}W / {formatNumber(report.summary.weeklyBattles)} battles
-                    </p>
+                      {formatNumber(report.summary.weeklyWins)}<T text="W / " />{formatNumber(report.summary.weeklyBattles)} <T text=" battles " /></p>
                   </CardContent>
                 </Card>
 
                 <Card>
                   <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                    <CardTitle className="text-sm font-medium">Activity Rate</CardTitle>
+                    <CardTitle className="text-sm font-medium"><T text="Activity Rate" /></CardTitle>
                     <Users className="h-4 w-4 text-green-500" />
                   </CardHeader>
                   <CardContent>
                     <div className="text-2xl font-bold">{report.summary.activityRate}%</div>
                     <p className="text-xs text-muted-foreground">
-                      {report.summary.activeMembers} active in the last 24 hours
-                    </p>
+                      {report.summary.activeMembers} <T text=" active in the last 24 hours " /></p>
                   </CardContent>
                 </Card>
 
                 <Card>
                   <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                    <CardTitle className="text-sm font-medium">Avg Trophies</CardTitle>
+                    <CardTitle className="text-sm font-medium"><T text="Avg Trophies" /></CardTitle>
                     <Trophy className="h-4 w-4 text-purple-500" />
                   </CardHeader>
                   <CardContent>
@@ -304,8 +303,7 @@ export default function ReportsPage() {
                   <CardHeader>
                     <CardTitle className="flex items-center gap-2">
                       <TrendingUp className="h-5 w-5 text-green-500" />
-                      Top Trophy Gainers
-                    </CardTitle>
+                      <T text=" Top Trophy Gainers " /></CardTitle>
                   </CardHeader>
                   <CardContent>
                     <div className="space-y-3">
@@ -330,8 +328,7 @@ export default function ReportsPage() {
                       ))}
                       {report.topGainers.length === 0 && (
                         <p className="text-muted-foreground text-center py-4">
-                          No trophy gains this week
-                        </p>
+                          <T text=" No trophy gains this week " /></p>
                       )}
                     </div>
                   </CardContent>
@@ -342,8 +339,8 @@ export default function ReportsPage() {
                     <CardTitle className="flex items-center gap-2">
                       <TrendingDown className="h-5 w-5 text-red-500" />
                       {report.topLosersMode === "lowest_progress"
-                        ? "Lowest Trophy Progress"
-                        : "Worst Trophy Drops"}
+                        ? <T text="Lowest Trophy Progress" />
+                        : <T text="Worst Trophy Drops" />}
                     </CardTitle>
                   </CardHeader>
                   <CardContent>
@@ -363,14 +360,13 @@ export default function ReportsPage() {
                             </div>
                           </div>
                           <span className={`font-bold ${player.trophyChange < 0 ? "text-red-500" : "text-yellow-400"}`}>
-                            {player.trophyChange > 0 ? `+${formatNumber(player.trophyChange)}` : formatNumber(player.trophyChange)}
+                            {player.trophyChange > 0 ? <T text="+{value0}" values={{ value0: String(formatNumber(player.trophyChange)) }} /> : formatNumber(player.trophyChange)}
                           </span>
                         </div>
                       ))}
                       {report.topLosers.length === 0 && (
                         <p className="text-muted-foreground text-center py-4">
-                          No trophy data available this week
-                        </p>
+                          <T text=" No trophy data available this week " /></p>
                       )}
                     </div>
                   </CardContent>
@@ -380,8 +376,8 @@ export default function ReportsPage() {
               {/* Recent Events */}
               <Card>
                 <CardHeader>
-                  <CardTitle>Members Joined & Left</CardTitle>
-                  <CardDescription>Roster changes this week</CardDescription>
+                  <CardTitle><T text="Members Joined & Left" /></CardTitle>
+                  <CardDescription><T text="Roster changes this week" /></CardDescription>
                 </CardHeader>
                 <CardContent>
                   <div className="space-y-2">
@@ -401,15 +397,14 @@ export default function ReportsPage() {
                           <span className="font-medium">{event.player_name}</span>
                         </div>
                         <div className="text-sm text-muted-foreground">
-                          {event.event_type === "join" ? "Joined" : "Left"} •{" "}
+                          {event.event_type === "join" ? <T text="Joined" /> : <T text="Left" />} •{" "}
                           {formatDate(event.event_time)}
                         </div>
                       </div>
                     ))}
                     {report.recentEvents.length === 0 && (
                       <p className="text-muted-foreground text-center py-4">
-                        No events this week
-                      </p>
+                        <T text=" No events this week " /></p>
                     )}
                   </div>
                 </CardContent>

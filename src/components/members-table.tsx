@@ -1,10 +1,12 @@
 "use client";
+import { T, useI18n } from "@/components/locale-provider";
+
 
 import { memo, useEffect, useMemo, useRef, useState } from "react";
 import Image from "next/image";
 import Link from "next/link";
 import { Member } from "@/types/database";
-import { cn, formatDateTime, formatNumber, formatRelativeTime, getRankColor } from "@/lib/utils";
+import { cn, getRankColor } from "@/lib/utils";
 import { getFallbackInitial, getProfileIconUrl, getRankIconUrl } from "@/lib/brawl-assets";
 import {
   Table,
@@ -216,30 +218,21 @@ function getActivityClass(status: ActivityDisplayStatus) {
 function ActivityBadge({ status }: { status: ActivityDisplayStatus }) {
   return (
     <span className={cn("inline-flex rounded-full border px-2 py-0.5 text-xs font-semibold", getActivityClass(status))}>
-      {getActivityLabel(status)}
+      <T text={getActivityLabel(status)} />
     </span>
   );
 }
 
-function formatDelta(value: number | null | undefined) {
-  if (value == null) return "No data";
-  if (value === 0) return "0";
-  return `${value > 0 ? "+" : ""}${formatNumber(value)}`;
-}
+
 
 function getDeltaClass(value: number | null | undefined) {
   if (value == null || value === 0) return "text-muted-foreground";
   return value > 0 ? "text-green-500" : "text-red-400";
 }
 
-function formatOptionalNumber(value: number | null | undefined) {
-  return value == null ? "-" : formatNumber(value);
-}
 
-function formatLastBattle(member: MemberWithGains) {
-  if (!member.last_battle_at) return "No battle data";
-  return formatRelativeTime(member.last_battle_at);
-}
+
+
 
 function SortableHead({
   label,
@@ -307,6 +300,9 @@ export const MembersTable = memo(function MembersTable({
   onSort,
   onMemberSelect,
 }: MembersTableProps) {
+  const { t, number: formatNumber, dateTime: formatDateTime, relative: formatRelativeTime, delta: formatDelta } = useI18n();
+  const formatOptionalNumber = (value: number | null | undefined) => value == null ? t("Unknown") : formatNumber(value);
+  const formatLastBattle = (member: MemberWithGains) => formatRelativeTime(member.last_battle_at);
   const [copiedTag, setCopiedTag] = useState<string | null>(null);
   const [currentPage, setCurrentPage] = useState(1);
   const copyResetTimeoutRef = useRef<number | null>(null);
@@ -357,8 +353,7 @@ export const MembersTable = memo(function MembersTable({
     <div className="grid gap-3 md:hidden">
       {paginatedMembers.length === 0 ? (
         <div className="rounded-lg border border-dashed border-border/70 p-8 text-center text-sm text-muted-foreground">
-          No members found
-        </div>
+          <T text=" No members found " /></div>
       ) : (
         paginatedMembers.map((member, index) => {
           const activityStatus = getActivityStatus(member);
@@ -387,12 +382,12 @@ export const MembersTable = memo(function MembersTable({
                     <div className="flex items-center gap-2">
                       <span className="text-xs font-semibold text-muted-foreground">#{startIndex + index + 1}</span>
                       <Badge variant={getRoleBadgeVariant(member.role)} className="text-[11px]">
-                        {member.role}
+                        {<T text={member.role} />}
                       </Badge>
                     </div>
                     <p className="mt-1 truncate font-semibold">{member.player_name}</p>
                     <div className="flex items-center gap-1.5">
-                      <span className="text-xs text-muted-foreground">{member.player_tag}</span>
+                      <span className="text-xs text-muted-foreground"><bdi dir="ltr">{member.player_tag}</bdi></span>
                       <button
                         type="button"
                         onClick={(event) => {
@@ -419,23 +414,23 @@ export const MembersTable = memo(function MembersTable({
 
               <div className="mt-4 grid grid-cols-2 gap-3 text-sm">
                 <div>
-                  <p className="text-xs text-muted-foreground">Trophies</p>
+                  <p className="text-xs text-muted-foreground"><T text="Trophies" /></p>
                   <p className="font-semibold">{formatNumber(member.trophies)}</p>
                 </div>
                 <div>
-                  <p className="text-xs text-muted-foreground">3 days</p>
+                  <p className="text-xs text-muted-foreground"><T text="3 days" /></p>
                   <p className={cn("font-semibold", getDeltaClass(member.trophies_3d))}>
                     {formatDelta(member.trophies_3d)}
                   </p>
                 </div>
                 <div>
-                  <p className="text-xs text-muted-foreground">24h</p>
+                  <p className="text-xs text-muted-foreground"><T text="24h" /></p>
                   <p className={cn("font-semibold", getDeltaClass(member.trophies_24h))}>
                     {formatDelta(member.trophies_24h)}
                   </p>
                 </div>
                 <div>
-                  <p className="text-xs text-muted-foreground">Last battle</p>
+                  <p className="text-xs text-muted-foreground"><T text="Last battle" /></p>
                   <p className="font-medium">{formatLastBattle(member)}</p>
                 </div>
               </div>
@@ -510,8 +505,7 @@ export const MembersTable = memo(function MembersTable({
             {paginatedMembers.length === 0 ? (
               <TableRow>
                 <TableCell colSpan={visibleColumnCount} className="py-10 text-center text-muted-foreground">
-                  No members found
-                </TableCell>
+                  <T text=" No members found " /></TableCell>
               </TableRow>
             ) : (
               paginatedMembers.map((member, index) => {
@@ -531,7 +525,7 @@ export const MembersTable = memo(function MembersTable({
                         <div className="min-w-0">
                           <p className="truncate font-semibold">{member.player_name}</p>
                           <div className="flex items-center gap-1.5">
-                            <span className="text-xs text-muted-foreground">{member.player_tag}</span>
+                            <span className="text-xs text-muted-foreground"><bdi dir="ltr">{member.player_tag}</bdi></span>
                             <button
                               type="button"
                               onClick={(event) => {
@@ -557,14 +551,14 @@ export const MembersTable = memo(function MembersTable({
                     </TableCell>
                     {columnVisibility.role && (
                       <TableCell>
-                        <Badge variant={getRoleBadgeVariant(member.role)}>{member.role}</Badge>
+                        <Badge variant={getRoleBadgeVariant(member.role)}>{<T text={member.role} />}</Badge>
                       </TableCell>
                     )}
                     {columnVisibility.trophies && (
-                      <TableCell className="text-right font-semibold">{formatNumber(member.trophies)}</TableCell>
+                      <TableCell className="text-end font-semibold">{formatNumber(member.trophies)}</TableCell>
                     )}
                     {columnVisibility.highest_trophies && (
-                      <TableCell className="text-right text-muted-foreground">{formatNumber(member.highest_trophies)}</TableCell>
+                      <TableCell className="text-end text-muted-foreground">{formatNumber(member.highest_trophies)}</TableCell>
                     )}
                     {columnVisibility.trophies_24h && (
                       <TableCell className={cn("text-right font-medium", getDeltaClass(member.trophies_24h))}>
@@ -604,7 +598,7 @@ export const MembersTable = memo(function MembersTable({
                             member.win_rate == null && "text-muted-foreground"
                           )}
                         >
-                          {member.win_rate != null ? `${member.win_rate}%` : "-"}
+                          {member.win_rate != null ? <T text="{value0}%" values={{ value0: String(member.win_rate) }} /> : "-"}
                         </span>
                       </TableCell>
                     )}
@@ -619,10 +613,10 @@ export const MembersTable = memo(function MembersTable({
                       </TableCell>
                     )}
                     {columnVisibility.brawlers_count && (
-                      <TableCell className="text-right">{formatOptionalNumber(member.brawlers_count)}</TableCell>
+                      <TableCell className="text-end">{formatOptionalNumber(member.brawlers_count)}</TableCell>
                     )}
                     {columnVisibility.trio_victories && (
-                      <TableCell className="text-right">{formatOptionalNumber(member.trio_victories)}</TableCell>
+                      <TableCell className="text-end">{formatOptionalNumber(member.trio_victories)}</TableCell>
                     )}
                   </TableRow>
                 );
@@ -639,11 +633,10 @@ export const MembersTable = memo(function MembersTable({
             size="sm"
             onClick={() => setCurrentPage(Math.max(1, safeCurrentPage - 1))}
             disabled={safeCurrentPage === 1}
-            aria-label="Previous members page"
+            aria-label={t("Previous members page")}
           >
             <ChevronLeft className="h-4 w-4" />
-            Prev
-          </Button>
+            <T text=" Prev " /></Button>
           <span className="px-2 text-sm font-medium">
             {safeCurrentPage} / {totalPages}
           </span>
@@ -652,10 +645,9 @@ export const MembersTable = memo(function MembersTable({
             size="sm"
             onClick={() => setCurrentPage(Math.min(totalPages, safeCurrentPage + 1))}
             disabled={safeCurrentPage === totalPages}
-            aria-label="Next members page"
+            aria-label={t("Next members page")}
           >
-            Next
-            <ChevronRight className="h-4 w-4" />
+            <T text=" Next " /><ChevronRight className="h-4 w-4" />
           </Button>
         </div>
       )}

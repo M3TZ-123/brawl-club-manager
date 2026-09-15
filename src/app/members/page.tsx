@@ -1,7 +1,11 @@
 "use client";
+import { T, useI18n } from "@/components/locale-provider";
+
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
+import { DataConfidenceNotice } from "@/components/sync-health";
+import { MemberReviewButton } from "@/components/member-review";
 import { LayoutWrapper } from "@/components/layout-wrapper";
 import {
   DEFAULT_MEMBER_COLUMNS,
@@ -16,7 +20,7 @@ import {
 import { fetchJsonCached, invalidateJsonCache } from "@/lib/client-data-cache";
 import { useAppStore } from "@/lib/store";
 import { useAdminSession } from "@/hooks/use-admin-session";
-import { cn, formatDateTime, formatNumber, formatRelativeTime } from "@/lib/utils";
+import { cn } from "@/lib/utils";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
@@ -184,30 +188,16 @@ function compareMembers(a: MemberWithGains, b: MemberWithGains, sort: MemberSort
   return sort.direction === "asc" ? result : -result;
 }
 
-function formatDelta(value: number | null | undefined) {
-  if (value == null) return "No data";
-  if (value === 0) return "0";
-  return `${value > 0 ? "+" : ""}${formatNumber(value)}`;
-}
+
 
 function getDeltaClass(value: number | null | undefined) {
   if (value == null || value === 0) return "text-muted-foreground";
   return value > 0 ? "text-green-500" : "text-red-400";
 }
 
-function formatLastSync(lastSyncTime: string | null) {
-  if (!lastSyncTime) return "No sync yet";
-  const parsed = new Date(lastSyncTime);
-  if (Number.isNaN(parsed.getTime())) return "Unknown";
-  return formatRelativeTime(parsed);
-}
 
-function formatLastSyncDetail(lastSyncTime: string | null) {
-  if (!lastSyncTime) return "Waiting for sync";
-  const parsed = new Date(lastSyncTime);
-  if (Number.isNaN(parsed.getTime())) return "Timestamp unavailable";
-  return formatDateTime(parsed);
-}
+
+
 
 function getRankLabel(filter: RankFilter) {
   const labels: Record<RankFilter, string> = {
@@ -264,6 +254,8 @@ function sanitizeCsvValue(value: string | number | boolean | null | undefined) {
 }
 
 export default function MembersPage() {
+  const { number: formatNumber, delta: formatDelta, relative: formatRelativeTime, dateTime: formatDateTime } = useI18n();
+  const { t, direction } = useI18n();
   const {
     lastSyncTime,
     setLastSyncTime,
@@ -566,40 +558,40 @@ export default function MembersPage() {
 
   return (
     <LayoutWrapper>
-      <div className="space-y-6">
+      <div className="space-y-6"><DataConfidenceNotice />
         <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-5">
           <SummaryCard
-            title="Total Members"
+            title={t("Total Members")}
             value={summary.total}
             description={`${filteredMembers.length} currently visible`}
             icon={Users}
             tone="text-blue-500"
           />
           <SummaryCard
-            title="Active"
+            title={t("Active")}
             value={summary.active}
             description="Played in last 24h"
             icon={Activity}
             tone="text-green-500"
           />
           <SummaryCard
-            title="Inactive"
+            title={t("Inactive")}
             value={summary.inactive}
             description={`${summary.attention} need review`}
             icon={UserX}
             tone="text-red-400"
           />
           <SummaryCard
-            title="Avg Trophies"
+            title={t("Avg Trophies")}
             value={formatNumber(summary.averageTrophies)}
             description="Per current member"
             icon={Trophy}
             tone="text-yellow-500"
           />
           <SummaryCard
-            title="Last Sync"
-            value={formatLastSync(lastSyncTime)}
-            description={formatLastSyncDetail(lastSyncTime)}
+            title={t("Last Sync")}
+            value={formatRelativeTime(lastSyncTime)}
+            description={formatDateTime(lastSyncTime)}
             icon={RefreshCw}
             tone="text-primary"
           />
@@ -609,20 +601,19 @@ export default function MembersPage() {
           <CardHeader>
             <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
               <div>
-                <CardTitle>Members</CardTitle>
+                <CardTitle><T text="Members" /></CardTitle>
                 <p className="mt-1 text-sm text-muted-foreground">
-                  Full roster with activity, 3-day progress, filters, and quick review.
-                </p>
+                  <T text=" Full roster with activity, 3-day progress, filters, and quick review. " /></p>
               </div>
 
-              <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap xl:justify-end">
+              <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap xl:justify-end">{isAdmin && <Button asChild variant="outline"><Link href="/reviews"><T text="Member reviews" /></Link></Button>}
                 <div className="relative min-w-0 sm:w-72">
-                  <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                  <Search className="absolute start-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
                   <Input
-                    placeholder="Search name or tag..."
+                    placeholder={t("Search name or tag...")}
                     value={searchQuery}
                     onChange={(event) => setSearchQuery(event.target.value)}
-                    className="pl-10"
+                    className="ps-10"
                   />
                 </div>
                 <Button
@@ -631,16 +622,14 @@ export default function MembersPage() {
                   className="gap-2"
                 >
                   <SlidersHorizontal className="h-4 w-4" />
-                  Filters
-                </Button>
+                  <T text=" Filters " /></Button>
                 <Button
                   variant={showColumns ? "default" : "outline"}
                   onClick={() => setShowColumns((value) => !value)}
                   className="gap-2"
                 >
                   <Columns3 className="h-4 w-4" />
-                  Columns
-                </Button>
+                  <T text=" Columns " /></Button>
                 {isAdmin && (
                   <Button
                     variant="outline"
@@ -649,7 +638,7 @@ export default function MembersPage() {
                     className="gap-2"
                   >
                     <RefreshCw className={cn("h-4 w-4", (isSyncing || isRefreshing) && "animate-spin")} />
-                    {isSyncing ? "Syncing" : "Sync Now"}
+                    {isSyncing ? <T text="Syncing" /> : <T text="Sync Now" />}
                   </Button>
                 )}
                 <Button
@@ -659,8 +648,7 @@ export default function MembersPage() {
                   className="gap-2"
                 >
                   <Download className="h-4 w-4" />
-                  Export
-                </Button>
+                  <T text=" Export " /></Button>
               </div>
             </div>
           </CardHeader>
@@ -683,7 +671,7 @@ export default function MembersPage() {
                     )}
                   >
                     <Icon className="h-4 w-4" />
-                    {filter.label}
+                    {<T text={filter.label} />}
                     <span className={cn("rounded-full px-2 py-0.5 text-xs", isActive ? "bg-primary-foreground/20" : "bg-muted")}>
                       {filter.count}
                     </span>
@@ -697,74 +685,73 @@ export default function MembersPage() {
                 <div className="mb-4 flex items-center justify-between gap-3">
                   <div className="flex items-center gap-2">
                     <Filter className="h-4 w-4 text-primary" />
-                    <h3 className="font-semibold">Advanced Filters</h3>
+                    <h3 className="font-semibold"><T text="Advanced Filters" /></h3>
                   </div>
                   <Button variant="ghost" size="sm" onClick={resetAdvancedFilters} className="gap-2">
                     <RotateCcw className="h-4 w-4" />
-                    Reset
-                  </Button>
+                    <T text=" Reset " /></Button>
                 </div>
 
                 <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-6">
                   <label className="space-y-1.5 text-sm">
-                    <span className="text-muted-foreground">Role</span>
+                    <span className="text-muted-foreground"><T text="Role" /></span>
                     <select
                       value={roleFilter}
                       onChange={(event) => setRoleFilter(event.target.value as RoleFilter)}
                       className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
                     >
-                      <option value="all">All roles</option>
-                      <option value="president">President</option>
-                      <option value="vicepresident">Vice President</option>
-                      <option value="senior">Senior</option>
-                      <option value="member">Member</option>
+                      <option value="all"><T text="All roles" /></option>
+                      <option value="president"><T text="President" /></option>
+                      <option value="vicepresident"><T text="Vice President" /></option>
+                      <option value="senior"><T text="Senior" /></option>
+                      <option value="member"><T text="Member" /></option>
                     </select>
                   </label>
 
                   <label className="space-y-1.5 text-sm">
-                    <span className="text-muted-foreground">Activity</span>
+                    <span className="text-muted-foreground"><T text="Activity" /></span>
                     <select
                       value={activityFilter}
                       onChange={(event) => setActivityFilter(event.target.value as ActivityFilter)}
                       className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
                     >
-                      <option value="all">All activity</option>
-                      <option value="active">Active</option>
-                      <option value="minimal">Low activity</option>
-                      <option value="inactive">Inactive</option>
-                      <option value="unknown">No data</option>
+                      <option value="all"><T text="All activity" /></option>
+                      <option value="active"><T text="Active" /></option>
+                      <option value="minimal"><T text="Low activity" /></option>
+                      <option value="inactive"><T text="Inactive" /></option>
+                      <option value="unknown"><T text="No data" /></option>
                     </select>
                   </label>
 
                   <label className="space-y-1.5 text-sm">
-                    <span className="text-muted-foreground">3-day progress</span>
+                    <span className="text-muted-foreground"><T text="3-day progress" /></span>
                     <select
                       value={movementFilter}
                       onChange={(event) => setMovementFilter(event.target.value as MovementFilter)}
                       className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
                     >
-                      <option value="all">All progress</option>
-                      <option value="positive">Gained trophies</option>
-                      <option value="flat">No progress</option>
-                      <option value="unknown">No data</option>
+                      <option value="all"><T text="All progress" /></option>
+                      <option value="positive"><T text="Gained trophies" /></option>
+                      <option value="flat"><T text="No progress" /></option>
+                      <option value="unknown"><T text="No data" /></option>
                     </select>
                   </label>
 
                   <label className="space-y-1.5 text-sm">
-                    <span className="text-muted-foreground">Rank</span>
+                    <span className="text-muted-foreground"><T text="Rank" /></span>
                     <select
                       value={rankFilter}
                       onChange={(event) => setRankFilter(event.target.value as RankFilter)}
                       className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
                     >
                       {(["all", "masters", "legendary", "mythic", "diamond", "gold", "lower", "unranked"] as RankFilter[]).map((filter) => (
-                        <option key={filter} value={filter}>{getRankLabel(filter)}</option>
+                        <option key={filter} value={filter}><T text={getRankLabel(filter)} /></option>
                       ))}
                     </select>
                   </label>
 
                   <label className="space-y-1.5 text-sm">
-                    <span className="text-muted-foreground">Min trophies</span>
+                    <span className="text-muted-foreground"><T text="Min trophies" /></span>
                     <Input
                       inputMode="numeric"
                       value={minTrophies}
@@ -774,7 +761,7 @@ export default function MembersPage() {
                   </label>
 
                   <label className="space-y-1.5 text-sm">
-                    <span className="text-muted-foreground">Max trophies</span>
+                    <span className="text-muted-foreground"><T text="Max trophies" /></span>
                     <Input
                       inputMode="numeric"
                       value={maxTrophies}
@@ -791,7 +778,7 @@ export default function MembersPage() {
                 <div className="mb-4 flex items-center justify-between gap-3">
                   <div className="flex items-center gap-2">
                     <Columns3 className="h-4 w-4 text-primary" />
-                    <h3 className="font-semibold">Visible Columns</h3>
+                    <h3 className="font-semibold"><T text="Visible Columns" /></h3>
                   </div>
                   <Button
                     variant="ghost"
@@ -800,16 +787,15 @@ export default function MembersPage() {
                     className="gap-2"
                   >
                     <RotateCcw className="h-4 w-4" />
-                    Default
-                  </Button>
+                    <T text=" Default " /></Button>
                 </div>
 
                 <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
                   {COLUMN_OPTIONS.map((column) => (
                     <div key={column.key} className="flex items-center justify-between gap-3 rounded-lg border border-border/70 bg-background/60 p-3">
                       <div>
-                        <p className="text-sm font-medium">{column.label}</p>
-                        <p className="text-xs text-muted-foreground">{column.description}</p>
+                        <p className="text-sm font-medium">{<T text={column.label} />}</p>
+                        <p className="text-xs text-muted-foreground">{<T text={column.description} />}</p>
                       </div>
                       <Switch
                         checked={columnVisibility[column.key]}
@@ -826,7 +812,7 @@ export default function MembersPage() {
               <div className="flex items-start gap-3 rounded-lg border border-red-500/30 bg-red-500/10 px-4 py-3 text-sm text-red-100">
                 <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-red-300" />
                 <div>
-                  <p className="font-semibold">Members failed to load</p>
+                  <p className="font-semibold"><T text="Members failed to load" /></p>
                   <p className="text-red-100/80">{errorMessage}</p>
                 </div>
               </div>
@@ -835,17 +821,16 @@ export default function MembersPage() {
             <div className="flex flex-wrap items-center justify-between gap-3 border-t border-border pt-4">
               <div className="flex flex-wrap items-center gap-2 text-sm text-muted-foreground">
                 <span>
-                  Showing <span className="font-semibold text-foreground">{filteredMembers.length}</span> of{" "}
+                  <T text=" Showing " /><span className="font-semibold text-foreground">{filteredMembers.length}</span> <T text=" of" />{" "}
                   <span className="font-semibold text-foreground">{members.length}</span>
                 </span>
                 {quickFilter !== "all" && (
-                  <Badge variant="secondary">{quickFilters.find((filter) => filter.id === quickFilter)?.label}</Badge>
+                  <Badge variant="secondary">{<T text={quickFilters.find((filter) => filter.id === quickFilter)?.label} />}</Badge>
                 )}
-                {hasAdvancedFilters && <Badge variant="outline">Advanced filters active</Badge>}
+                {hasAdvancedFilters && <Badge variant="outline"><T text="Advanced filters active" /></Badge>}
               </div>
               <p className="text-xs text-muted-foreground">
-                Click a row for quick details. Open profile for full history.
-              </p>
+                <T text=" Click a row for quick details. Open profile for full history. " /></p>
             </div>
 
             {isLoading ? (
@@ -873,39 +858,39 @@ export default function MembersPage() {
       </div>
 
       <Sheet open={selectedMember != null} onOpenChange={(open) => !open && setSelectedMember(null)}>
-        <SheetContent className="w-full overflow-y-auto sm:max-w-lg">
+        <SheetContent side={direction === "rtl" ? "left" : "right"} className="w-full overflow-y-auto sm:max-w-lg">
           {selectedMember && (
             <>
               <SheetHeader>
                 <SheetTitle>{selectedMember.player_name}</SheetTitle>
-                <SheetDescription>{selectedMember.player_tag}</SheetDescription>
+                <SheetDescription><bdi dir="ltr">{selectedMember.player_tag}</bdi></SheetDescription>
               </SheetHeader>
 
               <div className="mt-6 space-y-5">
                 <div className="flex flex-wrap items-center gap-2">
-                  <Badge variant="secondary">{selectedMember.role}</Badge>
+                  <Badge variant="secondary">{<T text={selectedMember.role} />}</Badge>
                   <span className={cn("rounded-full border px-2.5 py-0.5 text-xs font-semibold", getActivityClass(getActivityStatus(selectedMember)))}>
-                    {getActivityLabel(getActivityStatus(selectedMember))}
+                    <T text={getActivityLabel(getActivityStatus(selectedMember))} />
                   </span>
                 </div>
 
                 <div className="grid grid-cols-2 gap-3">
                   <div className="rounded-lg border border-border bg-muted/20 p-3">
-                    <p className="text-xs text-muted-foreground">Trophies</p>
+                    <p className="text-xs text-muted-foreground"><T text="Trophies" /></p>
                     <p className="mt-1 text-xl font-bold">{formatNumber(selectedMember.trophies)}</p>
                   </div>
                   <div className="rounded-lg border border-border bg-muted/20 p-3">
-                    <p className="text-xs text-muted-foreground">Highest</p>
+                    <p className="text-xs text-muted-foreground"><T text="Highest" /></p>
                     <p className="mt-1 text-xl font-bold">{formatNumber(selectedMember.highest_trophies)}</p>
                   </div>
                   <div className="rounded-lg border border-border bg-muted/20 p-3">
-                    <p className="text-xs text-muted-foreground">24h</p>
+                    <p className="text-xs text-muted-foreground"><T text="24h" /></p>
                     <p className={cn("mt-1 text-xl font-bold", getDeltaClass(selectedMember.trophies_24h))}>
                       {formatDelta(selectedMember.trophies_24h)}
                     </p>
                   </div>
                   <div className="rounded-lg border border-border bg-muted/20 p-3">
-                    <p className="text-xs text-muted-foreground">3 days</p>
+                    <p className="text-xs text-muted-foreground"><T text="3 days" /></p>
                     <p className={cn("mt-1 text-xl font-bold", getDeltaClass(selectedMember.trophies_3d))}>
                       {formatDelta(selectedMember.trophies_3d)}
                     </p>
@@ -914,47 +899,45 @@ export default function MembersPage() {
 
                 <div className="space-y-3 rounded-lg border border-border bg-muted/20 p-4 text-sm">
                   <div className="flex justify-between gap-4">
-                    <span className="text-muted-foreground">Last battle</span>
-                    <span className="text-right font-medium">
-                      {selectedMember.last_battle_at ? formatRelativeTime(selectedMember.last_battle_at) : "No battle data"}
+                    <span className="text-muted-foreground"><T text="Last battle" /></span>
+                    <span className="text-end font-medium">
+                      {selectedMember.last_battle_at ? formatRelativeTime(selectedMember.last_battle_at) : <T text="No battle data" />}
                     </span>
                   </div>
                   <div className="flex justify-between gap-4">
-                    <span className="text-muted-foreground">Last updated</span>
-                    <span className="text-right font-medium">{formatDateTime(selectedMember.last_updated)}</span>
+                    <span className="text-muted-foreground"><T text="Last updated" /></span>
+                    <span className="text-end font-medium">{formatDateTime(selectedMember.last_updated)}</span>
                   </div>
                   <div className="flex justify-between gap-4">
-                    <span className="text-muted-foreground">Win rate</span>
-                    <span className="text-right font-medium">{selectedMember.win_rate != null ? `${selectedMember.win_rate}%` : "No data"}</span>
+                    <span className="text-muted-foreground"><T text="Win rate" /></span>
+                    <span className="text-end font-medium">{selectedMember.win_rate != null ? <T text="{value0}%" values={{ value0: String(selectedMember.win_rate) }} /> : <T text="No data" />}</span>
                   </div>
                   <div className="flex justify-between gap-4">
-                    <span className="text-muted-foreground">Current rank</span>
-                    <span className="text-right font-medium">{selectedMember.rank_current || "Unranked"}</span>
+                    <span className="text-muted-foreground"><T text="Current rank" /></span>
+                    <span className="text-end font-medium">{selectedMember.rank_current || "Unranked"}</span>
                   </div>
                   <div className="flex justify-between gap-4">
-                    <span className="text-muted-foreground">Best rank</span>
-                    <span className="text-right font-medium">{selectedMember.rank_highest || "Unranked"}</span>
+                    <span className="text-muted-foreground"><T text="Best rank" /></span>
+                    <span className="text-end font-medium">{selectedMember.rank_highest || "Unranked"}</span>
                   </div>
                   <div className="flex justify-between gap-4">
-                    <span className="text-muted-foreground">Brawlers</span>
-                    <span className="text-right font-medium">{selectedMember.brawlers_count}</span>
+                    <span className="text-muted-foreground"><T text="Brawlers" /></span>
+                    <span className="text-end font-medium">{selectedMember.brawlers_count}</span>
                   </div>
                 </div>
 
-                <div className="grid gap-2 sm:grid-cols-2">
+                <div className="grid gap-2 sm:grid-cols-2"><MemberReviewButton member={selectedMember} />
                   <Button
                     variant="outline"
                     onClick={() => copyText(selectedMember.player_tag, "tag")}
                     className="gap-2"
                   >
                     {copied === "tag" ? <Check className="h-4 w-4" /> : <Copy className="h-4 w-4" />}
-                    Copy Tag
-                  </Button>
+                    <T text=" Copy Tag " /></Button>
                   <Button asChild className="gap-2">
                     <Link href={`/members/${encodeURIComponent(selectedMember.player_tag)}`}>
                       <ExternalLink className="h-4 w-4" />
-                      Open Profile
-                    </Link>
+                      <T text=" Open Profile " /></Link>
                   </Button>
                 </div>
               </div>

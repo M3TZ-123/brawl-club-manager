@@ -7,41 +7,12 @@ import {
   verifyAdminPassword,
 } from "@/lib/admin-auth";
 import { rejectCrossOriginRequest } from "@/lib/request-security";
-
-const loginAttempts = new Map<string, { count: number; resetAt: number }>();
-const LOGIN_WINDOW_MS = 10 * 60 * 1000;
-const MAX_LOGIN_ATTEMPTS = 8;
-
-function getClientKey(request: NextRequest) {
-  return (
-    request.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ||
-    request.headers.get("x-real-ip") ||
-    "unknown"
-  );
-}
-
-function isRateLimited(request: NextRequest) {
-  const key = getClientKey(request);
-  const now = Date.now();
-  const current = loginAttempts.get(key);
-
-  if (!current || current.resetAt <= now) {
-    loginAttempts.set(key, { count: 1, resetAt: now + LOGIN_WINDOW_MS });
-    return false;
-  }
-
-  current.count += 1;
-  return current.count > MAX_LOGIN_ATTEMPTS;
-}
-
-function clearRateLimit(request: NextRequest) {
-  loginAttempts.delete(getClientKey(request));
-}
+import { consumeAdminLoginAttempt } from "@/lib/admin-rate-limit";
 
 export async function GET(request: NextRequest) {
   const status = getAdminSessionStatus(request);
   return NextResponse.json(status, {
-    headers: { "Cache-Control": "no-store" },
+    headers: { "Cache-Control": "no-store", Vary: "Cookie" },
   });
 }
 
@@ -56,23 +27,31 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  if (isRateLimited(request)) {
+  try {
+    const limit = await consumeAdminLoginAttempt(request);
+    if (!limit.allowed) {
+      return NextResponse.json(
+        { error: "Too many login attempts. Try again later." },
+        { status: 429, headers: { "Retry-After": String(Math.max(1, limit.retryAfter)), "Cache-Control": "no-store" } }
+      );
+    }
+  } catch {
+    console.error("Admin login rate-limit storage is unavailable");
     return NextResponse.json(
-      { error: "Too many login attempts. Try again later." },
-      { status: 429 }
+      { error: "Admin login is temporarily unavailable. Please try again later." },
+      { status: 503, headers: { "Cache-Control": "no-store", "Retry-After": "60" } }
     );
   }
 
-  const body = await request.json().catch(() => ({}));
-  if (!verifyAdminPassword(body.password)) {
+  const body = await request.json().catch(() => null);
+  if (!body || typeof body !== "object" || Array.isArray(body) || !verifyAdminPassword(body.password)) {
     return NextResponse.json(
       { error: "Invalid admin password" },
-      { status: 401 }
+      { status: 401, headers: { "Cache-Control": "no-store" } }
     );
   }
 
-  clearRateLimit(request);
-  const response = NextResponse.json({ success: true, isAdmin: true });
+  const response = NextResponse.json({ success: true, isAdmin: true }, { headers: { "Cache-Control": "no-store" } });
   setAdminSessionCookie(response);
   return response;
 }

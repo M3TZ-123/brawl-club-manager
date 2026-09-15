@@ -1,4 +1,6 @@
 "use client";
+import { T, useI18n } from "@/components/locale-provider";
+
 
 import {
   LineChart,
@@ -17,16 +19,18 @@ import {
   AreaChart,
 } from "recharts";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { formatNumber } from "@/lib/utils";
+
 
 interface TrophyChartProps {
   data: { date: string; trophies: number }[];
 }
 
 export function TrophyChart({ data }: TrophyChartProps) {
+  const { locale } = useI18n();
+  const { number: formatNumber } = useI18n();
   const chartData = data.map((item) => ({
     ...item,
-    shortDate: new Date(`${item.date}T00:00:00`).toLocaleDateString("en-US", {
+    shortDate: new Date(`${item.date}T00:00:00`).toLocaleDateString(locale === "ar" ? "ar-TN" : "en-GB", {
       month: "short",
       day: "numeric",
     }),
@@ -48,7 +52,7 @@ export function TrophyChart({ data }: TrophyChartProps) {
   return (
     <Card>
       <CardHeader>
-        <CardTitle>Trophy Progression</CardTitle>
+        <CardTitle><T text="Trophy Progression" /></CardTitle>
       </CardHeader>
       <CardContent>
         <ResponsiveContainer width="100%" height={300}>
@@ -105,6 +109,8 @@ interface TrophyStatisticsProps {
 }
 
 export function TrophyStatistics({ data, currentTrophies }: TrophyStatisticsProps) {
+  const { locale } = useI18n();
+  const { number: formatNumber } = useI18n();
   // Calculate gains
   const now = new Date();
   const oneDayAgo = new Date(now.getTime() - 24 * 60 * 60 * 1000);
@@ -163,7 +169,7 @@ export function TrophyStatistics({ data, currentTrophies }: TrophyStatisticsProp
     const dateObj = new Date(`${dayKey}T00:00:00`);
     return {
       dayKey,
-      date: dateObj.toLocaleDateString("en-US", { month: "short", day: "numeric" }),
+      date: dateObj.toLocaleDateString(locale === "ar" ? "ar-TN" : "en-GB", { month: "short", day: "numeric" }),
       trophies: groupedByDay.has(dayKey) ? groupedByDay.get(dayKey)! : null,
     };
   });
@@ -189,18 +195,18 @@ export function TrophyStatistics({ data, currentTrophies }: TrophyStatisticsProp
   return (
     <Card>
       <CardHeader className="flex flex-row items-center justify-between">
-        <CardTitle>Trophy Statistics</CardTitle>
+        <CardTitle><T text="Trophy Statistics" /></CardTitle>
         <div className="flex gap-6 text-sm">
-          <div className="text-right">
-            <span className="text-muted-foreground mr-2">today</span>
+          <div className="text-end">
+            <span className="text-muted-foreground me-2"><T text="today" /></span>
             <span className={`font-bold ${getGainColor(todayGain)}`}>{formatGain(todayGain)}</span>
           </div>
-          <div className="text-right">
-            <span className="text-muted-foreground mr-2">week</span>
+          <div className="text-end">
+            <span className="text-muted-foreground me-2"><T text="week" /></span>
             <span className={`font-bold ${getGainColor(weekGain)}`}>{formatGain(weekGain)}</span>
           </div>
-          <div className="text-right">
-            <span className="text-muted-foreground mr-2">month</span>
+          <div className="text-end">
+            <span className="text-muted-foreground me-2"><T text="month" /></span>
             <span className={`font-bold ${getGainColor(monthGain)}`}>{formatGain(monthGain)}</span>
           </div>
         </div>
@@ -260,9 +266,9 @@ export function TrophyStatistics({ data, currentTrophies }: TrophyStatisticsProp
             />
           </AreaChart>
         </ResponsiveContainer>
-        <div className="text-center text-xs text-muted-foreground mt-2">Day</div>
+        <div className="text-center text-xs text-muted-foreground mt-2"><T text="Day" /></div>
         {onlyOneTrackedDay && (
-          <p className="text-center text-xs text-muted-foreground mt-1">Tracking starts today</p>
+          <p className="text-center text-xs text-muted-foreground mt-1"><T text="Tracking starts today" /></p>
         )}
       </CardContent>
     </Card>
@@ -274,6 +280,7 @@ interface ActivityChartProps {
 }
 
 export function ActivityPieChart({ data }: ActivityChartProps) {
+  const { t, number } = useI18n();
   const total = data.reduce((sum, entry) => sum + (entry.value || 0), 0);
 
   const getColorLabel = (color: string) => {
@@ -287,13 +294,13 @@ export function ActivityPieChart({ data }: ActivityChartProps) {
   return (
     <Card>
       <CardHeader>
-        <CardTitle>Activity Distribution</CardTitle>
+        <CardTitle><T text="Activity Distribution" /></CardTitle>
       </CardHeader>
       <CardContent>
         <ResponsiveContainer width="100%" height={300}>
           <PieChart>
             <Pie
-              data={data}
+              data={data.map(entry => ({...entry, name:t(entry.name)}))}
               cx="50%"
               cy="50%"
               labelLine={false}
@@ -320,8 +327,8 @@ export function ActivityPieChart({ data }: ActivityChartProps) {
                 aria-hidden
               />
               <span>
-                {getColorLabel(entry.color)} = {entry.name} ({entry.value}
-                {total > 0 ? `, ${Math.round((entry.value / total) * 100)}%` : ""})
+                {t(getColorLabel(entry.color))} = {t(entry.name)} ({number(entry.value)}
+                {total > 0 ? <T text=", {value0}%" values={{ value0: String(Math.round((entry.value / total) * 100)) }} /> : ""})
               </span>
             </div>
           ))}
@@ -336,6 +343,7 @@ interface MemberBarChartProps {
 }
 
 export function MemberBarChart({ data }: MemberBarChartProps) {
+  const { number: formatNumber } = useI18n();
   // Calculate a smart minimum so the chart doesn't waste space showing 0 to min
   const minTrophies = data.length > 0 ? Math.min(...data.map((d) => d.trophies)) : 0;
   const domainMin = Math.max(0, Math.floor(minTrophies * 0.9 / 1000) * 1000); // Round down to nearest 1000, 90% of min
@@ -343,7 +351,7 @@ export function MemberBarChart({ data }: MemberBarChartProps) {
   return (
     <Card>
       <CardHeader>
-        <CardTitle>Top Members by Trophies</CardTitle>
+        <CardTitle><T text="Top Members by Trophies" /></CardTitle>
       </CardHeader>
       <CardContent>
         <ResponsiveContainer width="100%" height={380}>
@@ -378,6 +386,7 @@ interface ActivityCalendarProps {
 }
 
 export function ActivityCalendar({ battlesByDay }: ActivityCalendarProps) {
+  const { date, number } = useI18n();
   // Generate calendar for current month
   const now = new Date();
   const currentYear = now.getFullYear();
@@ -389,13 +398,6 @@ export function ActivityCalendar({ battlesByDay }: ActivityCalendarProps) {
   const daysInMonth = lastDay.getDate();
   const startingDay = firstDay.getDay(); // 0 = Sunday
   
-  // Calculate days until season reset (assumed every 2 weeks on Monday)
-  const dayOfWeek = now.getDay();
-  const daysUntilMonday = dayOfWeek === 0 ? 1 : 8 - dayOfWeek;
-  const hoursUntilReset = daysUntilMonday * 24 - now.getHours();
-  const daysToReset = Math.floor(hoursUntilReset / 24);
-  const hoursToReset = hoursUntilReset % 24;
-
   // Get color based on battles count
   const getColor = (battles: number | undefined) => {
     if (!battles || battles === 0) return "bg-muted/30 text-muted-foreground";
@@ -405,7 +407,7 @@ export function ActivityCalendar({ battlesByDay }: ActivityCalendarProps) {
     return "bg-green-500 text-white";
   };
 
-  const weekDays = ["S", "M", "T", "W", "T", "F", "S"];
+  const weekDays = Array.from({length:7}, (_, i) => date(new Date(2026, 0, 4+i), {weekday:"narrow"}));
 
   // Build calendar grid
   const calendarDays: (number | null)[] = [];
@@ -421,11 +423,10 @@ export function ActivityCalendar({ battlesByDay }: ActivityCalendarProps) {
       <CardHeader className="flex flex-row items-center justify-between pb-2">
         <div className="flex items-center gap-2">
           <span className="text-lg">📊</span>
-          <CardTitle className="text-sm font-medium">ACTIVITY</CardTitle>
+          <CardTitle className="text-sm font-medium"><T text="ACTIVITY" /></CardTitle>
         </div>
         <div className="flex items-center gap-2 text-xs bg-orange-500/20 text-orange-400 px-3 py-1 rounded-full">
-          {daysToReset}d {hoursToReset}h to reset
-          <span>→</span>
+          {date(now, { month: "long", year: "numeric" })}
         </div>
       </CardHeader>
       <CardContent>
@@ -455,7 +456,7 @@ export function ActivityCalendar({ battlesByDay }: ActivityCalendarProps) {
                 className={`aspect-square flex items-center justify-center text-xs font-medium rounded ${getColor(battles)} ${isToday ? 'ring-2 ring-yellow-400' : ''}`}
                 title={battles ? `${dateKey}: ${battles} battles` : dateKey}
               >
-                {day}
+                {day == null ? "" : number(day)}
               </div>
             );
           })}
@@ -465,20 +466,20 @@ export function ActivityCalendar({ battlesByDay }: ActivityCalendarProps) {
         <div className="flex items-center gap-3 mt-4 text-xs text-muted-foreground">
           <div className="flex items-center gap-1">
             <div className="w-3 h-3 rounded bg-muted/30" />
-            <span>Not tracked</span>
+            <span><T text="Not tracked" /></span>
           </div>
           <div className="flex items-center gap-1">
             <div className="w-3 h-3 rounded border-2 border-orange-400" />
-            <span>Season</span>
+            <span><T text="Season" /></span>
           </div>
-          <span>Less</span>
+          <span><T text="Less" /></span>
           <div className="flex gap-0.5">
             <div className="w-3 h-3 rounded bg-orange-500/80" />
             <div className="w-3 h-3 rounded bg-orange-400" />
             <div className="w-3 h-3 rounded bg-green-600" />
             <div className="w-3 h-3 rounded bg-green-500" />
           </div>
-          <span>More</span>
+          <span><T text="More" /></span>
         </div>
       </CardContent>
     </Card>
@@ -509,7 +510,7 @@ export function PowerLevelChart({ distribution, avgPower, maxedCount }: PowerLev
       <CardHeader className="pb-2">
         <div className="flex items-center gap-2">
           <span className="text-yellow-500">⚡</span>
-          <CardTitle className="text-sm font-medium">BY POWER LEVEL</CardTitle>
+          <CardTitle className="text-sm font-medium"><T text="BY POWER LEVEL" /></CardTitle>
         </div>
       </CardHeader>
       <CardContent>
@@ -543,10 +544,10 @@ export function PowerLevelChart({ distribution, avgPower, maxedCount }: PowerLev
         </ResponsiveContainer>
         <div className="flex justify-between mt-2 text-sm">
           <span className="text-muted-foreground">
-            Avg: <span className="text-green-400 font-bold">{avgPower.toFixed(1)}</span>
+            <T text=" Avg: " /><span className="text-green-400 font-bold">{avgPower.toFixed(1)}</span>
           </span>
           <span className="text-muted-foreground">
-            Maxed: <span className="text-purple-400 font-bold">{maxedCount}</span>
+            <T text=" Maxed: " /><span className="text-purple-400 font-bold">{maxedCount}</span>
           </span>
         </div>
       </CardContent>
@@ -574,50 +575,51 @@ export function TrackingStats({
   trophyChange, 
   activeDays 
 }: TrackingStatsProps) {
+  const { number: formatNumber } = useI18n();
   return (
     <Card>
       <CardHeader className="pb-2">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2">
             <span className="text-green-400">☑</span>
-            <CardTitle className="text-sm font-medium">TRACKING</CardTitle>
-            <span className="text-xs bg-muted px-2 py-0.5 rounded">Last 25 battles</span>
+            <CardTitle className="text-sm font-medium"><T text="TRACKING" /></CardTitle>
+            <span className="text-xs bg-muted px-2 py-0.5 rounded"><T text="Last 25 battles" /></span>
           </div>
         </div>
       </CardHeader>
       <CardContent>
         <div className="grid grid-cols-2 gap-x-8 gap-y-3 text-sm">
           <div className="flex justify-between">
-            <span className="text-muted-foreground">Battles</span>
+            <span className="text-muted-foreground"><T text="Battles" /></span>
             <span className="font-bold">{battles}</span>
           </div>
           <div className="flex justify-between">
-            <span className="text-muted-foreground">Active Days</span>
+            <span className="text-muted-foreground"><T text="Active Days" /></span>
             <span className="font-bold">{activeDays}/7</span>
           </div>
           
           <div className="flex justify-between">
-            <span className="text-muted-foreground">Wins</span>
+            <span className="text-muted-foreground"><T text="Wins" /></span>
             <span className="font-bold text-green-400">{wins}</span>
           </div>
           <div className="flex justify-between">
-            <span className="text-muted-foreground">Losses</span>
+            <span className="text-muted-foreground"><T text="Losses" /></span>
             <span className="font-bold text-red-400">{losses}</span>
           </div>
           
           <div className="flex justify-between">
-            <span className="text-muted-foreground">Win Rate</span>
+            <span className="text-muted-foreground"><T text="Win Rate" /></span>
             <span className={`font-bold ${winRate >= 50 ? 'text-green-400' : 'text-red-400'}`}>{winRate}%</span>
           </div>
           <div className="flex justify-between">
-            <span className="text-muted-foreground">Star Player</span>
+            <span className="text-muted-foreground"><T text="Star Player" /></span>
             <span className="font-bold text-yellow-400">{starPlayer}</span>
           </div>
           
           <div className="flex justify-between col-span-2 pt-2 border-t border-border">
             <div className="flex items-center gap-1">
               <span className="text-yellow-500">🏆</span>
-              <span className="text-muted-foreground">Trophies</span>
+              <span className="text-muted-foreground"><T text="Trophies" /></span>
             </div>
             <span className={`font-bold ${trophyChange >= 0 ? 'text-green-400' : 'text-red-400'}`}>
               {trophyChange >= 0 ? '+' : ''}{formatNumber(trophyChange)}
@@ -665,14 +667,15 @@ export function EnhancedTrackingStats({
   unlocks,
   trackedDays,
 }: EnhancedTrackingStatsProps) {
+  const { number: formatNumber } = useI18n();
   return (
     <Card>
       <CardHeader className="pb-2">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2">
             <span className="text-green-400">☑</span>
-            <CardTitle className="text-sm font-medium">TRACKING</CardTitle>
-            <span className="text-xs bg-muted px-2 py-0.5 rounded">Last {totalDays} days</span>
+            <CardTitle className="text-sm font-medium"><T text="TRACKING" /></CardTitle>
+            <span className="text-xs bg-muted px-2 py-0.5 rounded"><T text="Last " />{totalDays} <T text=" days" /></span>
           </div>
           <span className="text-muted-foreground text-xs">→</span>
         </div>
@@ -681,51 +684,51 @@ export function EnhancedTrackingStats({
         <div className="grid grid-cols-2 gap-x-8 gap-y-2 text-sm">
           {/* Row 1 */}
           <div className="flex justify-between">
-            <span className="text-muted-foreground">Battles</span>
+            <span className="text-muted-foreground"><T text="Battles" /></span>
             <span className="font-bold">{formatNumber(totalBattles)}</span>
           </div>
           <div className="flex justify-between">
-            <span className="text-muted-foreground">Active Days</span>
+            <span className="text-muted-foreground"><T text="Active Days" /></span>
             <span className="font-bold">{activeDays}/{totalDays}</span>
           </div>
           
           {/* Row 2 */}
           <div className="flex justify-between">
-            <span className="text-muted-foreground">Wins</span>
+            <span className="text-muted-foreground"><T text="Wins" /></span>
             <span className="font-bold text-green-400">{formatNumber(totalWins)}</span>
           </div>
           <div className="flex justify-between">
-            <span className="text-muted-foreground">Losses</span>
+            <span className="text-muted-foreground"><T text="Losses" /></span>
             <span className="font-bold text-red-400">{formatNumber(totalLosses)}</span>
           </div>
           
           {/* Row 3 */}
           <div className="flex justify-between">
-            <span className="text-muted-foreground">Win Rate</span>
+            <span className="text-muted-foreground"><T text="Win Rate" /></span>
             <span className={`font-bold ${winRate >= 50 ? 'text-green-400' : 'text-red-400'}`}>{winRate}%</span>
           </div>
           <div className="flex justify-between">
-            <span className="text-muted-foreground">Star Player</span>
+            <span className="text-muted-foreground"><T text="Star Player" /></span>
             <span className="font-bold text-yellow-400">{starPlayerCount}</span>
           </div>
           
           {/* Row 4 */}
           <div className="flex justify-between">
-            <span className="text-muted-foreground">Peak Day</span>
+            <span className="text-muted-foreground"><T text="Peak Day" /></span>
             <span className="font-bold">{peakDayBattles}</span>
           </div>
           <div className="flex justify-between">
-            <span className="text-muted-foreground">Streak</span>
-            <span className="font-bold text-cyan-400">{currentStreak}d</span>
+            <span className="text-muted-foreground"><T text="Streak" /></span>
+            <span className="font-bold text-cyan-400">{currentStreak}<T text="d" /></span>
           </div>
           
           {/* Row 5 - Brawler changes */}
           <div className="flex justify-between">
-            <span className="text-muted-foreground">Power Ups</span>
+            <span className="text-muted-foreground"><T text="Power Ups" /></span>
             <span className="font-bold text-purple-400">+{powerUps}</span>
           </div>
           <div className="flex justify-between">
-            <span className="text-muted-foreground">Unlocks</span>
+            <span className="text-muted-foreground"><T text="Unlocks" /></span>
             <span className="font-bold text-green-400">+{unlocks}</span>
           </div>
           
@@ -733,25 +736,25 @@ export function EnhancedTrackingStats({
           <div className="flex justify-between">
             <div className="flex items-center gap-1">
               <span className="text-yellow-500">🏆</span>
-              <span className="text-muted-foreground">Gained</span>
+              <span className="text-muted-foreground"><T text="Gained" /></span>
             </div>
             <span className="font-bold text-green-400">+{formatNumber(trophiesGained)}</span>
           </div>
           <div className="flex justify-between">
             <div className="flex items-center gap-1">
               <span className="text-yellow-500">🏆</span>
-              <span className="text-muted-foreground">Lost</span>
+              <span className="text-muted-foreground"><T text="Lost" /></span>
             </div>
             <span className="font-bold text-red-400">-{formatNumber(trophiesLost)}</span>
           </div>
           
           {/* Row 7 - Tracking info */}
           <div className="flex justify-between pt-2 border-t border-border">
-            <span className="text-muted-foreground">Tracked</span>
-            <span className="font-bold">{trackedDays}d</span>
+            <span className="text-muted-foreground"><T text="Tracked" /></span>
+            <span className="font-bold">{trackedDays}<T text="d" /></span>
           </div>
           <div className="flex justify-between pt-2 border-t border-border">
-            <span className="text-muted-foreground">Best Streak</span>
+            <span className="text-muted-foreground"><T text="Best Streak" /></span>
             <span className="font-bold">
               <span className="text-orange-500">🔥</span> {bestStreak}
             </span>

@@ -229,10 +229,10 @@ async function apiCallWithRetry<T>(fn: () => Promise<T>, label: string, maxRetri
 }
 
 // API Functions
-export async function getClub(clubTag: string, apiKey?: string): Promise<BrawlStarsClub> {
+export async function getClub(clubTag: string, apiKey?: string, signal?: AbortSignal): Promise<BrawlStarsClub> {
   try {
     return await apiCallWithRetry(
-      () => brawlApi.get(`/clubs/${encodeTag(clubTag)}`, getAuthConfig(apiKey)).then(r => r.data),
+      () => brawlApi.get(`/clubs/${encodeTag(clubTag)}`, { ...getAuthConfig(apiKey), signal }).then(r => r.data),
       `getClub(${clubTag})`
     );
   } catch (error) {
@@ -240,10 +240,10 @@ export async function getClub(clubTag: string, apiKey?: string): Promise<BrawlSt
   }
 }
 
-export async function getPlayer(playerTag: string, apiKey?: string): Promise<BrawlStarsPlayer> {
+export async function getPlayer(playerTag: string, apiKey?: string, signal?: AbortSignal): Promise<BrawlStarsPlayer> {
   try {
     return await apiCallWithRetry(
-      () => brawlApi.get(`/players/${encodeTag(playerTag)}`, getAuthConfig(apiKey)).then(r => r.data),
+      () => brawlApi.get(`/players/${encodeTag(playerTag)}`, { ...getAuthConfig(apiKey), signal }).then(r => r.data),
       `getPlayer(${playerTag})`
     );
   } catch (error) {
@@ -251,10 +251,10 @@ export async function getPlayer(playerTag: string, apiKey?: string): Promise<Bra
   }
 }
 
-export async function getPlayerBattleLog(playerTag: string, apiKey?: string): Promise<BrawlStarsBattleLog> {
+export async function getPlayerBattleLog(playerTag: string, apiKey?: string, signal?: AbortSignal): Promise<BrawlStarsBattleLog> {
   try {
     return await apiCallWithRetry(
-      () => brawlApi.get(`/players/${encodeTag(playerTag)}/battlelog`, getAuthConfig(apiKey)).then(r => r.data),
+      () => brawlApi.get(`/players/${encodeTag(playerTag)}/battlelog`, { ...getAuthConfig(apiKey), signal }).then(r => r.data),
       `getPlayerBattleLog(${playerTag})`
     );
   } catch (error) {

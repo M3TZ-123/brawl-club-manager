@@ -6,13 +6,15 @@ export async function GET() {
   try {
     const { data: events, error } = await supabaseAdmin
       .from("club_events")
-      .select("*")
+      .select("id, event_type, player_tag, player_name, event_time")
       .order("event_time", { ascending: false })
       .limit(50);
 
     if (error) throw error;
 
-    return NextResponse.json({ events: events || [] });
+    return NextResponse.json({ events: (events || []).map(({ id, event_type, player_tag, player_name, event_time }) => ({
+      id, event_type, player_tag, player_name, event_time,
+    })) });
   } catch (error) {
     console.error("Error fetching events:", error);
     return NextResponse.json(

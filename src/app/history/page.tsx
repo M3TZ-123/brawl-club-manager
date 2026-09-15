@@ -1,4 +1,6 @@
 "use client";
+import { T, useI18n, LocalDate } from "@/components/locale-provider";
+
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { LayoutWrapper } from "@/components/layout-wrapper";
@@ -17,20 +19,14 @@ import {
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { MemberHistory } from "@/types/database";
-import { formatDate, formatDateTime } from "@/lib/utils";
+import Link from "next/link";
+import { HistoryMemberCard } from "@/components/history-member-card";
+import { MemberReviewSheet } from "@/components/member-review";
 import { Search, UserPlus, UserMinus, Pencil, Check, X, Trash2 } from "lucide-react";
 
-const MIN_VALID_DATE_MS = new Date("2000-01-01T00:00:00.000Z").getTime();
-
-function formatSafeDate(value: string | null | undefined, withTime = false): string {
-  if (!value) return "Unknown";
-  const parsed = new Date(value);
-  const ts = parsed.getTime();
-  if (Number.isNaN(ts) || ts < MIN_VALID_DATE_MS) return "Unknown";
-  return withTime ? formatDateTime(parsed.toISOString()) : formatDate(parsed.toISOString());
-}
-
 export default function HistoryPage() {
+  const { number } = useI18n();
+  const { t } = useI18n();
   const { isAdmin } = useAdminSession();
   const [history, setHistory] = useState<MemberHistory[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -40,6 +36,7 @@ export default function HistoryPage() {
   const [editingTag, setEditingTag] = useState<string | null>(null);
   const [editingNote, setEditingNote] = useState("");
   const [savingNote, setSavingNote] = useState(false);
+  const [reviewMember, setReviewMember] = useState<MemberHistory | null>(null);
 
   const loadHistory = useCallback(async (force = false) => {
     try {
@@ -57,15 +54,16 @@ export default function HistoryPage() {
   }, [timeRange]);
 
   useEffect(() => {
-    loadHistory();
-  }, [loadHistory]);
+    loadHistory(true);
+  }, [loadHistory, isAdmin]);
 
   useEffect(() => {
     const handleClubDataUpdated = () => {
       loadHistory(true);
     };
     window.addEventListener("club-data-updated", handleClubDataUpdated);
-    return () => window.removeEventListener("club-data-updated", handleClubDataUpdated);
+    window.addEventListener("member-reviews-updated", handleClubDataUpdated);
+    return () => { window.removeEventListener("club-data-updated", handleClubDataUpdated); window.removeEventListener("member-reviews-updated", handleClubDataUpdated); };
   }, [loadHistory]);
 
   const filteredHistory = useMemo(() => {
@@ -92,12 +90,12 @@ export default function HistoryPage() {
 
   const getMemberBadge = (h: MemberHistory) => {
     if (!h.is_current_member) {
-      return <Badge variant="destructive">Former</Badge>;
+      return <Badge variant="destructive"><T text="Former" /></Badge>;
     }
     if (h.times_left > 0 || h.times_joined > 1) {
-      return <Badge variant="warning">🔄 Returned ({h.times_joined}x)</Badge>;
+      return <Badge variant="warning"><T text="Returned" /></Badge>;
     }
-    return <Badge variant="success">⭐ Original</Badge>;
+    return <Badge variant="success"><T text="Current" /></Badge>;
   };
 
   const startEditingNote = (playerTag: string, currentNote: string | null) => {
@@ -148,7 +146,7 @@ export default function HistoryPage() {
         <div className="grid gap-4 md:grid-cols-4">
           <Card>
             <CardHeader className="pb-2">
-              <CardTitle className="text-sm font-medium">Total Records</CardTitle>
+              <CardTitle className="text-sm font-medium"><T text="Total Records" /></CardTitle>
             </CardHeader>
             <CardContent>
               <div className="text-2xl font-bold">{history.length}</div>
@@ -156,7 +154,7 @@ export default function HistoryPage() {
               </Card>
               <Card>
                 <CardHeader className="pb-2">
-                  <CardTitle className="text-sm font-medium">Current Members</CardTitle>
+                  <CardTitle className="text-sm font-medium"><T text="Current Members" /></CardTitle>
                 </CardHeader>
                 <CardContent>
                   <div className="text-2xl font-bold text-green-500">{currentCount}</div>
@@ -164,7 +162,7 @@ export default function HistoryPage() {
               </Card>
               <Card>
                 <CardHeader className="pb-2">
-                  <CardTitle className="text-sm font-medium">Former Members</CardTitle>
+                  <CardTitle className="text-sm font-medium"><T text="Former Members" /></CardTitle>
                 </CardHeader>
                 <CardContent>
                   <div className="text-2xl font-bold text-red-500">{formerCount}</div>
@@ -172,7 +170,7 @@ export default function HistoryPage() {
               </Card>
               <Card>
                 <CardHeader className="pb-2">
-                  <CardTitle className="text-sm font-medium">Returning Members</CardTitle>
+                  <CardTitle className="text-sm font-medium"><T text="Returning Members" /></CardTitle>
                 </CardHeader>
                 <CardContent>
                   <div className="text-2xl font-bold text-yellow-500">{returningCount}</div>
@@ -185,19 +183,18 @@ export default function HistoryPage() {
               <CardHeader>
                 <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
                   <div>
-                    <CardTitle>Member History</CardTitle>
+                    <CardTitle><T text="Member History" /></CardTitle>
                     <CardDescription>
-                      Track who has been in your club and identify returning members
-                    </CardDescription>
+                      <T text=" Track who has been in your club and identify returning members " /></CardDescription>
                   </div>
                   <div className="flex flex-col sm:flex-row gap-2">
                     <div className="relative">
-                      <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                      <Search className="absolute start-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
                       <Input
-                        placeholder="Search players..."
+                        placeholder={t("Search players...")}
                         value={searchQuery}
                         onChange={(e) => setSearchQuery(e.target.value)}
-                        className="pl-10 w-full sm:w-64"
+                        className="ps-10 w-full sm:w-64"
                       />
                     </div>
                     <select
@@ -205,19 +202,19 @@ export default function HistoryPage() {
                       onChange={(e) => setFilter(e.target.value as typeof filter)}
                       className="h-10 rounded-md border border-input bg-background px-3 text-sm"
                     >
-                      <option value="all">All Members</option>
-                      <option value="current">Current Members</option>
-                      <option value="former">Former Members</option>
+                      <option value="all"><T text="All Members" /></option>
+                      <option value="current"><T text="Current Members" /></option>
+                      <option value="former"><T text="Former Members" /></option>
                     </select>
                     <select
                       value={timeRange}
                       onChange={(e) => setTimeRange(e.target.value as typeof timeRange)}
                       className="h-10 rounded-md border border-input bg-background px-3 text-sm"
                     >
-                      <option value="all">All Time</option>
-                      <option value="7">Last 7 Days</option>
-                      <option value="30">Last 30 Days</option>
-                      <option value="90">Last 90 Days</option>
+                      <option value="all"><T text="All Time" /></option>
+                      <option value="7"><T text="Last 7 Days" /></option>
+                      <option value="30"><T text="Last 30 Days" /></option>
+                      <option value="90"><T text="Last 90 Days" /></option>
                     </select>
                   </div>
                 </div>
@@ -228,50 +225,52 @@ export default function HistoryPage() {
                     <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
                   </div>
                 ) : (
-                  <div className="overflow-x-auto -mx-4 sm:mx-0">
+                  <>
+                  <p className="mb-4 text-sm text-muted-foreground"><T text="First observed is the earliest retained evidence, not the actual join date. Counts cover the tracked history only." /></p>
+                  <div className="space-y-3 md:hidden">{filteredHistory.length ? filteredHistory.map(member => <HistoryMemberCard key={member.player_tag} member={member} isAdmin={isAdmin} onReview={() => setReviewMember(member)} />) : <p><T text="No member history found" /></p>}</div>
+                  <div className="hidden overflow-x-auto md:block">
                   <Table className="min-w-[700px] sm:min-w-full">
                     <TableHeader>
                       <TableRow>
-                        <TableHead>Player</TableHead>
-                        <TableHead>Status</TableHead>
-                        <TableHead className="hidden sm:table-cell">First Joined</TableHead>
-                        <TableHead className="hidden sm:table-cell">Left At</TableHead>
-                        <TableHead className="hidden lg:table-cell">Role At Leave</TableHead>
-                        <TableHead className="hidden lg:table-cell">Trophies At Leave</TableHead>
-                        <TableHead className="text-center">Joined</TableHead>
-                        <TableHead className="text-center">Left</TableHead>
-                        <TableHead className="hidden md:table-cell">Notes</TableHead>
+                        <TableHead><T text="Player" /></TableHead>
+                        <TableHead><T text="Status" /></TableHead>
+                        <TableHead className="hidden sm:table-cell"><T text="First observed" /></TableHead>
+                        <TableHead className="hidden sm:table-cell"><T text="Left At" /></TableHead>
+                        <TableHead className="hidden lg:table-cell"><T text="Role At Leave" /></TableHead>
+                        <TableHead className="hidden lg:table-cell"><T text="Trophies At Leave" /></TableHead>
+                        <TableHead className="text-center"><T text="Joined" /></TableHead>
+                        <TableHead className="text-center"><T text="Left" /></TableHead>
+                        <TableHead className="hidden md:table-cell"><T text="Notes" /></TableHead>
                       </TableRow>
                     </TableHeader>
                     <TableBody>
                       {filteredHistory.length === 0 ? (
                         <TableRow>
                           <TableCell colSpan={9} className="text-center py-8 text-muted-foreground">
-                            No member history found
-                          </TableCell>
+                            <T text=" No member history found " /></TableCell>
                         </TableRow>
                       ) : (
                         filteredHistory.map((h) => (
                           <TableRow key={h.player_tag}>
                             <TableCell>
                               <div>
-                                <p className="font-medium truncate max-w-[120px] sm:max-w-none">{h.player_name}</p>
-                                <p className="text-xs text-muted-foreground">{h.player_tag}</p>
+                                <p className="font-medium truncate max-w-[120px] sm:max-w-none"><Link href={`/members/${encodeURIComponent(h.player_tag)}`}><bdi>{h.player_name}</bdi></Link></p>
+                                <p className="text-xs text-muted-foreground"><bdi dir="ltr">{h.player_tag}</bdi></p>
                               </div>
                             </TableCell>
                             <TableCell>{getMemberBadge(h)}</TableCell>
                             <TableCell className="hidden sm:table-cell text-muted-foreground">
-                              {formatSafeDate(h.first_seen)}
+                              <LocalDate value={h.first_seen} />
                             </TableCell>
                             <TableCell className="hidden sm:table-cell text-muted-foreground">
-                              {formatSafeDate(h.last_left_at || (!h.is_current_member ? h.last_seen : null), true)}
+                              <LocalDate value={h.last_left_at} time />
                             </TableCell>
                             <TableCell className="hidden lg:table-cell text-muted-foreground">
                               {!h.is_current_member ? (h.role_at_leave || "Unknown") : "-"}
                             </TableCell>
                             <TableCell className="hidden lg:table-cell text-muted-foreground">
                               {!h.is_current_member
-                                ? (typeof h.trophies_at_leave === "number" ? h.trophies_at_leave.toLocaleString() : "Unknown")
+                                ? (typeof h.trophies_at_leave === "number" ? number(h.trophies_at_leave) : "Unknown")
                                 : "-"}
                             </TableCell>
                             <TableCell className="text-center">
@@ -292,7 +291,7 @@ export default function HistoryPage() {
                                   <Input
                                     value={editingNote}
                                     onChange={(e) => setEditingNote(e.target.value)}
-                                    placeholder="Add a note..."
+                                    placeholder={t("Add a note...")}
                                     className="h-8 text-sm"
                                     autoFocus
                                     onKeyDown={(e) => {
@@ -325,7 +324,7 @@ export default function HistoryPage() {
                                   title={isAdmin ? "Click to edit note" : "Admin login required to edit notes"}
                                 >
                                   <span className="text-muted-foreground truncate">
-                                    {h.notes || "-"}
+                                    {isAdmin ? h.notes || "-" : "-"}
                                   </span>
                                   {isAdmin && (
                                     <Pencil className="h-3 w-3 text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity shrink-0" />
@@ -333,7 +332,7 @@ export default function HistoryPage() {
                                   {h.notes && isAdmin && (
                                     <button
                                       className="h-5 w-5 flex items-center justify-center rounded hover:bg-destructive/20 opacity-0 group-hover:opacity-100 transition-opacity shrink-0"
-                                      title="Delete note"
+                                      title={t("Delete note")}
                                       onClick={(e) => {
                                         e.stopPropagation();
                                         if (!isAdmin) return;
@@ -366,7 +365,7 @@ export default function HistoryPage() {
                       )}
                     </TableBody>
                   </Table>
-                  </div>
+                  </div></>
                 )}
               </CardContent>
             </Card>
@@ -374,32 +373,30 @@ export default function HistoryPage() {
             {/* Legend */}
             <Card>
               <CardHeader>
-                <CardTitle className="text-sm">Member Status Legend</CardTitle>
+                <CardTitle className="text-sm"><T text="Member Status Legend" /></CardTitle>
               </CardHeader>
               <CardContent>
                 <div className="flex flex-wrap gap-4">
                   <div className="flex items-center gap-2">
-                    <Badge variant="success">⭐ Original</Badge>
+                    <Badge variant="success"><T text="Current" /></Badge>
                     <span className="text-sm text-muted-foreground">
-                      Never left since joining — loyal member
-                    </span>
+                      <T text=" No recorded departures during tracking " /></span>
                   </div>
                   <div className="flex items-center gap-2">
-                    <Badge variant="warning">🔄 Returned</Badge>
+                    <Badge variant="warning"><T text="🔄 Returned" /></Badge>
                     <span className="text-sm text-muted-foreground">
-                      Left at least once but came back
-                    </span>
+                      <T text=" Left at least once but came back " /></span>
                   </div>
                   <div className="flex items-center gap-2">
-                    <Badge variant="destructive">Former</Badge>
+                    <Badge variant="destructive"><T text="Former" /></Badge>
                     <span className="text-sm text-muted-foreground">
-                      No longer in the club
-                    </span>
+                      <T text=" No longer in the club " /></span>
                   </div>
                 </div>
               </CardContent>
             </Card>
           </div>
+      {isAdmin && reviewMember && <MemberReviewSheet member={reviewMember} open onOpenChange={open => { if (!open) setReviewMember(null); }} />}
     </LayoutWrapper>
   );
 }

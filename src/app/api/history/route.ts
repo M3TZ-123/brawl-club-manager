@@ -1,6 +1,14 @@
 import { NextRequest, NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabase-admin";
-import { rejectUnauthorizedAdminMutation } from "@/lib/admin-auth";
+import { rejectUnauthorizedAdminMutation, verifyAdminSession } from "@/lib/admin-auth";
+import { loadMemberReviews, ReviewInputError, saveMemberReview } from "@/lib/member-reviews";
+
+export const dynamic = "force-dynamic";
+const PUBLIC_HISTORY_COLUMNS = "player_tag, player_name, first_seen, last_seen, last_left_at, times_joined, times_left, is_current_member, role_at_leave, trophies_at_leave";
+
+function historyResponse(body: unknown, status = 200) {
+  return NextResponse.json(body, { status, headers: { "Cache-Control": "no-store", Vary: "Cookie" } });
+}
 
 function parseDate(value: string | null | undefined): Date | null {
   if (!value) return null;
@@ -24,7 +32,7 @@ async function fetchAllMemberHistory(): Promise<MemberHistoryRow[]> {
   for (let from = 0; ; from += pageSize) {
     const query = supabaseAdmin
       .from("member_history")
-      .select("player_tag, player_name, first_seen, last_seen, last_left_at, times_joined, times_left, is_current_member, role_at_leave, trophies_at_leave, notes")
+      .select(PUBLIC_HISTORY_COLUMNS)
       .order("last_seen", { ascending: false })
       .order("player_tag", { ascending: true })
       .range(from, from + pageSize - 1);
@@ -95,48 +103,40 @@ export async function GET(request: NextRequest) {
       });
     }
 
-    return NextResponse.json({ history: filteredHistory });
+    // Whitelist the response too: a future query change must not publish
+    // legacy notes or any other private columns through this public route.
+    const publicColumns = PUBLIC_HISTORY_COLUMNS.split(", ");
+    let result = filteredHistory.map(row => Object.fromEntries(publicColumns.map(column => [column, row[column]])));
+    if (verifyAdminSession(request)) {
+      const reviews = new Map((await loadMemberReviews()).map(review => [review.player_tag, review]));
+      result = result.map(row => {
+        const review = reviews.get(String(row.player_tag));
+        return { ...row, notes: review?.notes || null, review_status: review?.status || "pending", follow_up_at: review?.follow_up_at || null };
+      });
+    }
+    return historyResponse({ history: result });
   } catch (error) {
     console.error("Error fetching history:", error);
-    return NextResponse.json(
-      { error: "Failed to fetch member history" },
-      { status: 500 }
-    );
+    return historyResponse({ error: "Failed to fetch member history" }, 503);
   }
 }
 
 export async function PATCH(request: NextRequest) {
   try {
     const authResponse = rejectUnauthorizedAdminMutation(request);
-    if (authResponse) return authResponse;
-
-    const body = await request.json().catch(() => ({}));
-    const { player_tag, notes } = body;
-
-    if (typeof player_tag !== "string" || player_tag.trim().length === 0) {
-      return NextResponse.json(
-        { error: "player_tag is required" },
-        { status: 400 }
-      );
+    if (authResponse) {
+      authResponse.headers.set("Cache-Control", "no-store");
+      authResponse.headers.set("Vary", "Cookie");
+      return authResponse;
     }
 
-    const sanitizedNotes = typeof notes === "string"
-      ? notes.trim().slice(0, 1000)
-      : null;
-
-    const { error } = await supabaseAdmin
-      .from("member_history")
-      .update({ notes: sanitizedNotes || null })
-      .eq("player_tag", player_tag.trim());
-
-    if (error) throw error;
-
-    return NextResponse.json({ success: true });
+    const body = await request.json().catch(() => null);
+    if (!body || typeof body !== "object" || Array.isArray(body)) throw new ReviewInputError("Invalid notes payload");
+    const review = await saveMemberReview({ player_tag: body.player_tag, notes: body.notes });
+    return historyResponse({ success: true, review });
   } catch (error) {
-    console.error("Error updating notes:", error);
-    return NextResponse.json(
-      { error: "Failed to update notes" },
-      { status: 500 }
-    );
+    if (error instanceof ReviewInputError) return historyResponse({ error: error.message }, error.status);
+    console.error("Private member note storage is unavailable");
+    return historyResponse({ error: "Private member reviews are unavailable. Please try again later." }, 503);
   }
 }

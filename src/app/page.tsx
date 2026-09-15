@@ -1,9 +1,13 @@
 "use client";
+import { T, useI18n } from "@/components/locale-provider";
+
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { useAppStore } from "@/lib/store";
 import { fetchJsonCached } from "@/lib/client-data-cache";
+import { DataConfidenceNotice, SyncHealthCard } from "@/components/sync-health";
+import { MemberReviewButton } from "@/components/member-review";
 import { LayoutWrapper } from "@/components/layout-wrapper";
 import { SetupWizard } from "@/components/setup-wizard";
 import { StatsCards } from "@/components/stats-cards";
@@ -12,15 +16,11 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Member, ClubEvent } from "@/types/database";
 import {
   Activity,
-  AlertTriangle,
   ArrowUpRight,
-  CheckCircle2,
-  Clock3,
   Crown,
   ListChecks,
   Minus,
   PencilLine,
-  ShieldCheck,
   Target,
   TrendingDown,
   TrendingUp,
@@ -133,15 +133,9 @@ function InsightsSkeleton() {
   );
 }
 
-function formatNumber(value: number | null | undefined) {
-  return (value || 0).toLocaleString();
-}
 
-function formatDelta(value: number | null | undefined) {
-  if (value == null) return "No data";
-  if (value === 0) return "0";
-  return `${value > 0 ? "+" : ""}${value.toLocaleString()}`;
-}
+
+
 
 function getDeltaClass(value: number | null | undefined) {
   if (value == null || value === 0) return "text-muted-foreground";
@@ -160,95 +154,12 @@ function getActivityClass(status: ActivityStatus) {
   return "border-red-500/30 bg-red-500/10 text-red-300";
 }
 
-function formatRelativeTime(value: string | null | undefined) {
-  if (!value) return "Never";
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return "Unknown";
 
-  const diffMs = Math.max(Date.now() - date.getTime(), 0);
-  const minutes = Math.floor(diffMs / 60_000);
-  if (minutes < 1) return "Just now";
-  if (minutes < 60) return `${minutes} min ago`;
-
-  const hours = Math.floor(minutes / 60);
-  if (hours < 24) return `${hours}h ago`;
-
-  const days = Math.floor(hours / 24);
-  return `${days}d ago`;
-}
-
-function formatTime(value: Date) {
-  return new Intl.DateTimeFormat(undefined, {
-    hour: "numeric",
-    minute: "2-digit",
-  }).format(value);
-}
-
-function getNextScheduledSync(intervalMinutes: number) {
-  const interval = Math.max(intervalMinutes || 30, 1);
-  const next = new Date();
-  next.setSeconds(0, 0);
-  const remainder = next.getMinutes() % interval;
-  next.setMinutes(next.getMinutes() + (remainder === 0 ? interval : interval - remainder));
-  return next;
-}
-
-function getSyncHealth(lastSyncTime: string | null) {
-  if (!lastSyncTime) {
-    return {
-      label: "No sync recorded",
-      detail: "Waiting for the first successful sync",
-      tone: "text-yellow-300",
-      icon: AlertTriangle,
-      isStale: true,
-    };
-  }
-
-  const date = new Date(lastSyncTime);
-  if (Number.isNaN(date.getTime())) {
-    return {
-      label: "Invalid sync time",
-      detail: "Last sync timestamp could not be read",
-      tone: "text-red-300",
-      icon: AlertTriangle,
-      isStale: true,
-    };
-  }
-
-  const minutesAgo = Math.floor(Math.max(Date.now() - date.getTime(), 0) / 60_000);
-  if (minutesAgo <= 45) {
-    return {
-      label: "Healthy",
-      detail: `Updated ${formatRelativeTime(lastSyncTime)}`,
-      tone: "text-green-400",
-      icon: CheckCircle2,
-      isStale: false,
-    };
-  }
-
-  if (minutesAgo <= 90) {
-    return {
-      label: "Delayed",
-      detail: `Last sync ${formatRelativeTime(lastSyncTime)}`,
-      tone: "text-yellow-300",
-      icon: AlertTriangle,
-      isStale: true,
-    };
-  }
-
-  return {
-    label: "Stale",
-    detail: `Last sync ${formatRelativeTime(lastSyncTime)}`,
-    tone: "text-red-300",
-    icon: AlertTriangle,
-    isStale: true,
-  };
-}
 
 function ActivityBadge({ status }: { status: ActivityStatus }) {
   return (
     <span className={`rounded-full border px-2 py-0.5 text-[11px] font-medium ${getActivityClass(status)}`}>
-      {getActivityLabel(status)}
+      <T text={getActivityLabel(status)} />
     </span>
   );
 }
@@ -262,10 +173,11 @@ function MemberSignalList({
   emptyText: string;
   mode: "gain" | "no-progress" | "attention" | "top";
 }) {
+  const { delta: formatDelta, number: formatNumber } = useI18n();
   if (members.length === 0) {
     return (
       <div className="rounded-lg border border-dashed border-border/70 p-4 text-center text-sm text-muted-foreground">
-        {emptyText}
+        <T text={emptyText} />
       </div>
     );
   }
@@ -291,16 +203,16 @@ function MemberSignalList({
               )}
               <div className="min-w-0">
                 <p className="truncate text-sm font-semibold">{member.player_name || "Unknown player"}</p>
-                <p className="text-xs text-muted-foreground">{member.player_tag}</p>
+                <p className="text-xs text-muted-foreground"><bdi dir="ltr">{member.player_tag}</bdi></p>
               </div>
             </div>
 
-            <div className="shrink-0 text-right">
+            <div className="shrink-0 text-end">
               {mode === "attention" ? (
                 <div className="flex flex-col items-end gap-1">
-                  <ActivityBadge status={member.activity_status} />
+                  <ActivityBadge status={member.activity_status} /><MemberReviewButton member={member} />
                   <span className={`text-xs ${getDeltaClass(progressValue)}`}>
-                    {formatDelta(progressValue)} in {progressWindow}
+                    <T text="{change} in {days} days" values={{change:formatDelta(progressValue),days: progressWindow === "3d" ? 3 : 7}} />
                   </span>
                 </div>
               ) : (
@@ -308,7 +220,7 @@ function MemberSignalList({
                   <p className="text-sm font-semibold">{formatNumber(member.trophies)}</p>
                   <p className={`text-xs ${getDeltaClass(progressValue)}`}>
                     {mode === "top" || mode === "no-progress"
-                      ? `${formatDelta(progressValue)} in ${progressWindow}`
+                      ? <T text="{change} in {days} days" values={{change:formatDelta(progressValue),days: progressWindow === "3d" ? 3 : 7}} />
                       : formatDelta(progressValue)}
                   </p>
                 </>
@@ -318,53 +230,6 @@ function MemberSignalList({
         );
       })}
     </div>
-  );
-}
-
-function SyncStatusCard({
-  lastSyncTime,
-  intervalMinutes,
-}: {
-  lastSyncTime: string | null;
-  intervalMinutes: number;
-}) {
-  const syncHealth = getSyncHealth(lastSyncTime);
-  const SyncIcon = syncHealth.icon;
-  const nextSync = getNextScheduledSync(intervalMinutes);
-
-  return (
-    <Card>
-      <CardHeader className="pb-3">
-        <CardTitle className="flex items-center gap-2 text-base">
-          <Clock3 className="h-5 w-5 text-blue-400" />
-          Sync Status
-        </CardTitle>
-      </CardHeader>
-      <CardContent className="space-y-3">
-        <div className="flex items-center justify-between gap-3">
-          <span className="text-sm text-muted-foreground">Current status</span>
-          <span className={`flex items-center gap-1.5 text-sm font-semibold ${syncHealth.tone}`}>
-            <SyncIcon className="h-4 w-4" />
-            {syncHealth.label}
-          </span>
-        </div>
-        <div className="flex items-center justify-between gap-3">
-          <span className="text-sm text-muted-foreground">Last sync</span>
-          <span className="text-sm font-medium">{syncHealth.detail}</span>
-        </div>
-        <div className="flex items-center justify-between gap-3">
-          <span className="text-sm text-muted-foreground">Next auto sync</span>
-          <span className="text-sm font-medium">{formatTime(nextSync)}</span>
-        </div>
-        <div className="flex items-center justify-between gap-3">
-          <span className="text-sm text-muted-foreground">Source</span>
-          <span className="flex items-center gap-1.5 text-sm font-medium">
-            <ShieldCheck className="h-4 w-4 text-green-400" />
-            cron-job.org
-          </span>
-        </div>
-      </CardContent>
-    </Card>
   );
 }
 
@@ -385,8 +250,7 @@ function RecentChangesCard({
       <CardHeader className="pb-3">
         <CardTitle className="flex items-center gap-2 text-base">
           <Activity className="h-5 w-5 text-green-400" />
-          Recent Club Changes
-        </CardTitle>
+          <T text=" Recent Club Changes " /></CardTitle>
       </CardHeader>
       <CardContent>
         <div className="grid grid-cols-2 gap-3">
@@ -394,36 +258,20 @@ function RecentChangesCard({
             <div key={item.label} className="rounded-lg border border-border/60 bg-muted/20 p-3">
               <div className="flex items-center gap-2 text-xs text-muted-foreground">
                 <item.icon className={`h-4 w-4 ${item.className}`} />
-                {item.label}
+                {<T text={item.label} />}
               </div>
               <p className="mt-2 text-2xl font-bold">{item.value}</p>
             </div>
           ))}
         </div>
-        <p className="mt-3 text-xs text-muted-foreground">Last 7 days</p>
+        <p className="mt-3 text-xs text-muted-foreground"><T text="Last 7 days" /></p>
       </CardContent>
     </Card>
   );
 }
 
-function DataFreshnessAlert({ lastSyncTime }: { lastSyncTime: string | null }) {
-  const syncHealth = getSyncHealth(lastSyncTime);
-  if (!syncHealth.isStale) return null;
-
-  return (
-    <div className="flex items-start gap-3 rounded-lg border border-yellow-500/30 bg-yellow-500/10 px-4 py-3 text-sm text-yellow-100">
-      <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-yellow-300" />
-      <div>
-        <p className="font-semibold">Data freshness warning</p>
-        <p className="text-yellow-100/80">
-          {syncHealth.detail}. Check cron-job.org or click Sync Now from the sidebar if the data should be current.
-        </p>
-      </div>
-    </div>
-  );
-}
-
 export default function DashboardPage() {
+  const { number, delta: formatDelta } = useI18n();
   const {
     clubTag,
     apiKeyConfigured,
@@ -582,28 +430,24 @@ export default function DashboardPage() {
             avgTrophies={dashboardData.avgTrophies}
           />
 
-          <DataFreshnessAlert lastSyncTime={dashboardData.syncStatus.lastSyncTime} />
+          <DataConfidenceNotice />
 
           <div className="grid gap-4 lg:grid-cols-3">
             <Card>
               <CardHeader className="pb-3">
                 <CardTitle className="flex items-center gap-2 text-base">
                   <Trophy className="h-5 w-5 text-yellow-500" />
-                  Club Conditions
-                </CardTitle>
+                  <T text=" Club Conditions " /></CardTitle>
               </CardHeader>
               <CardContent>
                 <p className="text-3xl font-bold">
-                  {requiredTrophies != null ? requiredTrophies.toLocaleString() : "--"}
+                  {requiredTrophies != null ? number(requiredTrophies) : "--"}
                 </p>
-                <p className="mt-1 text-sm text-muted-foreground">Required trophies to join</p>
+                <p className="mt-1 text-sm text-muted-foreground"><T text="Required trophies to join" /></p>
               </CardContent>
             </Card>
 
-            <SyncStatusCard
-              lastSyncTime={dashboardData.syncStatus.lastSyncTime}
-              intervalMinutes={dashboardData.syncStatus.intervalMinutes}
-            />
+            <SyncHealthCard />
 
             <RecentChangesCard changeSummary={dashboardData.changeSummary} />
           </div>
@@ -616,13 +460,13 @@ export default function DashboardPage() {
                 <CardContent className="pt-4">
                   <div className="mb-2 flex items-center gap-2">
                     <Trophy className="h-4 w-4 text-yellow-500" />
-                    <span className="text-sm font-medium text-muted-foreground">Mega Boss Wins</span>
+                    <span className="text-sm font-medium text-muted-foreground"><T text="Mega Boss Wins" /></span>
                   </div>
-                  <p className="text-3xl font-bold">{insights.megaBoss.totalWins.toLocaleString()}</p>
+                  <p className="text-3xl font-bold">{number(insights.megaBoss.totalWins)}</p>
                   <p className="mt-1 text-sm text-muted-foreground">
                     {insights.megaBoss.isTracked
-                      ? `${insights.megaBoss.totalBattles.toLocaleString()} Mega Boss battles tracked`
-                      : "No Mega Boss battles found this week"}
+                      ? <T text="{value0} Mega Boss battles tracked" values={{ value0: String(number(insights.megaBoss.totalBattles)) }} />
+                      : <T text="No Mega Boss battles found this week" />}
                   </p>
                 </CardContent>
               </Card>
@@ -631,7 +475,7 @@ export default function DashboardPage() {
                 <CardContent className="pt-4">
                   <div className="mb-2 flex items-center gap-2">
                     <Target className="h-4 w-4 text-blue-500" />
-                    <span className="text-sm font-medium text-muted-foreground">Win Rate</span>
+                    <span className="text-sm font-medium text-muted-foreground"><T text="Win Rate" /></span>
                   </div>
                   <p
                     className={`text-3xl font-bold ${
@@ -645,8 +489,7 @@ export default function DashboardPage() {
                     {insights.winRate}%
                   </p>
                   <p className="mt-1 text-sm text-muted-foreground">
-                    {insights.totalWins.toLocaleString()} wins / {insights.totalBattlesThisWeek.toLocaleString()} battles
-                  </p>
+                    {number(insights.totalWins)} <T text=" wins / " />{number(insights.totalBattlesThisWeek)} <T text=" battles " /></p>
                 </CardContent>
               </Card>
 
@@ -656,15 +499,15 @@ export default function DashboardPage() {
                     type="button"
                     onClick={scrollToAttentionMembers}
                     disabled={insights.kickCount === 0}
-                    className="w-full text-left disabled:cursor-default"
+                    className="w-full text-start disabled:cursor-default"
                   >
                     <div className="mb-2 flex items-center gap-2">
                       <UserX className="h-4 w-4 text-red-500" />
-                      <span className="text-sm font-medium text-muted-foreground">Inactive Members</span>
+                      <span className="text-sm font-medium text-muted-foreground"><T text="Inactive Members" /></span>
                     </div>
                     <p className="text-3xl font-bold">{insights.kickCount}</p>
                     <p className={`mt-1 text-sm ${insights.kickCount > 0 ? "text-muted-foreground" : "font-medium text-green-500"}`}>
-                      {insights.kickCount > 0 ? "Need review" : "No inactive members"}
+                      {insights.kickCount > 0 ? <T text="Need review" /> : <T text="No inactive members" />}
                     </p>
                   </button>
                 </CardContent>
@@ -680,9 +523,9 @@ export default function DashboardPage() {
                     ) : (
                       <Minus className="h-4 w-4 text-yellow-500" />
                     )}
-                    <span className="text-sm font-medium text-muted-foreground">Weekly Battles</span>
+                    <span className="text-sm font-medium text-muted-foreground"><T text="Weekly Battles" /></span>
                   </div>
-                  <p className="text-3xl font-bold">{insights.thisWeekTotal.toLocaleString()}</p>
+                  <p className="text-3xl font-bold">{number(insights.thisWeekTotal)}</p>
                   <p
                     className={`mt-1 text-sm ${
                       insights.trendDirection === "up"
@@ -693,8 +536,7 @@ export default function DashboardPage() {
                     }`}
                   >
                     {insights.trendDiff > 0 ? "+" : ""}
-                    {insights.trendDiff}% vs previous week
-                  </p>
+                    {insights.trendDiff}<T text="% vs previous week " /></p>
                 </CardContent>
               </Card>
 
@@ -702,16 +544,15 @@ export default function DashboardPage() {
                 <CardContent className="pt-4">
                   <div className="mb-2 flex items-center gap-2">
                     <Crown className="h-4 w-4 text-yellow-500" />
-                    <span className="text-sm font-medium text-muted-foreground">MVP of the Week</span>
+                    <span className="text-sm font-medium text-muted-foreground"><T text="MVP of the Week" /></span>
                   </div>
                   <p className="truncate text-2xl font-bold">{insights.mvpName || "---"}</p>
                   {insights.mvpName ? (
                     <p className={`mt-1 flex items-center gap-1 text-sm font-medium ${getDeltaClass(insights.mvpTrophies)}`}>
                       <Trophy className="h-3.5 w-3.5" />
-                      {formatDelta(insights.mvpTrophies)} net trophies
-                    </p>
+                      {formatDelta(insights.mvpTrophies)} <T text=" net trophies " /></p>
                   ) : (
-                    <p className="mt-1 text-sm text-muted-foreground">No weekly trophy leader yet</p>
+                    <p className="mt-1 text-sm text-muted-foreground"><T text="No weekly trophy leader yet" /></p>
                   )}
                 </CardContent>
               </Card>
@@ -723,9 +564,8 @@ export default function DashboardPage() {
               <CardHeader>
                 <CardTitle className="flex items-center gap-2 text-base">
                   <ListChecks className="h-5 w-5 text-yellow-400" />
-                  Needs Attention
-                </CardTitle>
-                <p className="text-sm text-muted-foreground">Inactive, low activity, or no 3-day progress</p>
+                  <T text=" Needs Attention " /></CardTitle>
+                <p className="text-sm text-muted-foreground"><T text="Inactive, low activity, or no 3-day progress" /></p>
               </CardHeader>
               <CardContent>
                 <MemberSignalList
@@ -740,9 +580,8 @@ export default function DashboardPage() {
               <CardHeader>
                 <CardTitle className="flex items-center gap-2 text-base">
                   <ArrowUpRight className="h-5 w-5 text-green-400" />
-                  Top Gainers This Week
-                </CardTitle>
-                <p className="text-sm text-muted-foreground">Best 7-day trophy progress</p>
+                  <T text=" Top Gainers This Week " /></CardTitle>
+                <p className="text-sm text-muted-foreground"><T text="Best 7-day trophy progress" /></p>
               </CardHeader>
               <CardContent>
                 <MemberSignalList
@@ -757,9 +596,8 @@ export default function DashboardPage() {
               <CardHeader>
                 <CardTitle className="flex items-center gap-2 text-base">
                   <Minus className="h-5 w-5 text-yellow-400" />
-                  No Progress
-                </CardTitle>
-                <p className="text-sm text-muted-foreground">Exactly 0 net trophies over 3 days</p>
+                  <T text=" No Progress " /></CardTitle>
+                <p className="text-sm text-muted-foreground"><T text="Exactly 0 net trophies over 3 days" /></p>
               </CardHeader>
               <CardContent>
                 <MemberSignalList
@@ -775,12 +613,11 @@ export default function DashboardPage() {
             <Card className="lg:col-span-2">
               <CardHeader className="flex flex-row items-center justify-between gap-4">
                 <div>
-                  <CardTitle>Top Members</CardTitle>
-                  <p className="text-sm text-muted-foreground">Highest trophies with weekly movement</p>
+                  <CardTitle><T text="Top Members" /></CardTitle>
+                  <p className="text-sm text-muted-foreground"><T text="Highest trophies with weekly movement" /></p>
                 </div>
                 <Link href="/members" className="shrink-0 text-sm font-medium text-primary hover:underline">
-                  Open Members
-                </Link>
+                  <T text=" Open Members " /></Link>
               </CardHeader>
               <CardContent>
                 <MemberSignalList

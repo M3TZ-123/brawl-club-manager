@@ -1,8 +1,10 @@
 "use client";
+import { T, LocalDate } from "@/components/locale-provider";
+
 
 import { memo } from "react";
 import { ClubEvent } from "@/types/database";
-import { formatDateTime } from "@/lib/utils";
+
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { UserPlus, UserMinus, ArrowUp, ArrowDown } from "lucide-react";
@@ -30,13 +32,13 @@ export const ActivityTimeline = memo(function ActivityTimeline({ events }: Activ
   const getEventBadge = (type: string) => {
     switch (type) {
       case "join":
-        return <Badge variant="success">Joined</Badge>;
+        return <Badge variant="success"><T text="Joined" /></Badge>;
       case "leave":
-        return <Badge variant="destructive">Left</Badge>;
+        return <Badge variant="destructive"><T text="Left" /></Badge>;
       case "promotion":
-        return <Badge variant="default">Promoted</Badge>;
+        return <Badge variant="default"><T text="Promoted" /></Badge>;
       case "demotion":
-        return <Badge variant="warning">Demoted</Badge>;
+        return <Badge variant="warning"><T text="Demoted" /></Badge>;
       default:
         return <Badge>{type}</Badge>;
     }
@@ -45,14 +47,13 @@ export const ActivityTimeline = memo(function ActivityTimeline({ events }: Activ
   return (
     <Card>
       <CardHeader>
-        <CardTitle>Recent Activity</CardTitle>
+        <CardTitle><T text="Recent Activity" /></CardTitle>
       </CardHeader>
       <CardContent>
         <div className="space-y-4">
           {events.length === 0 ? (
             <p className="text-muted-foreground text-center py-4">
-              No recent activity
-            </p>
+              <T text=" No recent activity " /></p>
           ) : (
             events.map((event) => (
               <div
@@ -65,13 +66,13 @@ export const ActivityTimeline = memo(function ActivityTimeline({ events }: Activ
                 <div className="flex-1 min-w-0">
                   <p className="font-medium truncate">{event.player_name}</p>
                   <p className="text-xs text-muted-foreground">
-                    {event.player_tag}
+                    <bdi dir="ltr">{event.player_tag}</bdi>
                   </p>
                 </div>
                 <div className="flex flex-col items-end gap-1">
                   {getEventBadge(event.event_type)}
                   <span className="text-xs text-muted-foreground">
-                    {formatDateTime(event.event_time)}
+                    <LocalDate value={event.event_time} time />
                   </span>
                 </div>
               </div>

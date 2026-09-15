@@ -1,0 +1,81 @@
+name: Encrypted database backup
+on:
+  schedule:
+    - cron: '23 3 * * *'
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: database-backup
+  cancel-in-progress: false
+jobs:
+  backup-and-restore:
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_PASSWORD: local-test-only
+          POSTGRES_DB: brawl_backup_restore
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      BACKUP_OUTPUT: backup-output/database.brawlbackup
+      RESTORE_DATABASE_URL: postgresql://postgres:local-test-only@127.0.0.1:5432/brawl_backup_restore
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Create and encrypt a consistent snapshot
+        id: export
+        env:
+          VERCEL_APP_URL: ${{ secrets.VERCEL_APP_URL }}
+          CRON_SECRET: ${{ secrets.CRON_SECRET }}
+          BACKUP_ENCRYPTION_KEY: ${{ secrets.BACKUP_ENCRYPTION_KEY }}
+        run: node scripts/backup-export.cjs
+      - name: Restore into an empty isolated database and verify every table
+        id: restore
+        env:
+          BACKUP_ENCRYPTION_KEY: ${{ secrets.BACKUP_ENCRYPTION_KEY }}
+        run: node scripts/restore-backup.cjs "$BACKUP_OUTPUT" --apply
+      - name: Choose retention
+        id: retention
+        if: ${{ always() && steps.export.outcome == 'success' }}
+        run: |
+          if [ "$(date -u +%u)" = "7" ]; then
+            echo "days=90" >> "$GITHUB_OUTPUT"
+          else
+            echo "days=30" >> "$GITHUB_OUTPUT"
+          fi
+      - name: Store encrypted backup offsite
+        id: upload
+        if: ${{ always() && steps.export.outcome == 'success' && steps.retention.outcome == 'success' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: database-backup-${{ github.run_id }}
+          path: backup-output/*.brawlbackup
+          if-no-files-found: error
+          retention-days: ${{ steps.retention.outputs.days }}
+          compression-level: 0
+      - name: Confirm export only after verified restore and artifact upload
+        id: complete
+        if: ${{ always() && steps.restore.outcome == 'success' && steps.upload.outcome == 'success' }}
+        env:
+          VERCEL_APP_URL: ${{ secrets.VERCEL_APP_URL }}
+          CRON_SECRET: ${{ secrets.CRON_SECRET }}
+        run: node scripts/backup-complete.cjs
+      - name: Retain recent raw data and long term aggregates
+        if: ${{ always() && steps.restore.outcome == 'success' && steps.upload.outcome == 'success' && steps.complete.outcome == 'success' }}
+        env:
+          VERCEL_APP_URL: ${{ secrets.VERCEL_APP_URL }}
+          CRON_SECRET: ${{ secrets.CRON_SECRET }}
+        run: node scripts/backup-maintenance.cjs

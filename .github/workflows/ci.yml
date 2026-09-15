@@ -1,0 +1,48 @@
+name: Quality checks
+on:
+  push:
+    branches: [master]
+  pull_request:
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_PASSWORD: local-test-only
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      NEXT_PUBLIC_SUPABASE_URL: https://example.supabase.co
+      NEXT_PUBLIC_SUPABASE_ANON_KEY: ci-placeholder
+      SUPABASE_SERVICE_ROLE_KEY: ci-placeholder
+      SYNC_TEST_DATABASE_URL: postgresql://postgres:local-test-only@127.0.0.1:5432/brawl_sync_tests
+      SECURITY_TEST_DATABASE_URL: postgresql://postgres:local-test-only@127.0.0.1:5432/brawl_security_tests
+      BACKUP_TEST_DATABASE_URL: postgresql://postgres:local-test-only@127.0.0.1:5432/brawl_backup_tests
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm run lint
+      - run: npx tsc --noEmit
+      - run: npm test
+      - run: node scripts/prepare-test-databases.cjs
+      - run: node --test tests/integration/*.test.cjs
+      - run: npm run build
+      - run: npm audit --audit-level=high
