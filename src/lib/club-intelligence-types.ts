@@ -1,0 +1,28 @@
+export type ClubIntelligenceRange = "7d" | "30d" | "90d";
+export type ClubMetadata = { name?: string; description?: string; type?: string; badgeId?: number; requiredTrophies?: number };
+export type ClubRosterMember = { tag: string; name: string; role: string; trophies: number };
+export type ClubSnapshot = { metadata: ClubMetadata; members: ClubRosterMember[] };
+export type ActivityCell = { day: string; battles: number | null; wins: number | null;
+  coverage: "monitored" | "partial" | "possible_gap" | "before_tracking" | "limited"; href: string };
+export type MembershipSpell = { playerTag: string; playerName: string; startedAt: string; endedAt: string | null;
+  kind: "join" | "first_observed"; source: "recorded" | "reconstructed" | "unknown"; returning: boolean; uncertain: boolean };
+export type ClubIntelligenceResponse = {
+  club: { tag: string; metadata: ClubMetadata | null; observedAt: string | null; memberCount: number; rosterTrophies: number; openSeats: number;
+    leaders: Array<{ tag: string; name: string; role: string }> };
+  calendar: { days: string[]; timezone: "UTC"; rows: Array<{ playerTag: string; playerName: string; baselineAt: string | null;
+    lastCheckedAt: string | null; observedBattles: number; cells: ActivityCell[] }>; observedParticipations: number; recordedDays: number;
+    gapHistoryDays: 28; completeHistory: false };
+  growth: { requestedStart: string; availableFrom: string | null; startAt: string | null; endAt: string | null;
+    status: "observed" | "insufficient_history"; startTotal: number | null; endTotal: number | null; totalChange: number | null;
+    commonProgress: number | null; addedTrophies: number | null; removedTrophies: number | null;
+    commonMembers: number; addedMembers: number; removedMembers: number; returningMembers: number;
+    points: Array<{ observedAt: string; totalTrophies: number; members: number }> };
+  strength: { observedAt: string | null; members: number; medianTrophies: number | null; top10Average: number | null; topCount: number;
+    trophyBands: Array<{ min: number; max: number | null; members: number }>;
+    ranks: Array<{ rank: string | null; members: number }>; inventoryMembers: number; brawlersObserved: number; unknownPower: number;
+    power: Array<{ minimum: number; brawlers: number; members: number }> };
+  retention: { cohortStart: string; followupAt: string | null; cohorts: Array<{ days: 7 | 30; eligible: number; retained: number;
+    departed: number; pending: number; excluded: number; rate: number | null }>; spells: MembershipSpell[]; truncated: boolean };
+  metadataHistory: Array<{ id: string; observedAt: string; before: ClubMetadata | null; after: ClubMetadata; changedFields: string[] }>;
+  generatedAt: string;
+};

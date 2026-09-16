@@ -26,6 +26,7 @@ function fixture(options = {}) {
       }
       if (name === 'commit_roster_snapshot' || name === 'commit_sync_snapshot') return {data:{success:true,runId:'run-1',timestamp:new Date(now).toISOString(),synced:1,scope:name === 'commit_roster_snapshot'?'roster':'full',warnings:args.p_payload.warnings||[]},error:null};
       if (name === 'defer_sync_upstream' || name === 'fail_sync_run') return {data:true,error:null};
+      if (name === 'club_planning_refresh_goals') return {abortSignal:async()=>({data:true,error:null})};
       throw new Error('Unexpected RPC ' + name);
     },
   };
@@ -43,9 +44,9 @@ function fixture(options = {}) {
 test('roster sync requests only the club and never constructs an incomplete full snapshot',async()=>{
   const f=fixture();const result=await f.service.executeSync({source:'cron',scope:'roster'});
   assert.equal(result.scope,'roster');
-  assert.deepEqual(f.calls.map(call=>call.name),['acquire_sync_run','club','commit_roster_snapshot']);
+  assert.deepEqual(f.calls.map(call=>call.name),['acquire_sync_run','club','commit_roster_snapshot','club_planning_refresh_goals']);
   assert.equal(f.calls[0].args.p_scope,'roster');
-  const payload=f.calls.at(-1).args.p_payload;
+  const payload=f.calls.find(call=>call.name==='commit_roster_snapshot').args.p_payload;
   assert.equal(payload.members[0].trophies,123);
   assert.equal(Object.hasOwn(payload,'brawlers'),false);
   assert.equal(Object.hasOwn(payload.members[0],'highest_trophies'),false);

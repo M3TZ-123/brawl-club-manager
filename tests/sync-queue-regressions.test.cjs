@@ -62,6 +62,7 @@ function fixture(options = {}) {
   };
   const service = loadTypeScript('src/lib/sync-service.ts', {
     '@/lib/supabase-admin': { supabaseAdmin: db }, '@/lib/brawl-api': api,
+    '@/lib/sync-club-planning': { refreshPlanningAfterSync: async () => {} },
     '@/lib/upstream-rate-limit': { getUpstreamCooldownMs: provider => provider === 'rnt' ? Math.max(0, cooldownUntil - now) : 0 },
   }, {
     Date: ClockDate, setTimeout: fn => { fn(); return 0; }, console: { error() {} },

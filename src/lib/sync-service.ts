@@ -2,6 +2,8 @@ import { supabaseAdmin } from "@/lib/supabase-admin";
 import { publicMemberSnapshot } from "@/lib/sync-public-snapshots";
 import { getUpstreamCooldownMs } from "@/lib/upstream-rate-limit";
 import { battleObservation, type BattleObservation } from "@/lib/battle-coverage";
+import { normalizeClubSnapshot } from "@/lib/club-intelligence-snapshot";
+import { refreshPlanningAfterSync } from "@/lib/sync-club-planning";
 import { readProfileRankedData, rankedCoreComplete, mergeRankedFallback, rankedSnapshot } from "@/lib/ranked-data";
 import { normalizeProfileProgress, normalizeBrawlerProgress } from "@/lib/player-progress";
 import { getClub, getPlayer, getPlayerBattleLog, getPlayerRankedData, processBattleLog, calculateWinRateFromBattleLog, type BrawlStarsBrawler, type BrawlStarsPlayer } from "@/lib/brawl-api";
@@ -171,12 +173,14 @@ export async function executeSync(options: {
       throw new SyncError("invalid_upstream_roster", "The game API returned an incomplete club roster.", 502);
     }
     const roster = club?.members || [{ tag: playerTag!, name: "", role: "member" }];
+    const clubSnapshot = club ? normalizeClubSnapshot(club, clubTag) : null;
     if (scope === "roster") {
       if (!club || club.members.some(member => !Number.isInteger(member.trophies) || member.trophies < 0)) throw new SyncError("invalid_upstream_roster", "The game API returned an incomplete club roster.", 502);
       phase = "commit";
       const result = await supabaseAdmin.rpc("commit_roster_snapshot", { p_run_id: runId, p_fence: fence, p_payload: {
         members: club.members.map(member => ({ player_tag: normalizeSyncTag(member.tag), player_name: member.name, role: member.role, trophies: member.trophies, icon_id: member.icon?.id ?? null })),
         required_trophies: club.requiredTrophies ?? null, initial_setup: options.initialSetup === true,
+        ...(clubSnapshot ? { club_snapshot: clubSnapshot } : {}),
       } });
       if (result.error) {
         console.error("Roster snapshot rejected", { runId, sqlstate: /^[0-9A-Z]{5}$/.test(result.error.code || "") ? result.error.code : "unavailable" });
@@ -185,6 +189,7 @@ export async function executeSync(options: {
           canceled ? databaseTimeoutMessage : "The roster snapshot could not be committed.", canceled || !result.error.code ? 503 : 409, undefined,
           { phase: "commit", provider: "database", sqlstate: result.error.code });
       }
+      await refreshPlanningAfterSync(clubTag);
       return publicSyncResult(result.data as SyncResult);
     }
     const warnings = new Set<string>();
@@ -292,6 +297,7 @@ export async function executeSync(options: {
     phase = "commit";
     const { data, error } = await supabaseAdmin.rpc("commit_sync_snapshot", { p_run_id: runId, p_fence: fence,
       p_payload: { members, battles, brawlers, initial_setup: options.initialSetup === true, required_trophies: club?.requiredTrophies ?? null,
+        ...(clubSnapshot ? { club_snapshot: clubSnapshot } : {}),
         battle_logs_complete: battleLogsComplete, battle_observations: battleObservations,
         ranked_complete: rankedComplete, ranked_attempted: fallbackAttempted, warnings: [...warnings] } });
     if (error) {
@@ -309,6 +315,7 @@ export async function executeSync(options: {
             : "The sync snapshot was not committed. It is safe to retry.", code === "member_not_found" ? 404 : code === "database_unavailable" || code === "database_timeout" ? 503 : 409, undefined,
         { phase: "commit", provider: "database", sqlstate: error.code });
     }
+    if (!playerTag) await refreshPlanningAfterSync(clubTag);
     return { ...publicSyncResult(data as SyncResult), ...(playerTag ? { brawlers: refreshedBrawlers } : {}) };
   } catch (error) {
     controller.abort();

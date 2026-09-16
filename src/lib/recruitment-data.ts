@@ -1,7 +1,8 @@
 export const candidateStatuses = ["watching", "shortlisted", "contacted", "joined", "archived"] as const;
 export type CandidateStatus = typeof candidateStatuses[number];
 export type CandidateProfile = { name: string; trophies: number; highestTrophies: number; brawlers: number; power11: number; rank: string | null; rankedPoints: number | null; clubName: string | null };
-export type Candidate = { player_tag: string; status: CandidateStatus; notes: string; version: number; created_at: string; updated_at: string; profile: CandidateProfile | null; profile_checked_at: string | null };
+export type CandidateCompatibility = { language: "unknown" | "compatible" | "incompatible"; time: "unknown" | "compatible" | "incompatible"; languages: string; availability: string };
+export type Candidate = { player_tag: string; status: CandidateStatus; notes: string; version: number; created_at: string; updated_at: string; profile: CandidateProfile | null; profile_checked_at: string | null; manual_compatibility?: CandidateCompatibility };
 export class CandidateInputError extends Error { constructor(message: string, public status = 400) { super(message); } }
 export function candidateTag(value: unknown) {
   const raw = typeof value === "string" ? value.trim().toUpperCase().replace(/^#/, "") : "";
@@ -11,9 +12,17 @@ export function candidateTag(value: unknown) {
 export function candidateInput(value: unknown) {
   if (!value || typeof value !== "object" || Array.isArray(value)) throw new CandidateInputError("Invalid candidate");
   const row = value as Record<string, unknown>;
-  if (Object.keys(row).some(key => !["player_tag", "status", "notes", "version"].includes(key))) throw new CandidateInputError("Invalid candidate");
+  if (Object.keys(row).some(key => !["player_tag", "status", "notes", "version", "manual_compatibility"].includes(key))) throw new CandidateInputError("Invalid candidate");
   if (!(candidateStatuses as readonly unknown[]).includes(row.status) || typeof row.notes !== "string" || row.notes.length > 1000 || row.notes.includes("\0") || !Number.isSafeInteger(row.version) || Number(row.version) < 0 || Number(row.version) > 2147483646) throw new CandidateInputError("Invalid candidate");
-  return { player_tag: candidateTag(row.player_tag), status: row.status as CandidateStatus, notes: row.notes.trim(), version: row.version as number };
+  return { player_tag: candidateTag(row.player_tag), status: row.status as CandidateStatus, notes: row.notes.trim(), version: row.version as number,
+    ...(row.manual_compatibility === undefined ? {} : { manual_compatibility: candidateCompatibility(row.manual_compatibility) }) };
+}
+export function candidateCompatibility(value: unknown): CandidateCompatibility {
+  if (!value || typeof value!=="object" || Array.isArray(value)) throw new CandidateInputError("Invalid compatibility fields");
+  const row=value as Record<string,unknown>;
+  if (!["unknown","compatible","incompatible"].includes(String(row.language)) || !["unknown","compatible","incompatible"].includes(String(row.time))) throw new CandidateInputError("Invalid compatibility fields");
+  const text=(value:unknown,max:number)=>{if(typeof value!=="string" || value.length>max || value.includes("\0"))throw new CandidateInputError("Invalid compatibility fields");return value.trim();};
+  return {language:row.language as CandidateCompatibility["language"],time:row.time as CandidateCompatibility["time"],languages:text(row.languages??"",120),availability:text(row.availability??"",240)};
 }
 export function candidateProfile(value: unknown, tag: string): CandidateProfile {
   if (!value || typeof value !== "object") throw new Error("Invalid player profile");
@@ -54,5 +63,6 @@ export function candidateSnapshot(value: unknown): Candidate {
   }
   return { player_tag: candidateTag(row.player_tag), status: row.status as CandidateStatus, notes: boundedText(row.notes, 1000),
     version: counter(row.version), created_at: date(row.created_at), updated_at: date(row.updated_at), profile,
-    profile_checked_at: row.profile_checked_at == null ? null : date(row.profile_checked_at) };
+    profile_checked_at: row.profile_checked_at == null ? null : date(row.profile_checked_at),
+    ...(row.manual_compatibility === undefined ? {} : { manual_compatibility: candidateCompatibility(row.manual_compatibility) }) };
 }

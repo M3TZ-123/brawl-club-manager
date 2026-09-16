@@ -12,6 +12,8 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/com
 import { Button } from "@/components/ui/button";
 import { fetchJsonCached, invalidateJsonCache } from "@/lib/client-data-cache";
 import { clubEventLabel } from "@/lib/club-event-display";
+import { ClubReportCard } from "@/components/club-report-card";
+import { ClubGrowthPeriod } from "@/components/club-growth-period";
 
 import { Download, RefreshCw, TrendingUp, TrendingDown, Users, Trophy } from "lucide-react";
 
@@ -221,7 +223,8 @@ export default function ReportsPage() {
               {formatReportDate(report.period.start)} - {formatReportDate(report.period.end)} <T text=" (UTC) " /></p>
               )}
             </div>
-            <div className="flex gap-2">
+            <div className="flex flex-wrap gap-2">
+              {report && !isLoading && !loadError && <ClubReportCard report={report} />}
               <Button
                 aria-label={t("Refresh")}
                 variant="outline"
@@ -241,6 +244,7 @@ export default function ReportsPage() {
           </div>
 
           <div className="mb-5"><TimeRangePicker value={selectedRange} onChange={range => { if (range !== selectedRange) { setIsLoading(true); setSelectedRange(range); } }} dayBased /></div>
+          <div className="mb-5"><ClubGrowthPeriod /></div>
 
           {isLoading ? (
             <ReportSkeleton />

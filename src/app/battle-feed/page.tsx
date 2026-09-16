@@ -447,6 +447,8 @@ export default function BattleFeedPage() {
   const [filterMode, setFilterMode] = useState<string>("");
   const [filterContext, setFilterContext] = useState<string>("");
   const [filterPlayer, setFilterPlayer] = useState<string>("");
+  const [filterDate, setFilterDate] = useState("");
+  const [filtersReady, setFiltersReady] = useState(false);
   const [selectedRange, setSelectedRange] = useState<TimeRangeKey>("7d");
   const [memberSearch, setMemberSearch] = useState<string>("");
   const [showMemberDropdown, setShowMemberDropdown] = useState(false);
@@ -458,8 +460,22 @@ export default function BattleFeedPage() {
 
   const PAGE_SIZE = 50;
 
+  useEffect(() => {
+    const read = () => {
+      const params = new URLSearchParams(window.location?.search || "");
+      const member = params.get("member") || params.get("player") || "";
+      const day = params.get("day") || params.get("date") || "";
+      setFilterPlayer(/^#?[0289PYLQGRJCUV]{2,19}$/i.test(member) ? normalizeTag(member) : "");
+      setFilterDate(/^\d{4}-\d{2}-\d{2}$/.test(day) && Number.isFinite(Date.parse(day)) && new Date(day).toISOString().slice(0,10)===day ? day : "");
+      setFiltersReady(true);
+    };
+    read(); window.addEventListener("popstate",read);
+    return () => window.removeEventListener("popstate",read);
+  }, []);
+
   const loadMatches = useCallback(
     async (offset = 0, append = false, force = false) => {
+      if (!filtersReady) return;
       const sequence = ++loadSequence.current;
       setLoadError(false);
       try {
@@ -474,6 +490,7 @@ export default function BattleFeedPage() {
         if (filterMode) params.set("mode", filterMode);
         if (filterContext) params.set("context", filterContext);
         if (filterPlayer) params.set("player", filterPlayer);
+        if (filterDate) params.set("date", filterDate);
 
         const data = await fetchJsonCached<BattleFeedResponse>(`/api/battles/feed?${params}`, {
             staleMs: 15_000,
@@ -527,7 +544,7 @@ export default function BattleFeedPage() {
         }
       }
     },
-    [filterMode, filterContext, filterPlayer, selectedRange]
+    [filterMode, filterContext, filterPlayer, filterDate, filtersReady, selectedRange]
   );
 
   useEffect(() => {
@@ -574,7 +591,7 @@ export default function BattleFeedPage() {
   );
 
   const selectedMemberName = useMemo(
-    () => memberList.find((m) => m.tag === filterPlayer)?.name || "",
+    () => memberList.find((m) => m.tag === filterPlayer)?.name || filterPlayer,
     [filterPlayer, memberList]
   );
 
@@ -670,8 +687,8 @@ export default function BattleFeedPage() {
                 )}
               </div>
             </div>
-            {(filterMode || filterContext || filterPlayer) && (
-              <Button variant="ghost" size="sm" className="h-9 px-2" aria-label={t("Clear filters")} onClick={() => { setFilterMode(""); setFilterContext(""); setFilterPlayer(""); setMemberSearch(""); }}>
+            {(filterMode || filterContext || filterPlayer || filterDate) && (
+              <Button variant="ghost" size="sm" className="h-9 px-2" aria-label={t("Clear filters")} onClick={() => { setFilterMode(""); setFilterContext(""); setFilterPlayer(""); setFilterDate(""); setMemberSearch(""); }}>
                 <X className="h-3.5 w-3.5" />
               </Button>
             )}
@@ -696,7 +713,7 @@ export default function BattleFeedPage() {
           <div className="sm:hidden"><Button variant="outline" onClick={() => setFiltersOpen(true)}>{t("Filters")}</Button><Sheet open={filtersOpen} onOpenChange={setFiltersOpen}><SheetContent side="bottom" className="max-h-[85dvh] overflow-y-auto"><SheetHeader><SheetTitle>{t("Filters")}</SheetTitle><SheetDescription>{t("Choose a mode, battle type or member.")}</SheetDescription></SheetHeader><div className="mt-5">{filterControls}</div><Button className="mt-5 w-full" onClick={() => setFiltersOpen(false)}>{t("Done")}</Button></SheetContent></Sheet></div>
         </div>
 
-        <TimeRangePicker value={selectedRange} onChange={range => { if (range !== selectedRange) { setIsLoading(true); setSelectedRange(range); } }} />
+        {filterDate ? <div className="flex items-center gap-3 rounded-lg border p-3"><span>{filterDate} · UTC</span><Button variant="ghost" size="sm" onClick={()=>setFilterDate("")}>{t("Clear date filter")}</Button></div> : <TimeRangePicker value={selectedRange} onChange={range => { if (range !== selectedRange) { setIsLoading(true); setSelectedRange(range); } }} />}
         <p className="text-xs text-muted-foreground"><T text="Battle types use recorded API information. Mega Pig, tournaments and older records may be unclassified when the event is not identified." /></p>
         <DataConfidenceNotice />
         {loadError && <div role="alert" className="rounded-lg border border-destructive/40 p-4 text-sm"><T text="Could not load the battles." /> <Button variant="ghost" onClick={() => loadMatches(rawOffset && matches.length ? rawOffset : 0, matches.length > 0, true)}><T text="Retry" /></Button></div>}

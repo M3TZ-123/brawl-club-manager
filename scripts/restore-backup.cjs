@@ -5,6 +5,22 @@ const identifier = value => `"${String(value).replaceAll('"', '""')}"`;
 const literal = value => `'${String(value).replaceAll("'", "''")}'`;
 const qualified = name => `public.${identifier(name)}`;
 const roleSql = name => name === "PUBLIC" ? "PUBLIC" : identifier(name);
+const privateTables = [
+  "member_reviews", "admin_login_attempts", "backup_snapshots", "backup_chunks", "profiles", "clubs", "user_clubs",
+  "sync_battle_coverage", "sync_battle_gaps", "capacity_samples", "sync_ranked_fallback_attempts",
+  "player_profile_details", "player_brawler_details", "player_ranked_history", "game_api_cache", "recruitment_candidates",
+  "club_roster_snapshots", "club_profiles", "club_profile_events", "member_decision_log", "member_absences",
+  "club_administration_settings", "recruitment_applications", "recruitment_application_limits", "club_goals",
+  "club_goal_members", "club_goal_snapshots", "club_planned_events", "club_event_entries", "club_event_revisions",
+  "club_rivals", "club_rival_snapshots", "club_rank_history",
+];
+const privateClubFunctions = new Set([
+  "capture_club_intelligence", "club_intelligence_read", "reject_member_decision_mutation", "administration_club_tag",
+  "save_club_administration", "append_member_decision", "declare_member_absence", "cancel_member_absence",
+  "member_inactivity_exempt", "submit_recruitment_application", "review_recruitment_application", "save_recruitment_candidate_details",
+  "club_planning_roster_ready", "club_planning_create_goal", "club_planning_archive_goal", "club_planning_refresh_goals",
+  "club_planning_save_event", "save_club_rival", "claim_club_rival", "finish_club_rival", "capture_club_rank_history",
+]);
 
 function validateRestoreTarget(connectionString) {
   const url = new URL(connectionString || "");
@@ -188,9 +204,9 @@ async function restoreBackup(backup, connectionString) {
     }
     // Rehearsals verify that restoring ACLs did not reopen the private tables.
     for (const role of ["anon", "authenticated"]) {
-      for (const table of ["member_reviews", "admin_login_attempts", "backup_snapshots", "backup_chunks", "profiles", "clubs", "user_clubs"]) {
+      for (const table of privateTables) {
         if (!manifest.tables.some(item => item.name === table)) continue;
-        const permissions = await client.query("SELECT has_any_column_privilege($1,$2,'SELECT') OR has_table_privilege($1,$2,'INSERT,UPDATE,DELETE') AS exposed", [role, `public.${identifier(table)}`]);
+        const permissions = await client.query("SELECT has_any_column_privilege($1,$2,'SELECT') OR has_table_privilege($1,$2,'INSERT,UPDATE,DELETE,TRUNCATE') AS exposed", [role, `public.${identifier(table)}`]);
         if (permissions.rows[0].exposed) throw new Error(`Private permissions verification failed for ${table}`);
       }
       if (manifest.tables.some(table => table.name === "member_history")) {
@@ -200,6 +216,10 @@ async function restoreBackup(backup, connectionString) {
       for (const identity of ["public.create_backup_snapshot(uuid)", "public.complete_backup_snapshot(uuid,text)", "public.consume_admin_login_attempt(text)"]) {
         const access = await client.query("SELECT to_regprocedure($1) IS NOT NULL AND has_function_privilege($2,$1,'EXECUTE') AS exposed", [identity, role]);
         if (access.rows[0].exposed) throw new Error("Private function permissions verification failed");
+      }
+      for (const fn of manifest.functions.filter(item => privateClubFunctions.has(item.name))) {
+        const access = await client.query("SELECT has_function_privilege($1,$2,'EXECUTE') AS exposed", [role, fn.identity]);
+        if (access.rows[0].exposed) throw new Error(`Private function permissions verification failed for ${fn.name}`);
       }
       if (manifest.tables.some(table => table.name === "settings")) {
         await client.query("SAVEPOINT settings_permission_check");
@@ -211,7 +231,7 @@ async function restoreBackup(backup, connectionString) {
         finally { await client.query("ROLLBACK TO SAVEPOINT settings_permission_check"); }
       }
     }
-    for (const table of ["member_reviews", "backup_snapshots", "backup_chunks", "admin_login_attempts"]) {
+    for (const table of privateTables) {
       if (!manifest.tables.some(item => item.name === table)) continue;
       const security = await client.query("SELECT relrowsecurity AS rls FROM pg_class WHERE oid=$1::regclass", [`public.${identifier(table)}`]);
       if (!security.rows[0].rls) throw new Error(`Private RLS verification failed for ${table}`);

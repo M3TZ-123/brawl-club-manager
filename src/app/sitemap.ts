@@ -1,6 +1,6 @@
 import type { MetadataRoute } from "next";
 
-const siteUrl = process.env.NEXT_PUBLIC_SITE_URL || "https://brawl-club-manager.vercel.app";
+const siteUrl = process.env.NEXT_PUBLIC_SITE_URL || "https://brawlstatz.vercel.app";
 
 export default function sitemap(): MetadataRoute.Sitemap {
   const now = new Date();
@@ -11,9 +11,13 @@ export default function sitemap(): MetadataRoute.Sitemap {
     "/battle-feed",
     "/history",
     "/members",
-    "/notifications",
     "/reports",
-    "/settings",
+    "/analysis",
+    "/readiness",
+    "/game",
+    "/rivals",
+    "/club-planning",
+    "/join",
   ];
 
   return routes.map((route) => ({

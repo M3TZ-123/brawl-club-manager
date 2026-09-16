@@ -43,6 +43,6 @@ jobs:
       - run: npx tsc --noEmit
       - run: npm test
       - run: node scripts/prepare-test-databases.cjs
-      - run: node --test tests/integration/*.test.cjs
+      - run: npm run test:integration
       - run: npm run build
       - run: npm audit --audit-level=high

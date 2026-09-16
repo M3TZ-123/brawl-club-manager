@@ -10,6 +10,7 @@ import { invalidateJsonCache } from "@/lib/client-data-cache";
 import { fetchJsonWithTimeout } from "@/lib/client-fetch";
 import { TimeRangePicker } from "@/components/time-range-picker";
 import { TIME_RANGES, type TimeRangeKey, type TrophyPeriodMetric } from "@/lib/time-range";
+import { MemberAdministrationPanel } from "@/components/member-administration";
 
 export type MemberReview = { player_tag: string; status: "pending" | "reviewed" | "follow_up"; follow_up_at: string | null; notes: string | null; updated_at: string };
 export type ReviewMember = { player_tag: string; player_name: string; activity_status?: string; last_battle_at?: string | null; trophies?: number; is_current_member?: boolean; first_seen?: string | null; last_left_at?: string | null; times_joined?: number | null; times_left?: number | null } & Partial<Record<TrophyPeriodMetric, number | null>>;
@@ -41,7 +42,7 @@ export function MemberReviewSheet({ member, open, onOpenChange, initialRange = "
   const [notes, setNotes] = useState("");
   const [followUp, setFollowUp] = useState("");
   const [context, setContext] = useState<ReviewMember>(member);
-  const [history, setHistory] = useState<{ first_seen: string | null; times_joined: number | null; times_left: number | null } | null>(() => ({ first_seen: member.first_seen ?? null, times_joined: member.times_joined ?? null, times_left: member.times_left ?? null }));
+  const [history, setHistory] = useState<{ first_seen: string | null; times_joined: number | null; times_left: number | null; is_current_member?: boolean } | null>(() => ({ first_seen: member.first_seen ?? null, times_joined: member.times_joined ?? null, times_left: member.times_left ?? null, is_current_member: member.is_current_member }));
   const [stale, setStale] = useState(true);
   const [possibleGap, setPossibleGap] = useState(false);
   const [loading, setLoading] = useState(true);
@@ -152,6 +153,7 @@ export function MemberReviewSheet({ member, open, onOpenChange, initialRange = "
       {error && <div role="alert" className="text-sm text-destructive">{t(error)}{loading ? null : <Button variant="ghost" onClick={conflict ? loadLatest : ready ? save : load} disabled={saving}>{t("Retry")}</Button>}</div>}
       {conflict && latest && <section className="space-y-3 rounded border p-3"><h3 className="font-semibold">{t("Latest saved notes")}</h3><p className="whitespace-pre-wrap break-words text-sm">{latest.review?.notes || t("No private notes")}</p><p className="text-sm">{t("Your draft is still in the editor. Choose which version to keep.")}</p><div className="flex flex-wrap gap-2"><Button variant="outline" onClick={() => resolveConflict(true)}>{t("Use saved version")}</Button><Button variant="outline" onClick={() => resolveConflict(false)}>{t("Keep my draft")}</Button></div></section>}
       {saved && <p role="status" className="text-sm text-green-500">{t("Review saved")}</p>}
+      {ready && <MemberAdministrationPanel playerTag={member.player_tag} isCurrent={history?.is_current_member ?? member.is_current_member} />}
     </div>
   </SheetContent></Sheet>;
 }

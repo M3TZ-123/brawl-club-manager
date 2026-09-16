@@ -114,7 +114,8 @@ test('one profile fetch feeds optional progress and ranks without new upstream c
     brawlers: [{ id: 1, name: 'SHELLY', power: 11, trophies: 100, rank: 1, highestTrophies: 200, gadgets: [], starPowers: [], gears: [], hyperCharges: [], buffies: { gadget: false } }] };
   const db = { from: table => { assert.equal(table, 'settings'); return { select: () => ({ in: async () => ({ data: [{ key: 'club_tag', value: '#CLUB' }, { key: 'api_key', value: 'test-only' }] }) }) }; },
     rpc: async (name, args) => { if (name === 'acquire_sync_run') return { data: { acquired: true, run_id: 'test', fence: 1 } }; assert.equal(name, 'commit_sync_snapshot'); committed = args.p_payload; return { data: { success: true } }; } };
-  const service = loadTypeScript('src/lib/sync-service.ts', { '@/lib/supabase-admin': { supabaseAdmin: db }, '@/lib/brawl-api': {
+  const service = loadTypeScript('src/lib/sync-service.ts', {
+    '@/lib/sync-club-planning': { refreshPlanningAfterSync: async () => {} }, '@/lib/supabase-admin': { supabaseAdmin: db }, '@/lib/brawl-api': {
     getClub: async () => ({ members: [{ tag: '#AA', name: 'A', role: 'member' }] }), getPlayer: async () => { players++; return player; },
     getPlayerBattleLog: async () => ({ items: [] }), processBattleLog: () => [], calculateWinRateFromBattleLog: () => ({ winRate: null }),
     getPlayerRankedData: async () => { rankedCalls++; throw new Error('unexpected fallback'); },

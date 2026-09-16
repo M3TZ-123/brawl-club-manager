@@ -8,7 +8,7 @@
     "start": "next start",
     "lint": "eslint",
     "test": "node --test tests/*.test.cjs",
-    "test:integration": "node --test tests/integration/*.test.cjs",
+    "test:integration": "node --test --test-concurrency=4 tests/integration/*.test.cjs",
     "test:database": "node scripts/start-test-db.cjs",
     "backup:export": "node scripts/backup-export.cjs",
     "backup:complete": "node scripts/backup-complete.cjs",

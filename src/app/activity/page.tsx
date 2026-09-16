@@ -8,6 +8,7 @@ import { DataConfidenceNotice } from "@/components/sync-health";
 import { LayoutWrapper } from "@/components/layout-wrapper";
 import { fetchJsonCached } from "@/lib/client-data-cache";
 import { TimeRangePicker } from "@/components/time-range-picker";
+import { ClubActivityCalendar } from "@/components/club-activity-calendar";
 import { TIME_RANGES, type TimeRangeKey } from "@/lib/time-range";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -475,11 +476,13 @@ export default function LeaderboardPage() {
   return (
     <LayoutWrapper><DataConfidenceNotice />
       <div className="space-y-4">
+        <h1 className="text-2xl font-bold"><T text="Club activity" /></h1>
+        <ClubActivityCalendar />
         <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
           <div>
-            <h1 className="text-2xl font-bold flex items-center gap-2">
+            <h2 className="text-xl font-bold flex items-center gap-2">
               <Trophy className="h-6 w-6 text-yellow-500" />
-              <T text=" Club Leaderboard " /></h1>
+              <T text=" Club Leaderboard " /></h2>
             <p className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-sm text-muted-foreground">
               {!isLoading && !loadError && <span>{memberCount} <T text="Members" /></span>}
             </p>

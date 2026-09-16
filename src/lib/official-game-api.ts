@@ -4,7 +4,7 @@ import { callWithUpstreamRetry, getUpstreamCooldownMs, UpstreamRateLimitError } 
 
 // Existing official-key proxy; this module never accepts a caller-provided host/path.
 export async function officialGameRequest(path: string, signal?: AbortSignal): Promise<unknown> {
-  if (!/^\/(events\/rotation|rankings\/(global|TN|DZ|MA|FR|EG|SA|US)\/(players|clubs)\?limit=50|players\/%23[0289PYLQGRJCUV]{2,19})$/.test(path)) throw new Error("Invalid official API path");
+  if (!/^\/(events\/rotation|rankings\/(global|TN|DZ|MA|FR|EG|SA|US)\/(players|clubs)\?limit=50|(players|clubs)\/%23[0289PYLQGRJCUV]{2,19})$/.test(path)) throw new Error("Invalid official API path");
   const settings = await supabaseAdmin.from("settings").select("key,value").in("key", ["api_key", "sync_upstream_cooldown_until"]).abortSignal(signal ?? AbortSignal.timeout(2000));
   if (settings.error) throw new Error("Game data temporarily unavailable");
   const values = Object.fromEntries((settings.data || []).map(row => [row.key, row.value]));

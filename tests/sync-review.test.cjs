@@ -15,6 +15,7 @@ function serviceFixture(options = {}) {
       if(name === "begin_sync_ranked_fallback") return {abortSignal:async()=>({data:args.p_player_tags,error:null})};
       if(name === "commit_sync_snapshot" || name === "commit_roster_snapshot") return {data: options.commitError ? null : {success:true,synced:tags.length,events:0,timestamp:"2026-09-16T00:00:00Z",runId:"test-run",changes:{joins:[],leaves:[]},member:{player_tag:"#PLAYER"}},error:options.commitError || null};
       if(name === "fail_sync_run") return {data:null,error:null};
+      if(name === "club_planning_refresh_goals") return {abortSignal:async()=>({data:true,error:null})};
       throw new Error(`Unexpected RPC ${name}`);
     }
   };
@@ -35,7 +36,7 @@ test("successful full sync performs one fenced commit with complete fetched data
   const {service,calls,rankedRequests}=serviceFixture();
   const result=await service.executeSync({source:"manual",idempotencyKey:"retry-123"});
   assert.equal(result.success,true);
-  assert.deepEqual(calls.map(c=>c.name),["acquire_sync_run","begin_sync_ranked_fallback","commit_sync_snapshot"]);
+  assert.deepEqual(calls.map(c=>c.name),["acquire_sync_run","begin_sync_ranked_fallback","commit_sync_snapshot","club_planning_refresh_goals"]);
   assert.equal(calls[0].args.p_scope,"full");
   assert.equal(calls[0].args.p_idempotency_key,"retry-123");
   assert.deepEqual(JSON.parse(JSON.stringify(calls[1].args)),{p_run_id:"test-run",p_fence:4,p_player_tags:["#PLAYER"]});

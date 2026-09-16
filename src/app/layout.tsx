@@ -7,7 +7,7 @@ import { LocaleProvider } from "@/components/locale-provider";
 const inter = Inter({ subsets: ["latin"] });
 const arabic = Noto_Sans_Arabic({ subsets: ["arabic"], variable: "--font-arabic" });
 
-const siteUrl = process.env.NEXT_PUBLIC_SITE_URL || "https://brawl-club-manager.vercel.app";
+const siteUrl = process.env.NEXT_PUBLIC_SITE_URL || "https://brawlstatz.vercel.app";
 const siteName = "BrawlStatz";
 const siteTitle = "BrawlStatz — Brawl Stars Club Stats & Insights";
 const siteDescription = "Track Brawl Stars club members, activity, battles, and performance with live insights, reports, and leaderboards.";

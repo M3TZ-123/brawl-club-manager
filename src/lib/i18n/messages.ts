@@ -2,13 +2,17 @@ import { ar } from "./ar";
 import { arExtra } from "./ar-extra";
 import { arFeatures } from "./ar-features";
 import { arGame } from "./ar-game";
+import { arClubIntelligence } from "./ar-club-intelligence";
+import { arClubAdministration } from "./ar-club-administration";
+import { arClubPlanning } from "./ar-club-planning";
+import { arClubRivals } from "./ar-club-rivals";
 
 export type Locale = "en" | "ar";
 export const intlLocale = (locale: Locale) => locale === "ar" ? "ar-TN" : "en-GB";
 
 export function translate(text: string, locale: Locale, values: Record<string, string | number> = {}) {
   const key = text.trim();
-  const message = locale === "ar" ? arFeatures[key] || arGame[key] || arExtra[key] || ar[key] || key : key;
+  const message = locale === "ar" ? arClubIntelligence[key] || arClubAdministration[key] || arClubPlanning[key] || arClubRivals[key] || arFeatures[key] || arGame[key] || arExtra[key] || ar[key] || key : key;
   const translated = message.replace(/\{(\w+)\}/g, (match, name) => {
     const value = values[name];
     if (value === undefined) return match;

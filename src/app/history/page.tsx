@@ -5,6 +5,8 @@ import { T, useI18n, LocalDate } from "@/components/locale-provider";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { LayoutWrapper } from "@/components/layout-wrapper";
 import { TimeRangePicker } from "@/components/time-range-picker";
+import { ClubRetention } from "@/components/club-retention";
+import { ClubIdentity } from "@/components/club-identity";
 import { type TimeRangeKey } from "@/lib/time-range";
 import { invalidateJsonCache } from "@/lib/client-data-cache";
 import { fetchJsonWithTimeout } from "@/lib/client-fetch";
@@ -203,6 +205,7 @@ export default function HistoryPage() {
           <TimeRangePicker value={timeRange} onChange={range => { if (range !== timeRange) { setIsLoading(true); setTimeRange(range); } }} includeAll />
         </div>
         <p className="text-sm text-muted-foreground"><T text="Private member notes can record why someone left or was removed. These reasons are entered by administrators." /></p>
+        <details className="rounded-xl border bg-card p-4"><summary className="cursor-pointer font-semibold"><T text="Club growth and retention" /></summary><div className="grid gap-4 pt-4 xl:grid-cols-2"><ClubRetention /><ClubIdentity showHistory /></div></details>
         {!isAdmin && <p className="text-sm"><Link href="/reviews" className="text-primary underline"><T text="Sign in to view or add member notes" /></Link></p>}
         {loadError && <div role="alert" className="rounded-lg border border-destructive/40 p-4 text-sm"><T text="Could not load member history." /> <Button variant="ghost" onClick={() => loadHistory()}><T text="Retry" /></Button></div>}
         {isAdmin && noteError && <p role="alert" className="text-sm text-destructive"><T text={noteError} /></p>}

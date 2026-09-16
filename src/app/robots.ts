@@ -1,6 +1,6 @@
 import type { MetadataRoute } from "next";
 
-const siteUrl = process.env.NEXT_PUBLIC_SITE_URL || "https://brawl-club-manager.vercel.app";
+const siteUrl = process.env.NEXT_PUBLIC_SITE_URL || "https://brawlstatz.vercel.app";
 
 export default function robots(): MetadataRoute.Robots {
   return {
@@ -8,6 +8,7 @@ export default function robots(): MetadataRoute.Robots {
       {
         userAgent: "*",
         allow: "/",
+        disallow: ["/api/", "/admin", "/reviews", "/settings", "/recruitment", "/notifications"],
       },
     ],
     sitemap: `${siteUrl}/sitemap.xml`,

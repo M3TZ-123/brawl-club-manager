@@ -14,6 +14,11 @@ import { LayoutWrapper } from "@/components/layout-wrapper";
 import { SetupWizard } from "@/components/setup-wizard";
 import { StatsCards } from "@/components/stats-cards";
 import { ActivityTimeline } from "@/components/activity-timeline";
+import { ClubIdentity } from "@/components/club-identity";
+import { ClubGrowthPeriod } from "@/components/club-growth-period";
+import { ClubStrength } from "@/components/club-strength";
+import { ClubGoalsOverview } from "@/components/club-goals-overview";
+import { ClubJoinSummary } from "@/components/club-join-summary";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Member, ClubEvent } from "@/types/database";
@@ -137,11 +142,14 @@ export default function DashboardPage() {
       <TimeRangePicker value={range} onChange={value => { if (value === range) return; generation.current++; setRange(value); setDashboard(null); setInsights(null); setError(false); setInsightsError(false); setIsLoading(true); }} />
     </div>
     <DataConfidenceNotice />
+    <ClubGoalsOverview />
+    <div className="grid gap-4 xl:grid-cols-2"><ClubIdentity /><ClubJoinSummary /></div>
     {error && <div role="alert" className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-destructive/30 bg-destructive/5 p-4 text-sm">
       <p>{t("Could not refresh the dashboard. Please try again.")}</p><Button variant="outline" size="sm" onClick={() => loadData(true)}>{t("Retry")}</Button>
     </div>}
     {isLoading || loadedKey !== `${clubTag}:${range}` ? <DashboardSkeleton /> : dashboard && <>
       <StatsCards {...dashboard.summary} />
+      <div className="grid gap-4 xl:grid-cols-2"><ClubGrowthPeriod /><ClubStrength /></div>
       {insightsError && <p role="status" className="text-sm text-muted-foreground">{t("Battle statistics are temporarily unavailable.")}</p>}
       {insights && <section aria-label={t("Battle summary")} className="space-y-2">
         <div className="grid gap-4 sm:grid-cols-2">

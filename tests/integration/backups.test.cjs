@@ -9,6 +9,9 @@ const { writeEncryptedBackup, readEncryptedBackup } = require("../../scripts/bac
 const { restoreBackup, validateRestoreTarget } = require("../../scripts/restore-backup.cjs");
 const connectionString = process.env.BACKUP_TEST_DATABASE_URL;
 const root = path.resolve(__dirname, "../..");
+const clubFeatureTables = ["club_roster_snapshots","club_profiles","club_profile_events","member_decision_log","member_absences",
+  "club_administration_settings","recruitment_applications","recruitment_application_limits","club_goals","club_goal_members",
+  "club_goal_snapshots","club_planned_events","club_event_entries","club_event_revisions","club_rivals","club_rival_snapshots","club_rank_history"];
 
 test("encrypted backup restores actual schema, rows and private permissions into an empty local database", { skip: !connectionString }, async t => {
   validateRestoreTarget(connectionString);
@@ -59,6 +62,38 @@ test("encrypted backup restores actual schema, rows and private permissions into
     INSERT INTO public.game_api_cache(cache_key,payload,fetched_at,expires_at) VALUES('events','[{"map":"خريطة محفوظة"}]',now(),now()+interval '5 minutes');
     INSERT INTO public.recruitment_candidates(player_tag,notes,status) VALUES('#PYLQ','ملاحظة ترشيح خاصة','shortlisted');
     UPDATE public.battle_history SET duration_seconds=123 WHERE player_tag='#PLAYER';
+    INSERT INTO public.club_roster_snapshots VALUES('#CLUB',current_date,now()-interval '1 hour',now(),
+      '[{"tag":"#PLAYER","name":"لاعب عربي","role":"member","trophies":29900}]',
+      '[{"tag":"#PLAYER","name":"لاعب عربي","role":"member","trophies":30000}]',
+      '00000000-0000-4000-8000-000000000009','00000000-0000-4000-8000-000000000009');
+    INSERT INTO public.club_profiles VALUES('#CLUB','{"name":"نادي الاختبار","description":"وصف محفوظ","requiredTrophies":12000}',now()-interval '1 day',now());
+    INSERT INTO public.club_profile_events(id,club_tag,run_id,observed_at,before_metadata,after_metadata,changed_fields)
+      VALUES('00000000-0000-4000-8000-000000000029','#CLUB','00000000-0000-4000-8000-000000000009',now(),NULL,'{"name":"نادي الاختبار"}',ARRAY['name']);
+    INSERT INTO public.membership_change_events(id,club_tag,player_tag,player_name,event_type,source,occurred_at,trigger_source,actor)
+      VALUES('00000000-0000-4000-8000-000000000030','#CLUB','#PLAYER','لاعب عربي','leave','recorded',now()-interval '2 days','manual','admin');
+    INSERT INTO public.club_administration_settings(club_tag,grace_hours,recruitment_open,min_trophies,language) VALUES('#CLUB',24,false,15000,'العربية');
+    INSERT INTO public.member_decision_log(id,club_tag,player_tag,kind,body,departure_event_id,request_id)
+      VALUES('00000000-0000-4000-8000-000000000130','#CLUB','#PLAYER','departure_reason','سبب مغادرة خاص','00000000-0000-4000-8000-000000000030',gen_random_uuid());
+    INSERT INTO public.member_absences(club_tag,player_tag,starts_at,ends_at,reason,request_id)
+      VALUES('#CLUB','#PLAYER',now()-interval '1 hour',now()+interval '1 day','غياب معلن خاص',gen_random_uuid());
+    INSERT INTO public.recruitment_applications(id,club_tag,player_tag,message,language,availability,private_notes,request_id)
+      VALUES('00000000-0000-4000-8000-000000000230','#CLUB','#PYLQ','طلب محفوظ','العربية','المساء','تقييم خاص',gen_random_uuid());
+    INSERT INTO public.recruitment_application_limits VALUES('#CLUB',repeat('b',64),current_date,2);
+    UPDATE public.recruitment_candidates SET manual_compatibility='{"language":"compatible","time":"unknown","languages":"العربية","availability":"Evening"}' WHERE player_tag='#PYLQ';
+    INSERT INTO public.club_goals(id,club_tag,title,metric,cycle,starts_at,ends_at,target,progress,cohort_count,known_members,limited)
+      VALUES('00000000-0000-4000-8000-000000000031','#CLUB','هدف محفوظ','trophies','weekly',now()-interval '1 day',now()+interval '6 days',100,50,1,1,false);
+    INSERT INTO public.club_goal_members(goal_id,player_tag,player_name,baseline_trophies,baseline_at,latest_trophies,latest_at)
+      VALUES('00000000-0000-4000-8000-000000000031','#PLAYER','لاعب عربي',29950,now()-interval '1 day',30000,now());
+    INSERT INTO public.club_goal_snapshots VALUES('00000000-0000-4000-8000-000000000031',current_date,now(),50,1,false,false);
+    INSERT INTO public.club_planned_events(id,club_tag,title,kind,cycle_label,starts_at,ends_at,team_size,ticket_allowance,notes)
+      VALUES('00000000-0000-4000-8000-000000000131','#CLUB','خطة محفوظة','mega_pig','دورة معلنة',now()-interval '1 hour',now()+interval '23 hours',3,15,'تخطيط يدوي خاص');
+    INSERT INTO public.club_event_entries(event_id,player_tag,player_name,team,slot,attendance,wins,tickets_remaining,observed_at,notes)
+      VALUES('00000000-0000-4000-8000-000000000131','#PLAYER','لاعب عربي',1,'starter','present',5,2,now(),'إدخال يدوي');
+    INSERT INTO public.club_event_revisions VALUES('00000000-0000-4000-8000-000000000131',1,now(),'سجل أولي','{"event":{"title":"خطة محفوظة"},"entries":[{"playerTag":"#PLAYER","wins":5,"ticketsRemaining":2}]}');
+    INSERT INTO public.club_rivals(club_tag,rival_tag,profile,fetched_at,expires_at)
+      VALUES('#PYLQ','#GGRR','{"tag":"#GGRR","name":"نادي منافس","trophies":500000,"memberCount":25}',now(),now()+interval '6 hours');
+    INSERT INTO public.club_rival_snapshots VALUES('#PYLQ','#GGRR',current_date,now(),500000,25);
+    INSERT INTO public.club_rank_history VALUES('#PYLQ','#GGRR','global',current_date,now(),NULL,NULL);
   `);
   const directory = await fs.mkdtemp(path.join(os.tmpdir(), "brawl-encrypted-backup-test-"));
   t.after(() => fs.rm(directory, { recursive: true, force: true }));
@@ -100,12 +135,20 @@ test("encrypted backup restores actual schema, rows and private permissions into
     }
     assert.equal(manifest.tables.find(table => table.name === "backup_chunks").row_count, 0);
     for (const name of ["sync_battle_coverage", "sync_battle_gaps", "capacity_samples", "sync_ranked_fallback_attempts", "club_sync_signals"]) assert.equal(manifest.tables.find(table => table.name === name).row_count, 1);
+    for(const name of clubFeatureTables)assert.equal(manifest.tables.find(table=>table.name===name)?.row_count,1,`${name} must be included with its data`);
+    assert.ok(manifest.functions.find(fn=>fn.name==='commit_sync_snapshot').definition.includes('member_inactivity_exempt(v_run.club_tag,player_tag,v_now)'),'The backup must capture the live absence hook, not an older sync body');
     assert.ok(manifest.tables.find(table => table.name === "profiles").columns.some(column => column.name === "owner_user_id"));
     assert.ok((await client.query("SELECT max(octet_length(payload)) AS size FROM public.backup_chunks")).rows[0].size < 1024 * 1024);
     assert.ok(manifest.tables.find(table => table.name === "member_reviews").chunks.length > 1, "Large Arabic record must split safely");
     // The original rows can change after the transaction; snapshot chunks remain immutable.
     await client.query("UPDATE public.members SET trophies=99999 WHERE player_tag='#PLAYER'");
-    receipt = await writeEncryptedBackup(manifest, async (table, index) => (await client.query("SELECT payload,sha256,byte_count FROM public.backup_chunks WHERE snapshot_id=$1 AND table_name=$2 AND chunk_index=$3", [snapshotId, table, index])).rows[0], output, key);
+    let chunkRead=Promise.resolve();
+    receipt = await writeEncryptedBackup(manifest, (table,index)=>{
+      // The exporter requests up to four chunks concurrently; a single PG
+      // test connection requires an explicit queue instead of driver queuing.
+      const read=chunkRead.then(async()=>(await client.query("SELECT payload,sha256,byte_count FROM public.backup_chunks WHERE snapshot_id=$1 AND table_name=$2 AND chunk_index=$3",[snapshotId,table,index])).rows[0]);
+      chunkRead=read.then(()=>undefined);return read;
+    }, output, key);
     assert.equal(receipt.snapshot_id, snapshotId);
     const ciphertext = await fs.readFile(output);
     assert.equal(ciphertext.includes(Buffer.from("private-test-key")), false);
@@ -145,6 +188,9 @@ test("encrypted backup restores actual schema, rows and private permissions into
     await client.query("CREATE FUNCTION public.existing_user_work() RETURNS boolean LANGUAGE sql AS 'SELECT true'");
     await assert.rejects(restoreBackup(backup, connectionString), /not empty/);
     await client.query("DROP FUNCTION public.existing_user_work()");
+    const exposed={...backup,manifest:{...backup.manifest,tables:backup.manifest.tables.map(table=>table.name==='recruitment_applications'?{...table,grants:[...table.grants,{role:'anon',privilege:'SELECT',grantable:false}]}:table)}};
+    await assert.rejects(restoreBackup(exposed,connectionString),/Private permissions verification failed for recruitment_applications/);
+    assert.equal((await client.query("SELECT count(*)::int n FROM pg_tables WHERE schemaname='public'")).rows[0].n,0,'A failed permissions check must roll back the complete restore');
     const result = await restoreBackup(backup, connectionString);
     assert.equal(result.verified, true);
     const restoredBattle = (await client.query("SELECT trophy_change,trophy_change_reported,battle_type,event_id,event_mode_id,battle_mode,event_mode,placement_rank FROM public.battle_history")).rows[0];
@@ -159,6 +205,24 @@ test("encrypted backup restores actual schema, rows and private permissions into
     assert.equal((await client.query("SELECT points FROM public.player_ranked_history WHERE player_tag='#PLAYER'")).rows[0].points,3417);
     assert.deepEqual((await client.query("SELECT payload FROM public.game_api_cache WHERE cache_key='events'")).rows[0].payload,[{map:'خريطة محفوظة'}]);
     assert.equal((await client.query("SELECT notes FROM public.recruitment_candidates WHERE player_tag='#PYLQ'")).rows[0].notes,'ملاحظة ترشيح خاصة');
+    for(const name of clubFeatureTables)assert.equal((await client.query(`SELECT count(*)::int n FROM public.${name}`)).rows[0].n,1,`${name} roundtrip row count`);
+    assert.deepEqual((await client.query("SELECT first_members,last_members FROM public.club_roster_snapshots")).rows[0],{
+      first_members:[{tag:'#PLAYER',name:'لاعب عربي',role:'member',trophies:29900}],last_members:[{tag:'#PLAYER',name:'لاعب عربي',role:'member',trophies:30000}]});
+    assert.equal((await client.query("SELECT metadata->>'description' description FROM public.club_profiles")).rows[0].description,'وصف محفوظ');
+    assert.equal((await client.query("SELECT before_metadata FROM public.club_profile_events")).rows[0].before_metadata,null);
+    assert.equal((await client.query("SELECT member_inactivity_exempt('#CLUB','#PLAYER',now()) exempt")).rows[0].exempt,true);
+    assert.equal((await client.query("SELECT body,departure_event_id::text FROM public.member_decision_log")).rows[0].departure_event_id,'00000000-0000-4000-8000-000000000030');
+    await assert.rejects(client.query("UPDATE public.member_decision_log SET body='erased'"),error=>error.code==='42501');
+    await assert.rejects(client.query("TRUNCATE public.member_decision_log"),error=>error.code==='42501');
+    assert.equal((await client.query("SELECT has_table_privilege('service_role','public.member_decision_log','TRUNCATE') allowed")).rows[0].allowed,false);
+    assert.equal((await client.query("SELECT body FROM public.member_decision_log")).rows[0].body,'سبب مغادرة خاص');
+    assert.equal((await client.query("SELECT private_notes FROM public.recruitment_applications")).rows[0].private_notes,'تقييم خاص');
+    assert.equal((await client.query("SELECT manual_compatibility->>'language' language FROM public.recruitment_candidates WHERE player_tag='#PYLQ'")).rows[0].language,'compatible');
+    assert.equal((await client.query("SELECT baseline_trophies FROM public.club_goal_members")).rows[0].baseline_trophies,29950);
+    assert.deepEqual((await client.query("SELECT wins,tickets_remaining,source FROM public.club_event_entries")).rows[0],{wins:5,tickets_remaining:2,source:'manual'});
+    assert.equal((await client.query("SELECT snapshot->'event'->>'title' title FROM public.club_event_revisions")).rows[0].title,'خطة محفوظة');
+    assert.equal((await client.query("SELECT profile->>'name' name FROM public.club_rivals")).rows[0].name,'نادي منافس');
+    assert.deepEqual((await client.query("SELECT rank,trophies FROM public.club_rank_history")).rows[0],{rank:null,trophies:null});
     assert.equal((await client.query("SELECT duration_seconds FROM public.battle_history WHERE player_tag='#PLAYER'")).rows[0].duration_seconds,123);
     const restoredRank=(await client.query("SELECT rank_current,rank_highest,ranked_points,ranked_all_time_best_points,ranked_season_best_points,ranked_source FROM public.members WHERE player_tag='#PLAYER'")).rows[0];
     assert.deepEqual(restoredRank,{rank_current:'Diamond I',rank_highest:'Mythic I',ranked_points:3417,ranked_all_time_best_points:4678,ranked_season_best_points:3505,ranked_source:'profile'});
@@ -192,6 +256,12 @@ test("encrypted backup restores actual schema, rows and private permissions into
         await assert.rejects(client.query("SELECT notes FROM public.member_history"), error => error.code === "42501");
         await assert.rejects(client.query("SELECT * FROM public.member_reviews"), error => error.code === "42501");
         for (const name of ["sync_battle_coverage", "sync_battle_gaps", "capacity_samples", "sync_ranked_fallback_attempts", "player_profile_details", "player_brawler_details", "player_ranked_history", "game_api_cache", "recruitment_candidates"]) await assert.rejects(client.query(`SELECT * FROM public.${name}`), error => error.code === "42501");
+        for(const name of clubFeatureTables){
+          await assert.rejects(client.query(`SELECT * FROM public.${name}`),error=>error.code==='42501');
+          await assert.rejects(client.query(`DELETE FROM public.${name}`),error=>error.code==='42501');
+        }
+        for(const query of ["SELECT public.member_inactivity_exempt('#CLUB','#PLAYER',now())","SELECT public.club_intelligence_read(7,now())","SELECT public.club_planning_refresh_goals('#CLUB')","SELECT public.claim_club_rival('#PYLQ','#GGRR','00000000-0000-4000-8000-000000000001')"])
+          await assert.rejects(client.query(query),error=>error.code==='42501');
         assert.deepEqual(Object.keys((await client.query("SELECT * FROM public.club_sync_signals")).rows[0]).sort(),['completed_at','datasets','id','version']);
         await assert.rejects(client.query('UPDATE public.club_sync_signals SET version=NULL,completed_at=NULL'),error=>error.code==='42501');
         for(const rpc of ['report_dashboard_read','report_leaderboard_read']) await assert.rejects(client.query(`SELECT public.${rpc}(7,now())`),error=>error.code==='42501');

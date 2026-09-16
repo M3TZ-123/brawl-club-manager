@@ -15,6 +15,7 @@ import type { MemberHistory } from "@/types/database";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
+import { ClubAdministrationSettings } from "@/components/club-administration-settings";
 
 type QueueMember = ReviewMember & { is_current_member: boolean };
 
@@ -111,6 +112,7 @@ function ReviewQueue() {
       <p className="mt-2 text-sm text-muted-foreground">{t("Private member notes can record why someone left or was removed. These reasons are entered by administrators.")}</p>
     </header>
     <DataConfidenceNotice />
+    <ClubAdministrationSettings graceOnly />
     <div className="space-y-3">
       <div role="group" aria-label={t("Review status")} className="flex flex-wrap gap-2">
         {["pending", "follow_up", "reviewed", "all"].map(value => <Button key={value} size="sm"

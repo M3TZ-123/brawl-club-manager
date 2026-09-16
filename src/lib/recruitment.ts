@@ -3,7 +3,7 @@ import { randomUUID } from "crypto";
 import { supabaseAdmin } from "@/lib/supabase-admin";
 import { officialGameRequest } from "@/lib/official-game-api";
 import { candidateInput, candidateProfile, candidateTag, candidateSnapshot, CandidateInputError } from "@/lib/recruitment-data";
-const columns = "player_tag,status,notes,version,created_at,updated_at,profile,profile_checked_at";
+const columns = "player_tag,status,notes,version,created_at,updated_at,profile,profile_checked_at,manual_compatibility";
 export async function listCandidates() {
   const { data, error } = await supabaseAdmin.from("recruitment_candidates").select(columns).order("created_at", { ascending: false }).limit(100);
   if (error) throw new Error("Candidate list unavailable");
@@ -11,7 +11,9 @@ export async function listCandidates() {
 }
 export async function saveCandidate(body: unknown) {
   const input = candidateInput(body);
-  const { data, error } = await supabaseAdmin.rpc("save_recruitment_candidate", { p_tag: input.player_tag, p_status: input.status, p_notes: input.notes, p_version: input.version });
+  const { data, error } = await supabaseAdmin.rpc(input.manual_compatibility ? "save_recruitment_candidate_details" : "save_recruitment_candidate", {
+    p_tag: input.player_tag, p_status: input.status, p_notes: input.notes, p_version: input.version,
+    ...(input.manual_compatibility ? { p_manual: input.manual_compatibility } : {}) });
   if (error?.code === "40001") throw new CandidateInputError("Candidate changed. Reload before saving.", 409);
   if (error?.code === "54000") throw new CandidateInputError("The watchlist supports up to 100 candidates.", 409);
   if (error) throw new Error("Candidate list unavailable");
