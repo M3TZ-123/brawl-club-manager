@@ -1,4 +1,5 @@
 export const arFeatures: Record<string, string> = {
+  "Mode": "الطور", "Map": "الخريطة", "unknown": "غير معروف",
   "Average recorded duration": "متوسط المدة المسجّلة",
   "{stale} players have stale checks; {affected} players have possible gaps overlapping this period. Gap records are kept for {days} days.": "لم تُفحص بيانات {stale} لاعبين حديثًا؛ وقد توجد فجوات تتقاطع مع هذه الفترة لدى {affected} لاعبين. تُحفظ سجلات الفجوات لمدة {days} يومًا.",
   "Some filter choices exceed the display limit. Shorten the period to see more choices.": "تجاوزت بعض خيارات التصفية حدّ العرض. اختر فترة أقصر لرؤية خيارات إضافية.",
