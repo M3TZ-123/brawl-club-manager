@@ -20,6 +20,7 @@ import { Member, ActivityLog, MemberHistory } from "@/types/database";
 import type { ActivityStatus } from "@/lib/activity-status";
 import { getActivityEmoji, getRankColor } from "@/lib/utils";
 import { getProfileIconUrl } from "@/lib/brawl-assets";
+import { describeBattleContext, getBattleModeInfo } from "@/lib/battle-catalog";
 import {
   Trophy,
   Star,
@@ -133,7 +134,15 @@ interface RecentMatch {
   mode: string | null;
   map: string | null;
   result: string | null;
-  trophy_change: number;
+  trophy_change: number | null;
+  pointData?: { change: number | null; unit: "trophies" | "unknown" };
+  battle_type?: string | null;
+  event_id?: number | null;
+  event_mode_id?: number | null;
+  battle_mode?: string | null;
+  event_mode?: string | null;
+  placement_rank?: number | null;
+  context?: { key: string; label: string };
   is_star_player: boolean;
   brawler_name: string | null;
   brawler_power: number | null;
@@ -162,7 +171,7 @@ interface MemberDetailResponse {
 
 export default function MemberDetailPage({ params }: PageProps) {
   const { t } = useI18n();
-  const { number: formatNumber, relative: formatRelativeTime, date: formatDate } = useI18n();
+  const { number: formatNumber, delta: formatDelta, relative: formatRelativeTime, date: formatDate } = useI18n();
   const resolvedParams = use(params);
   const [member, setMember] = useState<DetailMember | null>(null);
   const [activityHistory, setActivityHistory] = useState<ActivityLog[]>([]);
@@ -267,10 +276,10 @@ export default function MemberDetailPage({ params }: PageProps) {
   const profileIconUrl = member ? getProfileIconUrl(member.icon_id) : null;
 
   const formatBattleResult = (result: string | null) => {
-    if (!result) return { label: "Unknown", className: "text-muted-foreground" };
     if (result === "victory") return { label: "Victory", className: "text-green-500" };
     if (result === "defeat") return { label: "Defeat", className: "text-red-500" };
-    return { label: result, className: "text-muted-foreground" };
+    if (result === "draw") return { label: "Draw", className: "text-muted-foreground" };
+    return { label: "Unknown result", className: "text-muted-foreground" };
   };
 
   if (isLoading) {
@@ -493,21 +502,25 @@ export default function MemberDetailPage({ params }: PageProps) {
                   <div className="space-y-2">
                     {recentMatches.map((match, index) => {
                       const result = formatBattleResult(match.result);
+                      const mode = getBattleModeInfo(match.mode, match.event_mode_id);
+                      const context = match.context || describeBattleContext(match);
+                      const change = match.pointData ? match.pointData.change : match.trophy_change;
                       return (
                         <div key={`${match.battle_time}-${index}`} className="flex items-center justify-between rounded-md border border-border/60 px-3 py-2">
                           <div className="min-w-0">
-                            <div className="flex items-center gap-2">
+                            <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5">
                               <span className={`text-sm font-medium ${result.className}`}>{<T text={result.label} />}</span>
-                              <span className="text-sm text-muted-foreground">{match.mode || "Unknown mode"}</span>
+                              <span className="inline-flex items-center gap-1 text-sm text-muted-foreground">{mode.imageUrl ? <Image src={mode.imageUrl} alt="" width={16} height={16} className="h-4 w-4 object-contain" /> : <span aria-hidden="true">{mode.icon}</span>}{t(mode.label)}</span>
+                              <span className="text-xs text-muted-foreground">{t(context.label)}</span>
                             </div>
                             <p className="text-xs text-muted-foreground truncate">
-                              {match.map || "Unknown map"} • {match.brawler_name || "Unknown brawler"}
+                              {match.map || t("Unknown map")} • {match.brawler_name || t("Unknown Brawler")}
                               {typeof match.brawler_power === "number" ? <T text=" (P{value0})" values={{ value0: String(match.brawler_power) }} /> : ""}
                             </p>
                           </div>
                           <div className="text-end ms-3">
-                            <p className={`text-sm font-semibold ${match.trophy_change > 0 ? "text-green-500" : match.trophy_change < 0 ? "text-red-500" : "text-muted-foreground"}`}>
-                              {match.trophy_change > 0 ? <T text="+{value0}" values={{ value0: String(match.trophy_change) }} /> : match.trophy_change}
+                            <p title={t(match.pointData?.unit === "trophies" ? "Trophy change" : "Reported change")} className={`text-sm font-semibold ${change != null && change > 0 ? "text-green-500" : change != null && change < 0 ? "text-red-500" : "text-muted-foreground"}`}>
+                              <bdi>{formatDelta(change)}</bdi>
                             </p>
                             <p className="text-xs text-muted-foreground inline-flex items-center gap-1">
                               <Clock3 className="h-3 w-3" />

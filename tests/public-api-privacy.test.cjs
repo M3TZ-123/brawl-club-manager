@@ -1,3 +1,4 @@
+const { battleFeedRpc } = require("./helpers/battle-feed-database.cjs");
 const test = require("node:test");
 const assert = require("node:assert/strict");
 const { loadTypeScript } = require("./helpers/load-typescript.cjs");
@@ -22,7 +23,8 @@ function tables() {
 // the database fixtures so a select('*') regression exposes the real leak.
 function projectedDatabase(selections) {
   const database = readOnlyDatabase(tables());
-  return { async rpc(name) {
+  return { async rpc(name, args) {
+    if (name.startsWith("battle_feed_")) return battleFeedRpc(tables().battle_history)(name, args);
     assert.equal(name, "report_account_trophy_trend");
     return { data: [{ date: "2026-09-16", trophies: 1000, observed_members: 1, total_members: 1, owner_user_id: owner }], error: null };
   }, from(table) {

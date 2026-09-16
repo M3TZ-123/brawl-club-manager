@@ -1,5 +1,6 @@
 import axios from "axios";
 import { encodeTag } from "./utils";
+import { normalizeBattleMode } from "./battle-catalog";
 import { callWithUpstreamRetry, getUpstreamCooldownMs, UpstreamRateLimitError, type UpstreamProvider } from "./upstream-rate-limit";
 
 // Use RoyaleAPI proxy to bypass IP restrictions
@@ -96,6 +97,7 @@ export interface BrawlStarsBattle {
   battleTime: string;
   event: {
     id: number;
+    modeId?: number;
     mode: string;
     map: string;
   };
@@ -150,26 +152,22 @@ function tagsMatch(a: string | null | undefined, b: string | null | undefined): 
 }
 
 function getBattleMode(battle: BrawlStarsBattle): string {
-  return (battle.battle?.mode || battle.event?.mode || "").toLowerCase();
+  // Some live Trio Showdown logs still use duoShowdown in battle.mode.
+  // The event's mode identifies the actual event; retain both raw values below.
+  return normalizeBattleMode(battle.event?.mode || battle.battle?.mode, battle.event?.modeId);
 }
 
-function getRankWinThreshold(battle: BrawlStarsBattle): number {
+function isRankBattleVictory(battle: BrawlStarsBattle): boolean | null {
   const mode = getBattleMode(battle);
-  if (mode.includes("duo")) return 2;
-  if (mode.includes("solo") || mode.includes("showdown")) return 4;
-
-  const teamCount = battle.battle?.teams?.length || 0;
-  if (teamCount > 0) return Math.max(1, Math.floor(teamCount / 2));
-
-  const playerCount = battle.battle?.players?.length || 0;
-  if (playerCount > 0 && playerCount <= 5) return 2;
-
-  return 4;
-}
-
-function isRankBattleVictory(battle: BrawlStarsBattle): boolean {
   const rank = battle.battle?.rank;
-  return rank != null && rank <= getRankWinThreshold(battle);
+  // A placement is not a universal win indicator. Only these formats have a
+  // known winning threshold; future/event formats retain an unknown result.
+  const placements: Record<string, [number, number]> = {
+    soloShowdown: [4, 10], duoShowdown: [2, 5], trioShowdown: [2, 4], duels: [1, 2],
+  };
+  const format = placements[mode];
+  if (!format || !Number.isInteger(rank) || rank! < 1 || rank! > format[1]) return null;
+  return rank! <= format[0];
 }
 
 export class BrawlApiError extends Error {
@@ -380,10 +378,10 @@ export function calculateWinRateFromBattleLog(battleLog: BrawlStarsBattleLog | n
       continue;
     }
     
-    // Count ranked placement modes. Solo Showdown wins are top 4; Duo Showdown wins are top 2.
-    if (battleData.rank != null) {
+    const placementVictory = isRankBattleVictory(battle);
+    if (placementVictory != null) {
       validBattles++;
-      if (isRankBattleVictory(battle)) {
+      if (placementVictory) {
         wins++;
       }
     }
@@ -501,9 +499,10 @@ export async function getPlayerBattleStats(playerTag: string, apiKey?: string): 
           stats.losses++;
         }
       } else if (battleData.rank != null) {
-        if (isRankBattleVictory(battle)) {
+        const placementVictory = isRankBattleVictory(battle);
+        if (placementVictory === true) {
           stats.wins++;
-        } else {
+        } else if (placementVictory === false) {
           stats.losses++;
         }
       }
@@ -568,7 +567,14 @@ export interface ProcessedBattle {
   mode: string;
   map: string;
   result: string;
-  trophy_change: number;
+  trophy_change: number | null;
+  trophy_change_reported: boolean;
+  battle_type: string | null;
+  event_id: number | null;
+  event_mode_id: number | null;
+  battle_mode: string | null;
+  event_mode: string | null;
+  placement_rank: number | null;
   is_star_player: boolean;
   brawler_name: string | null;
   brawler_power: number | null;
@@ -592,7 +598,8 @@ export function processBattleLog(playerTag: string, battleLog: BrawlStarsBattleL
     if (battleData.result) {
       result = battleData.result;
     } else if (battleData.rank != null) {
-      result = isRankBattleVictory(battle) ? "victory" : "defeat";
+      const placementVictory = isRankBattleVictory(battle);
+      if (placementVictory != null) result = placementVictory ? "victory" : "defeat";
     }
 
     // Check if star player
@@ -610,7 +617,7 @@ export function processBattleLog(playerTag: string, battleLog: BrawlStarsBattleL
           if (tagsMatch(player.tag, playerTag)) {
             brawlerName = player.brawler?.name || null;
             brawlerPower = player.brawler?.power || null;
-            brawlerTrophies = player.brawler?.trophies || null;
+            brawlerTrophies = player.brawler?.trophies ?? null;
             break teamsLoop;
           }
         }
@@ -623,7 +630,7 @@ export function processBattleLog(playerTag: string, battleLog: BrawlStarsBattleL
           const b = player.brawler || player.brawlers?.[0];
           brawlerName = b?.name || null;
           brawlerPower = b?.power || null;
-          brawlerTrophies = b?.trophies || null;
+          brawlerTrophies = b?.trophies ?? null;
           break;
         }
       }
@@ -660,10 +667,17 @@ export function processBattleLog(playerTag: string, battleLog: BrawlStarsBattleL
     battles.push({
       player_tag: playerTag,
       battle_time: battleTime.toISOString(),
-      mode: battle.event?.mode || battleData.mode || "unknown",
+      mode: getBattleMode(battle),
       map: battle.event?.map || "unknown",
       result,
-      trophy_change: battleData.trophyChange || 0,
+      trophy_change: Number.isFinite(battleData.trophyChange) ? battleData.trophyChange! : null,
+      trophy_change_reported: Number.isFinite(battleData.trophyChange),
+      battle_type: battleData.type || null,
+      event_mode_id: Number.isSafeInteger(battle.event?.modeId) ? battle.event.modeId! : null,
+      event_id: Number.isSafeInteger(battle.event?.id) ? battle.event.id : null,
+      battle_mode: battleData.mode || null,
+      event_mode: battle.event?.mode || null,
+      placement_rank: Number.isInteger(battleData.rank) && battleData.rank! > 0 ? battleData.rank! : null,
       is_star_player: isStarPlayer,
       brawler_name: brawlerName,
       brawler_power: brawlerPower,

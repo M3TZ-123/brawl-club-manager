@@ -1,3 +1,4 @@
+const { battleFeedRpc } = require("./helpers/battle-feed-database.cjs");
 const test = require("node:test");
 const assert = require("node:assert/strict");
 const { loadTypeScript } = require("./helpers/load-typescript.cjs");
@@ -5,18 +6,24 @@ const { readOnlyDatabase } = require("./helpers/read-only-database.cjs");
 
 const responseMock = { NextResponse: { json: (body, init) => Response.json(body, init) } };
 const json = value => JSON.parse(JSON.stringify(value));
+// Pagination fixtures deliberately share January timestamps. Keep their clock
+// inside the API's bounded default window without altering the battle ordering.
+class FeedFixtureDate extends Date {
+  constructor(...args) { super(...(args.length ? args : ["2026-01-03T00:00:00.000Z"])); }
+  static now() { return Date.parse("2026-01-03T00:00:00.000Z"); }
+}
 
 function loadRoute(path, database) {
   return loadTypeScript(path, {
     "@/lib/supabase-admin": { supabaseAdmin: database },
     "@/lib/admin-auth": { rejectUnauthorizedAdminMutation: () => null },
     "next/server": responseMock,
-  });
+  }, path === "src/app/api/battles/feed/route.ts" ? { Date: FeedFixtureDate } : {});
 }
 
 function battleDatabase(tables) {
   const database = readOnlyDatabase(tables);
-  return { from(table) {
+  return { rpc: battleFeedRpc(tables.battle_history), from(table) {
     const query = database.from(table);
     query.not = (key, operator, value) => {
       assert.equal(operator, "is");
@@ -94,7 +101,7 @@ test("missing, partial, malformed, duplicate, or unknown participant data keeps 
 });
 
 test("complete duels, showdown and five-player team rosters still combine club observations", async () => {
-  for(const [mode,count] of [["duels",2],["soloShowdown",10],["duoShowdown",10],["trioShowdown",12],["brawlBall5V5",10]]){
+  for(const [mode,count] of [["duels",2],["soloShowdown",10],["duoShowdown",10],["trioShowdown",12],["brawlBall5V5",10],["airHockey5v5",10],["deathmatch5v5",10]]){
     const players=Array.from({length:count},(_,index)=>({tag:index===0?"#A":index===1?"#B":`#P${index}`}));
     const route=battleFeedFixture([
       {player_tag:"#A",battle_time:"2026-01-01T20:00:00.000Z",mode,map:"Map",teams_json:{players}},

@@ -1,16 +1,14 @@
 import { NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabase-admin";
 import { parseTimeRange, TIME_RANGES } from "@/lib/time-range";
+import { battleContextOptions, describeBattleContext, getBattleModeInfo, normalizeBattleMode } from "@/lib/battle-catalog";
+import { battlePointData } from "@/lib/battle-point-data";
 
 function parseBoundedInt(value: string | null, fallback: number, min: number, max: number): number {
   const parsed = Number.parseInt(value || "", 10);
   if (!Number.isFinite(parsed)) return fallback;
   return Math.min(Math.max(parsed, min), max);
 }
-
-type BattleModeRow = {
-  mode: string | null;
-};
 
 function normalizeTag(tag: string): string {
   const decoded = tag.trim().replace(/^%23/i, "#").toUpperCase();
@@ -23,8 +21,8 @@ function participantKey(raw: unknown, mode: string | null, playerTag: string): s
   const expectedPlayers: Record<string, number> = {
     gemgrab: 6, brawlball: 6, heist: 6, bounty: 6, siege: 6, hotzone: 6,
     knockout: 6, wipeout: 6, payload: 6, trophythieves: 6, paintbrawl: 6,
-    basketbrawl: 6, volleybrawl: 6, holdthetrophy: 6, airhockey: 6, brawlarena: 6,
-    brawlball5v5: 10, gemgrab5v5: 10, wipeout5v5: 10, knockout5v5: 10,
+    basketbrawl: 6, volleybrawl: 6, holdthetrophy: 6, brawlhockey: 6, brawlarena: 6,
+    brawlball5v5: 10, gemgrab5v5: 10, wipeout5v5: 10, knockout5v5: 10, brawlhockey5v5: 10,
     soloshowdown: 10, duoshowdown: 10, showdown: 10, trioshowdown: 12,
     duels: 2, biggame: 6, bossfight: 3, roborumble: 3, laststand: 3,
     lonestar: 10, takedown: 10, hunters: 10,
@@ -49,29 +47,27 @@ function participantKey(raw: unknown, mode: string | null, playerTag: string): s
   return JSON.stringify(tags.sort());
 }
 
-async function fetchRecentBattleModes(playerTags: string[]): Promise<BattleModeRow[]> {
-  if (playerTags.length === 0) return [];
-
-  const { data, error } = await supabaseAdmin
-    .from("battle_history")
-    .select("mode")
-    .in("player_tag", playerTags)
-    .not("mode", "is", null)
-    .order("battle_time", { ascending: false })
-    .order("player_tag", { ascending: true })
-    .limit(1500);
-
-  if (error) throw error;
-  return (data || []) as BattleModeRow[];
-}
+type BattleRow = {
+  player_tag: string; battle_time: string; mode: string | null; map: string | null;
+  result: string | null; trophy_change: number | null; trophy_change_reported: boolean | null;
+  is_star_player: boolean; brawler_name: string | null; brawler_power: number | null;
+  teams_json: unknown; battle_type: string | null; event_id: number | null; event_mode_id: number | null;
+  battle_mode: string | null; event_mode: string | null; placement_rank: number | null;
+};
+type Facet = { key: string; count: number };
+type Facets = { modes: Facet[]; contexts: Facet[]; total: number; observationCount: number };
 
 export async function GET(request: Request) {
   try {
     const { searchParams } = new URL(request.url);
     const limit = parseBoundedInt(searchParams.get("limit"), 50, 1, 200);
-    const offset = parseBoundedInt(searchParams.get("offset"), 0, 0, Number.MAX_SAFE_INTEGER);
-    const mode = searchParams.get("mode") || null;
-    const player = searchParams.get("player") || null;
+    const offset = parseBoundedInt(searchParams.get("offset"), 0, 0, 2_147_483_647);
+    const mode = searchParams.get("mode") ? normalizeBattleMode(searchParams.get("mode")) : null;
+    const context = searchParams.get("context") || null;
+    if (context && !battleContextOptions.some(option => option.key === context)) {
+      return NextResponse.json({ error: "Invalid battle context" }, { status: 400 });
+    }
+    const player = searchParams.get("player") ? normalizeTag(searchParams.get("player")!) : null;
     const date = searchParams.get("date") || null; // YYYY-MM-DD
     const range = searchParams.get("range");
     const now = Date.now();
@@ -98,33 +94,26 @@ export async function GET(request: Request) {
     const nameMap = new Map((members || []).map((m) => [m.player_tag, m.player_name]));
     const clubTags = new Set(nameMap.keys());
 
-    const buildBattleQuery = () => {
-      let query = supabaseAdmin
-        .from("battle_history")
-        .select(
-          "player_tag, battle_time, mode, map, result, trophy_change, is_star_player, brawler_name, brawler_power, teams_json",
-          { count: "exact" }
-        )
-        .in("player_tag", currentMemberTags.length > 0 ? currentMemberTags : [""])
-        .order("battle_time", { ascending: false })
-        .order("player_tag", { ascending: true });
-
-      if (mode) query = query.eq("mode", mode);
-      if (player) query = query.eq("player_tag", player);
-
-      if (date) {
-        const dayStart = `${date}T00:00:00.000Z`;
-        const dayEnd = `${date}T23:59:59.999Z`;
-        query = query.gte("battle_time", dayStart).lte("battle_time", dayEnd);
-      } else if (range != null) {
-        query = query.gte("battle_time", new Date(now - TIME_RANGES[parseTimeRange(range)].days * 86_400_000).toISOString());
-      }
-      query = query.lte("battle_time", new Date(now + 60_000).toISOString());
-      return query;
+    const since = date ? date + "T00:00:00.000Z" : new Date(now - TIME_RANGES[parseTimeRange(range, range == null ? "90d" : "7d")].days * 86_400_000).toISOString();
+    const until = new Date(Math.min(date ? Date.parse(date) + 86_400_000 - 1 : Infinity, now + 60_000)).toISOString();
+    const filters = {
+      p_player_tags: currentMemberTags, p_since: since, p_until: until,
+      p_player: player, p_mode: mode, p_context: context,
     };
-
-    const { data: page, error, count } = await buildBattleQuery().range(offset, offset + limit - 1);
-    if (error) throw error;
+    const fetchPage = async (pageOffset: number, pageLimit: number, at: string | null = null): Promise<BattleRow[]> => {
+      const { data, error } = await supabaseAdmin.rpc("battle_feed_page", {
+        ...filters, p_at: at, p_offset: pageOffset, p_limit: pageLimit,
+      });
+      if (error) throw error;
+      return (data || []) as BattleRow[];
+    };
+    const [page, facetResult] = await Promise.all([
+      fetchPage(offset, limit), supabaseAdmin.rpc("battle_feed_facets", filters),
+    ]);
+    if (facetResult.error) throw facetResult.error;
+    const facets = facetResult.data as Facets;
+    if (!facets || !Array.isArray(facets.modes) || !Array.isArray(facets.contexts)) throw new Error("Invalid battle facets");
+    const count = Number(facets.total);
     const battles = [...(page || [])];
 
     // Finish every match at the boundary timestamp before advancing the cursor.
@@ -135,10 +124,7 @@ export async function GET(request: Request) {
       battles.splice(battles.length - boundaryRows, boundaryRows);
       const batchSize = 200;
       for (let boundaryOffset = 0; ; boundaryOffset += batchSize) {
-        const { data: tail, error: tailError } = await buildBattleQuery()
-          .eq("battle_time", boundaryTime)
-          .range(boundaryOffset, boundaryOffset + batchSize - 1);
-        if (tailError) throw tailError;
+        const tail = await fetchPage(boundaryOffset, batchSize, boundaryTime);
         battles.push(...(tail || []));
         if (!tail || tail.length < batchSize) break;
       }
@@ -152,13 +138,19 @@ export async function GET(request: Request) {
       battle_time: string;
       mode: string;
       map: string;
+      context: ReturnType<typeof describeBattleContext>;
+      battle_type: string | null; event_id: number | null; event_mode_id: number | null;
+      battle_mode: string | null; event_mode: string | null; placement_rank: number | null;
       clubPlayers: {
         tag: string;
         name: string;
         brawler: string | null;
         power: number | null;
         result: string;
-        trophy_change: number;
+        trophy_change: number | null;
+        trophy_change_reported: boolean | null;
+        placement_rank: number | null;
+        pointData: ReturnType<typeof battlePointData>;
         is_star_player: boolean;
       }[];
       teams: unknown;
@@ -169,15 +161,20 @@ export async function GET(request: Request) {
       if (b.teams_json) {
         try { teams = typeof b.teams_json === "string" ? JSON.parse(b.teams_json) : b.teams_json; } catch { /* Keep this observation separate. */ }
       }
-      const participants = participantKey(teams, b.mode, b.player_tag);
-      const key = JSON.stringify([b.battle_time, b.mode, b.map,
+      const canonicalMode = normalizeBattleMode(b.event_mode || b.battle_mode || b.mode, b.event_mode_id);
+      const context = describeBattleContext(b);
+      const participants = participantKey(teams, canonicalMode, b.player_tag);
+      const key = JSON.stringify([b.battle_time, canonicalMode, b.map, context.key, b.event_id ?? null,
         participants ? ["participants", participants] : ["observation", normalizeTag(b.player_tag)]]);
 
       if (!matchMap.has(key)) {
         matchMap.set(key, {
           matchId: key,
           battle_time: b.battle_time,
-          mode: b.mode || "unknown",
+          mode: canonicalMode,
+          context,
+          battle_type: b.battle_type ?? null, event_id: b.event_id ?? null, event_mode_id: b.event_mode_id ?? null,
+          battle_mode: b.battle_mode ?? null, event_mode: b.event_mode ?? null, placement_rank: b.placement_rank ?? null,
           map: b.map || "unknown",
           clubPlayers: [],
           teams,
@@ -193,7 +190,10 @@ export async function GET(request: Request) {
           brawler: b.brawler_name,
           power: b.brawler_power,
           result: b.result || "unknown",
-          trophy_change: b.trophy_change || 0,
+          trophy_change: b.trophy_change ?? null,
+          trophy_change_reported: b.trophy_change_reported ?? null,
+          placement_rank: b.placement_rank ?? null,
+          pointData: battlePointData(b),
           is_star_player: b.is_star_player || false,
         });
       }
@@ -207,7 +207,7 @@ export async function GET(request: Request) {
 
     // Detect Showdown modes
     const isShowdownMode = (mode: string) =>
-      mode === "soloShowdown" || mode === "duoShowdown" || mode === "showdown";
+      mode === "soloShowdown" || mode === "duoShowdown" || mode === "trioShowdown" || mode === "showdown";
 
     type RawPlayer = {
       tag?: string;
@@ -341,6 +341,11 @@ export async function GET(request: Request) {
         battle_time: match.battle_time,
         mode: match.mode,
         map: match.map,
+        context: match.context,
+        battle_type: match.battle_type, event_id: match.event_id, event_mode_id: match.event_mode_id,
+        battle_mode: match.battle_mode, event_mode: match.event_mode, placement_rank: match.placement_rank,
+        teams: normalizedTeams,
+        teamCount: normalizedTeams.length,
         clubPlayers: match.clubPlayers,
         ourTeam: ourTeam.length > 0 ? ourTeam : null,
         theirTeam: theirTeam.length > 0 ? theirTeam : null,
@@ -348,10 +353,11 @@ export async function GET(request: Request) {
       };
     });
 
-    // Get distinct modes for filter
-    const modes = await fetchRecentBattleModes(currentMemberTags);
-
-    const uniqueModes = [...new Set(modes.map((m) => m.mode))].filter(Boolean).sort();
+    // Counts are observations by club members, not deduplicated shared matches.
+    const modeFacets = facets.modes.map(facet => ({ ...getBattleModeInfo(facet.key), count: Number(facet.count) }));
+    const contexts = battleContextOptions.map(option => ({
+      ...option, count: Number(facets.contexts.find(facet => facet.key === option.key)?.count || 0),
+    }));
 
     // Build members list for filter dropdown
     const memberList = (members || []).map((m) => ({
@@ -363,12 +369,16 @@ export async function GET(request: Request) {
       matches: enrichedMatches,
       total: count || 0,
       nextOffset: nextOffset < (count || 0) ? nextOffset : null,
-      modes: uniqueModes,
+      modes: modeFacets.map(facet => facet.key),
+      modeFacets,
+      contexts,
+      observationCount: Number(facets.observationCount),
+      facetsBasis: "member_observations",
       members: memberList,
       serverTime: new Date().toISOString(),
     });
   } catch (error) {
-    console.error("Error fetching battle feed:", error);
+    console.error("Error fetching battle feed:", error instanceof Error ? error.name : "database_error");
     return NextResponse.json({ error: "Failed to fetch battle feed" }, { status: 500 });
   }
 }

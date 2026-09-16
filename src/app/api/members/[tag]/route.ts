@@ -1,5 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabase-admin";
+import { battlePointData } from "@/lib/battle-point-data";
+import { describeBattleContext, normalizeBattleMode } from "@/lib/battle-catalog";
 import { aggregateDailyBattleStats } from "@/lib/battle-tracking-stats";
 import { appendMemberActivityMetrics } from "@/lib/member-activity-metrics";
 import { parseTimeRange, TIME_RANGES } from "@/lib/time-range";
@@ -14,7 +16,10 @@ type RecentMatch = {
   mode: string | null;
   map: string | null;
   result: string | null;
-  trophy_change: number;
+  trophy_change: number | null;
+  trophy_change_reported: boolean | null;
+  battle_type: string | null; event_id: number | null; event_mode_id: number | null;
+  battle_mode: string | null; event_mode: string | null; placement_rank: number | null;
   is_star_player: boolean;
   brawler_name: string | null;
   brawler_power: number | null;
@@ -75,7 +80,7 @@ export async function GET(
         .limit(1),
       supabaseAdmin
         .from("battle_history")
-        .select("battle_time, mode, map, result, trophy_change, is_star_player, brawler_name, brawler_power")
+        .select("battle_time, mode, map, result, trophy_change, trophy_change_reported, battle_type, event_id, event_mode_id, battle_mode, event_mode, placement_rank, is_star_player, brawler_name, brawler_power")
         .eq("player_tag", playerTag)
         .gte("battle_time", period.start.toISOString()).lte("battle_time", now.toISOString())
         .order("battle_time", { ascending: false })
@@ -267,7 +272,10 @@ export async function GET(
       powerDistribution,
       brawlers: null,
       topBrawlers,
-      recentMatches: (recentMatches || []) as RecentMatch[],
+      recentMatches: ((recentMatches || []) as RecentMatch[]).map(match => ({
+        ...match, mode: normalizeBattleMode(match.event_mode || match.battle_mode || match.mode, match.event_mode_id),
+        context: describeBattleContext(match), pointData: battlePointData(match),
+      })),
       playerTags,
       calendarBattlesByDay,
     }, { headers: { "Cache-Control": "no-store" } });

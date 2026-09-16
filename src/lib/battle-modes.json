@@ -1,0 +1,362 @@
+[
+  {
+    "key": "gemGrab",
+    "label": "Gem Grab",
+    "id": 48000000
+  },
+  {
+    "key": "heist",
+    "label": "Heist",
+    "id": 48000002
+  },
+  {
+    "key": "bounty",
+    "label": "Bounty",
+    "id": 48000003
+  },
+  {
+    "key": "brawlBall",
+    "label": "Brawl Ball",
+    "id": 48000005
+  },
+  {
+    "key": "soloShowdown",
+    "label": "Solo Showdown",
+    "id": 48000006
+  },
+  {
+    "key": "bigGame",
+    "label": "Big Game",
+    "id": 48000007
+  },
+  {
+    "key": "roboRumble",
+    "label": "Robo Rumble",
+    "id": 48000008
+  },
+  {
+    "key": "duoShowdown",
+    "label": "Duo Showdown",
+    "id": 48000009
+  },
+  {
+    "key": "bossFight",
+    "label": "Boss Fight",
+    "id": 48000010
+  },
+  {
+    "key": "spiritWars",
+    "label": "Spirit Wars",
+    "id": 48000011
+  },
+  {
+    "key": "takedown",
+    "label": "Takedown",
+    "id": 48000014
+  },
+  {
+    "key": "loneStar",
+    "label": "Lone Star",
+    "id": 48000015
+  },
+  {
+    "key": "presentPlunder",
+    "label": "Present Plunder",
+    "id": 48000016
+  },
+  {
+    "key": "hotZone",
+    "label": "Hot Zone",
+    "id": 48000017
+  },
+  {
+    "key": "superCityRampage",
+    "label": "Super City Rampage",
+    "id": 48000018
+  },
+  {
+    "key": "knockout",
+    "label": "Knockout",
+    "id": 48000020
+  },
+  {
+    "key": "carryTheGift",
+    "label": "Carry The Gift",
+    "id": 48000021
+  },
+  {
+    "key": "basketBrawl",
+    "label": "Basket Brawl",
+    "id": 48000022
+  },
+  {
+    "key": "volleyBrawl",
+    "label": "Volley Brawl",
+    "id": 48000023
+  },
+  {
+    "key": "duels",
+    "label": "Duels",
+    "id": 48000024
+  },
+  {
+    "key": "wipeout",
+    "label": "Wipeout",
+    "id": 48000025
+  },
+  {
+    "key": "payload",
+    "label": "Payload",
+    "id": 48000026
+  },
+  {
+    "key": "botDrop",
+    "label": "Bot Drop",
+    "id": 48000027
+  },
+  {
+    "key": "hunters",
+    "label": "Hunters",
+    "id": 48000028
+  },
+  {
+    "key": "lastStand",
+    "label": "Last Stand",
+    "id": 48000029
+  },
+  {
+    "key": "wipeout5v5",
+    "label": "Wipeout 5v5",
+    "id": 48000031
+  },
+  {
+    "key": "brawlBall5v5",
+    "label": "Brawl Ball 5v5",
+    "id": 48000032
+  },
+  {
+    "key": "gemGrab5v5",
+    "label": "Gem Grab 5v5",
+    "id": 48000033
+  },
+  {
+    "key": "trophyEscape",
+    "label": "Trophy Escape",
+    "id": 48000034
+  },
+  {
+    "key": "knockout5v5",
+    "label": "Knockout 5v5",
+    "id": 48000035
+  },
+  {
+    "key": "godzillaCitySmash",
+    "label": "Godzilla City Smash",
+    "id": 48000036
+  },
+  {
+    "key": "paintBrawl",
+    "label": "Paint Brawl",
+    "id": 48000037
+  },
+  {
+    "key": "trioShowdown",
+    "label": "Trio Showdown",
+    "id": 48000038
+  },
+  {
+    "key": "drumRoll",
+    "label": "Drum Roll",
+    "id": 48000039
+  },
+  {
+    "key": "soulCollector",
+    "label": "Soul Collector",
+    "id": 48000040
+  },
+  {
+    "key": "cleaningDuty",
+    "label": "Cleaning Duty",
+    "id": 48000041
+  },
+  {
+    "key": "soloShowdownLimbo",
+    "label": "Solo Showdown Limbo",
+    "id": 48000042
+  },
+  {
+    "key": "knockoutLimbo",
+    "label": "Knockout Limbo",
+    "id": 48000043
+  },
+  {
+    "key": "brawlHockey",
+    "label": "Brawl Hockey",
+    "id": 48000045
+  },
+  {
+    "key": "gemGrab2v2",
+    "label": "Gem Grab 2v2",
+    "id": 48000046
+  },
+  {
+    "key": "specialDelivery",
+    "label": "Special Delivery",
+    "id": 48000047
+  },
+  {
+    "key": "brawlArena",
+    "label": "Brawl Arena",
+    "id": 48000048
+  },
+  {
+    "key": "brawlBall2v2",
+    "label": "Brawl Ball 2v2",
+    "id": 48000049
+  },
+  {
+    "key": "knockout2v2",
+    "label": "Knockout 2v2",
+    "id": 48000050
+  },
+  {
+    "key": "hotZone2v2",
+    "label": "Hot Zone 2v2",
+    "id": 48000051
+  },
+  {
+    "key": "basketBrawl2v2",
+    "label": "Basket Brawl 2v2",
+    "id": 48000052
+  },
+  {
+    "key": "brawlHockey2v2",
+    "label": "Brawl Hockey 2v2",
+    "id": 48000053
+  },
+  {
+    "key": "specialDelivery2v2",
+    "label": "Special Delivery 2v2",
+    "id": 48000054
+  },
+  {
+    "key": "tokenRun",
+    "label": "Token Run",
+    "id": 48000055
+  },
+  {
+    "key": "treasureHunt",
+    "label": "Treasure Hunt",
+    "id": 48000056
+  },
+  {
+    "key": "brawlHockey5v5",
+    "label": "Brawl Hockey 5v5",
+    "id": 48000057
+  },
+  {
+    "key": "vipHunt",
+    "label": "Vip Hunt",
+    "id": 48000058
+  },
+  {
+    "key": "samuraiSmash",
+    "label": "Samurai Smash",
+    "id": 48000060
+  },
+  {
+    "key": "megaBoss",
+    "label": "Boss Fight",
+    "id": 48000061
+  },
+  {
+    "key": "dodgebrawl",
+    "label": "Dodgebrawl",
+    "id": 48000063
+  },
+  {
+    "key": "subwayRun",
+    "label": "Subway Run",
+    "id": 48000064
+  },
+  {
+    "key": "trioGemGrab",
+    "label": "Trio Gem Grab",
+    "id": 48000065
+  },
+  {
+    "key": "trioWipeout",
+    "label": "Trio Wipeout",
+    "id": 48000066
+  },
+  {
+    "key": "loveBombing",
+    "label": "Love Bombing",
+    "id": 48000068
+  },
+  {
+    "key": "duoMegaBoss",
+    "label": "Duo Mega Boss",
+    "id": 48000069
+  },
+  {
+    "key": "safeBlast",
+    "label": "Safe Blast",
+    "id": 48000070
+  },
+  {
+    "key": "loadedShowdown",
+    "label": "Loaded Showdown",
+    "id": 48000072
+  },
+  {
+    "key": "shadowSmash",
+    "label": "Shadow Smash",
+    "id": 48000073
+  },
+  {
+    "key": "superBall",
+    "label": "Super Ball",
+    "id": 48000076
+  },
+  {
+    "key": "5PlayerVoidBoss",
+    "label": "5 Player Void Boss",
+    "id": 48000077
+  },
+  {
+    "key": "loadedDuoShowdown",
+    "label": "Loaded Duo Showdown",
+    "id": 48000078
+  },
+  {
+    "key": "superHockey",
+    "label": "Super Hockey",
+    "id": 48000079
+  },
+  {
+    "key": "foodFight",
+    "label": "Food Fight",
+    "id": 48000080
+  },
+  {
+    "key": "mechaGuard",
+    "label": "Mecha Guard",
+    "id": 48000081
+  },
+  {
+    "key": "combatCooking",
+    "label": "Combat Cooking",
+    "id": 48000082
+  },
+  {
+    "key": "hide&Seek",
+    "label": "Hide & Seek",
+    "id": 48000083
+  },
+  {
+    "key": "megaBossDuo(20Player)",
+    "label": "Mega Boss Duo (20 Player)",
+    "id": 48000084
+  }
+]

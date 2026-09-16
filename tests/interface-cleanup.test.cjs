@@ -1,3 +1,4 @@
+const { battleFeedRpc } = require("./helpers/battle-feed-database.cjs");
 const test = require("node:test");
 const assert = require("node:assert/strict");
 const { loadTypeScript } = require("./helpers/load-typescript.cjs");
@@ -15,7 +16,7 @@ const publicAuth = { rejectUnauthorizedAdminMutation: () => null, verifyAdminSes
 const forbidden = () => { throw new Error("Unexpected private review or database mutation in range test"); };
 function rangeRoute(path, tables) {
   const source = readOnlyDatabase(tables);
-  const database = { from(table) {
+  const database = { rpc: battleFeedRpc(tables.battle_history || []), from(table) {
     const query = source.from(table);
     query.not = (column, operator, value) => {
       assert.equal(operator, "is");

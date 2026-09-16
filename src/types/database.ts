@@ -171,13 +171,20 @@ export interface Database {
       };
       battle_history: {
         Row: {
+          trophy_change_reported: boolean | null;
+          battle_type: string | null;
+          event_id: number | null;
+          event_mode_id: number | null;
+          battle_mode: string | null;
+          event_mode: string | null;
+          placement_rank: number | null;
           id: number;
           player_tag: string;
           battle_time: string;
           mode: string | null;
           map: string | null;
           result: string | null;
-          trophy_change: number;
+          trophy_change: number | null;
           is_star_player: boolean;
           brawler_name: string | null;
           brawler_power: number | null;
@@ -186,13 +193,20 @@ export interface Database {
           recorded_at: string;
         };
         Insert: {
+          trophy_change_reported?: boolean | null;
+          battle_type?: string | null;
+          event_id?: number | null;
+          event_mode_id?: number | null;
+          battle_mode?: string | null;
+          event_mode?: string | null;
+          placement_rank?: number | null;
           id?: number;
           player_tag: string;
           battle_time: string;
           mode?: string | null;
           map?: string | null;
           result?: string | null;
-          trophy_change?: number;
+          trophy_change?: number | null;
           is_star_player?: boolean;
           brawler_name?: string | null;
           brawler_power?: number | null;
@@ -201,13 +215,20 @@ export interface Database {
           recorded_at?: string;
         };
         Update: {
+          trophy_change_reported?: boolean | null;
+          battle_type?: string | null;
+          event_id?: number | null;
+          event_mode_id?: number | null;
+          battle_mode?: string | null;
+          event_mode?: string | null;
+          placement_rank?: number | null;
           id?: number;
           player_tag?: string;
           battle_time?: string;
           mode?: string | null;
           map?: string | null;
           result?: string | null;
-          trophy_change?: number;
+          trophy_change?: number | null;
           is_star_player?: boolean;
           brawler_name?: string | null;
           brawler_power?: number | null;

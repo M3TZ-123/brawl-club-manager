@@ -35,6 +35,8 @@ test("encrypted backup restores actual schema, rows and private permissions into
   `);
   for (const filename of (await fs.readdir(path.join(root, "supabase/migrations"))).filter(name => /^20260916\d{4}_.*\.sql$/.test(name)).sort()) await client.query(await fs.readFile(path.join(root, "supabase/migrations", filename), "utf8"));
   await client.query(`
+    INSERT INTO public.battle_history(player_tag,battle_time,mode,map,result,trophy_change,trophy_change_reported,battle_type,event_id,event_mode_id,battle_mode,event_mode,placement_rank)
+      VALUES('#PLAYER',now()-interval '1 hour','trioShowdown','خريطة','defeat',NULL,false,'soloRanked',15001280,38,'duoShowdown','trioShowdown',3);
     INSERT INTO public.sync_runs(id,club_tag,source,scope,fence,status,finished_at)
       VALUES('00000000-0000-4000-8000-000000000009','#CLUB','cron','full',1,'succeeded',now());
     INSERT INTO public.sync_battle_coverage(club_tag,player_tag,baseline_started_at,last_observed_at,recent_battle_times,last_attempt_at,last_observation_status,last_run_id)
@@ -130,6 +132,12 @@ test("encrypted backup restores actual schema, rows and private permissions into
     await client.query("DROP FUNCTION public.existing_user_work()");
     const result = await restoreBackup(backup, connectionString);
     assert.equal(result.verified, true);
+    const restoredBattle = (await client.query("SELECT trophy_change,trophy_change_reported,battle_type,event_id,event_mode_id,battle_mode,event_mode,placement_rank FROM public.battle_history")).rows[0];
+    assert.deepEqual(restoredBattle,{trophy_change:null,trophy_change_reported:false,battle_type:"soloRanked",event_id:15001280,event_mode_id:38,battle_mode:"duoShowdown",event_mode:"trioShowdown",placement_rank:3});
+    const restoredBattlePage=(await client.query("SELECT * FROM public.battle_feed_page(ARRAY['#PLAYER'],now()-interval '1 day',now())")).rows;
+    assert.equal(restoredBattlePage.length,1);assert.equal(restoredBattlePage[0].mode,"trioShowdown");assert.equal(restoredBattlePage[0].event_mode_id,38);
+    const restoredFacets=(await client.query("SELECT public.battle_feed_facets(ARRAY['#PLAYER'],now()-interval '1 day',now()) x")).rows[0].x;
+    assert.equal(restoredFacets.total,1);assert.deepEqual(restoredFacets.contexts,[{key:"ranked",count:1}]);
     for (const name of ["sync_battle_coverage", "sync_battle_gaps", "capacity_samples"]) assert.equal((await client.query(`SELECT count(*)::int AS n FROM public.${name}`)).rows[0].n, 1);
     assert.equal((await client.query("SELECT possible_gap FROM public.sync_battle_coverage_summary('#CLUB',ARRAY['#PLAYER'])")).rows[0].possible_gap, true);
     assert.equal((await client.query("SELECT owner_user_id,normalized_owner FROM public.profiles")).rows[0].owner_user_id, "owner-A");
@@ -158,6 +166,9 @@ test("encrypted backup restores actual schema, rows and private permissions into
         await assert.rejects(client.query("SELECT * FROM public.member_reviews"), error => error.code === "42501");
         for (const name of ["sync_battle_coverage", "sync_battle_gaps", "capacity_samples"]) await assert.rejects(client.query(`SELECT * FROM public.${name}`), error => error.code === "42501");
         await assert.rejects(client.query("SELECT public.sample_database_capacity()"), error => error.code === "42501");
+        for(const query of ["SELECT * FROM public.battle_feed_page(ARRAY['#PLAYER'],now()-interval '1 day',now())","SELECT public.battle_feed_facets(ARRAY['#PLAYER'],now()-interval '1 day',now())"]){
+          await assert.rejects(client.query(query),error=>error.code==="42501");
+        }
         for (const query of ["SELECT * FROM public.sync_activity_summary_v2(ARRAY['#PLAYER'])", "SELECT * FROM public.report_account_trophy_trend(ARRAY['#PLAYER'],90)", "SELECT * FROM public.report_member_activity_history('#PLAYER',90)"]) {
           await assert.rejects(client.query(query), error => error.code === "42501");
         }

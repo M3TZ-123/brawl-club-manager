@@ -8,6 +8,7 @@ import Link from "next/link";
 import { supabase } from "@/lib/supabase";
 import { fetchJsonCached } from "@/lib/client-data-cache";
 import { getBrawlerIconFromMap, normalizeBrawlerName } from "@/lib/brawl-assets";
+import { battleContextOptions, describeBattleContext, getBattleModeInfo } from "@/lib/battle-catalog";
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetDescription } from "@/components/ui/sheet";
 import { LayoutWrapper } from "@/components/layout-wrapper";
 import { DataConfidenceNotice } from "@/components/sync-health";
@@ -23,7 +24,6 @@ import {
   ChevronUp,
   Shield,
   ShieldAlert,
-  Users,
   X,
 } from "lucide-react";
 
@@ -39,20 +39,30 @@ interface ClubPlayer {
   name: string;
   brawler: string | null;
   power: number | null;
-  result: string;
-  trophy_change: number;
+  result: string | null;
+  trophy_change: number | null;
+  pointData?: { change: number | null; unit: "trophies" | "unknown" };
   is_star_player: boolean;
 }
 
 interface Match {
   matchId?: string;
   battle_time: string;
-  mode: string;
-  map: string;
+  mode: string | null;
+  map: string | null;
+  context?: { key: string; label: string };
+  battle_type?: string | null;
+  event_id?: number | null;
+  event_mode_id?: number | null;
+  battle_mode?: string | null;
+  event_mode?: string | null;
+  placement_rank?: number | null;
   clubPlayers: ClubPlayer[];
   ourTeam: TeamPlayer[] | null;
   theirTeam: TeamPlayer[] | null;
   isShowdown?: boolean;
+  teamCount?: number;
+  teams?: TeamPlayer[][];
 }
 
 function matchKey(match: Match): string {
@@ -64,26 +74,8 @@ const RESULT_STYLES: Record<string, { bg: string; text: string; border: string; 
   victory: { bg: "bg-green-500/10", text: "text-green-500", border: "border-green-500/30", label: "Victory" },
   defeat: { bg: "bg-red-500/10", text: "text-red-500", border: "border-red-500/30", label: "Defeat" },
   draw: { bg: "bg-yellow-500/10", text: "text-yellow-500", border: "border-yellow-500/30", label: "Draw" },
-};
-
-const MODE_ICONS: Record<string, string> = {
-  gemGrab: "\uD83D\uDC8E",
-  brawlBall: "\u26BD",
-  heist: "\uD83D\uDD13",
-  bounty: "\u2B50",
-  siege: "\uD83D\uDD27",
-  hotZone: "\uD83D\uDD25",
-  knockout: "\uD83D\uDC80",
-  showdown: "\uD83C\uDFDC\uFE0F",
-  duoShowdown: "\uD83D\uDC65",
-  soloShowdown: "\uD83C\uDFDC\uFE0F",
-  wipeout: "\uD83D\uDCA5",
-  payload: "\uD83D\uDCE6",
-  trophyThieves: "\uD83C\uDFC6",
-  duels: "\u2694\uFE0F",
-  paintBrawl: "\uD83C\uDFA8",
-  brawlBall5V5: "\u26BD",
-  unknown: "\u2694\uFE0F",
+  unknown: { bg: "bg-card", text: "text-muted-foreground", border: "border-border", label: "Unknown result" },
+  mixed: { bg: "bg-card", text: "text-muted-foreground", border: "border-border", label: "Mixed results" },
 };
 
 interface MemberOption {
@@ -95,19 +87,10 @@ interface BattleFeedResponse {
   serverTime?: string;
   matches?: Match[];
   modes?: string[];
+  contexts?: { key: string; label: string; count: number }[];
   members?: MemberOption[];
   total?: number;
   nextOffset?: number | null;
-}
-
-function formatMode(mode: string | null): string {
-  if (!mode || mode === "unknown") return "Friendly/Custom";
-  return mode.replace(/([A-Z])/g, " $1").replace(/^./, (s) => s.toUpperCase()).replace(/5 V 5/, "5v5").trim();
-}
-
-function getModeIcon(mode: string | null): string {
-  if (!mode) return "\u2694\uFE0F";
-  return MODE_ICONS[mode] || "\u2694\uFE0F";
 }
 
 function normalizeTag(tag: string | null | undefined): string {
@@ -116,24 +99,6 @@ function normalizeTag(tag: string | null | undefined): string {
   const decoded = /^%23/i.test(trimmed) ? `#${trimmed.slice(3)}` : trimmed;
   const withHash = decoded.startsWith("#") ? decoded : `#${decoded}`;
   return withHash.toUpperCase();
-}
-
-function getMatchType(mode: string, totalTrophyChange: number, result: string) {
-  const modeLower = (mode || "").toLowerCase();
-
-  if (modeLower === "megaboss") {
-    return { label: "Mega Boss", className: "text-amber-400 border-amber-500/40" };
-  }
-  if (modeLower.includes("pig") || modeLower.includes("club")) {
-    return { label: "Club Event", className: "text-amber-400 border-amber-500/40" };
-  }
-  if (modeLower.includes("ranked") || modeLower.includes("powerleague")) {
-    return { label: "Ranked", className: "text-violet-400 border-violet-500/40" };
-  }
-  if (modeLower === "unknown" || result === "unknown") {
-    return { label: "Friendly / Map Maker", className: "text-muted-foreground border-border" };
-  }
-  return { label: "Ladder", className: "text-blue-400 border-blue-500/40" };
 }
 
 // Compute time-ago using a server-relative clock to avoid client timezone/clock issues.
@@ -184,17 +149,20 @@ function BrawlerChip({ brawler, power, brawlerIconByName }: {
   );
 }
 
-function PlayerRow({ tag, name, brawler, power, isClub, trophyChange, isStar, result, brawlerIconByName }: {
+function PlayerRow({ tag, name, brawler, power, isClub, trophyChange, pointData, isStar, result, brawlerIconByName }: {
   tag: string;
   name: string;
   brawler: string | null;
   power: number | null;
   isClub: boolean;
-  trophyChange?: number;
+  trophyChange?: number | null;
+  pointData?: ClubPlayer["pointData"];
   isStar?: boolean;
-  result?: string;
+  result?: string | null;
   brawlerIconByName: Record<string, string>;
 }) {
+  const { delta, t } = useI18n();
+  const change = pointData ? pointData.change : trophyChange;
   const inner = (
     <div className="flex items-center justify-between py-1">
       <div className="flex items-center gap-2 min-w-0">
@@ -206,16 +174,16 @@ function PlayerRow({ tag, name, brawler, power, isClub, trophyChange, isStar, re
       </div>
       <div className="flex items-center gap-2 flex-shrink-0 ms-2">
         <BrawlerChip brawler={brawler} power={power} brawlerIconByName={brawlerIconByName} />
-        {trophyChange !== undefined && (
-          <span className={`text-xs font-bold min-w-[34px] text-right ${
-            trophyChange > 0 ? "text-green-500" : trophyChange < 0 ? "text-red-500" : "text-muted-foreground"
+        {(isClub || trophyChange !== undefined) && (
+          <span title={t(pointData?.unit === "trophies" ? "Trophy change" : "Reported change")} className={`text-xs font-bold min-w-[34px] text-end ${
+            change != null && change > 0 ? "text-green-500" : change != null && change < 0 ? "text-red-500" : "text-muted-foreground"
           }`}>
-            {trophyChange > 0 ? <T text="+{value0}" values={{ value0: String(trophyChange) }} /> : trophyChange < 0 ? trophyChange : (result && result !== "unknown" ? "N/A" : "±0")}
+            <bdi>{delta(change)}</bdi>
           </span>
         )}
-        {result === "unknown" && (
+        {result !== undefined && (
           <Badge variant="outline" className="text-[10px] h-5 px-1.5 text-muted-foreground border-border">
-            <T text=" Friendly " /></Badge>
+            {t((RESULT_STYLES[result || "unknown"] || RESULT_STYLES.unknown).label)}</Badge>
         )}
       </div>
     </div>
@@ -237,50 +205,48 @@ function MatchCard({ match, clubTags, clockDelta, brawlerIconByName }: {
   clockDelta: number;
   brawlerIconByName: Record<string, string>;
 }) {
-  const { relative, t } = useI18n();
+  const { relative, t, delta } = useI18n();
   const [expanded, setExpanded] = useState(false);
-  const mainResult = match.clubPlayers[0]?.result || "unknown";
-  const style = RESULT_STYLES[mainResult] || RESULT_STYLES.draw;
-  const totalTrophyChange = match.clubPlayers.reduce((s, p) => s + p.trophy_change, 0);
-  const hasPointData = match.clubPlayers.some((p) => p.trophy_change !== 0);
+  const results = new Set(match.clubPlayers.map(player => player.result || "unknown"));
+  const mainResult = results.size > 1 ? "mixed" : match.clubPlayers[0]?.result || "unknown";
+  const style = RESULT_STYLES[mainResult] || RESULT_STYLES.unknown;
+  const changes = match.clubPlayers.map(player => player.pointData ? player.pointData.change : player.trophy_change);
+  const pointUnits = new Set(match.clubPlayers.map(player => player.pointData?.unit || "unknown"));
+  const totalChange = changes.length > 0 && changes.every(change => change != null) && pointUnits.size === 1
+    ? changes.reduce<number>((sum, change) => sum + change!, 0) : null;
+  const totalIsTrophies = pointUnits.size === 1 && pointUnits.has("trophies");
   const normalizedClubTags = new Set([...clubTags].map((tag) => normalizeTag(tag)));
-  const matchType = getMatchType(match.mode, totalTrophyChange, mainResult);
-  const ourClubCount = (match.ourTeam || [])
-    .filter((p) => normalizedClubTags.has(normalizeTag(p.tag))).length;
-  const isPremade = (ourClubCount >= 2) || (match.clubPlayers.length >= 2 && !match.isShowdown);
+  const matchType = match.context || describeBattleContext(match);
+  const mode = getBattleModeInfo(match.mode, match.event_mode_id);
+  const hasMultipleTeams = ((match.teams?.length || 0) > 2 && match.teams!.some(team => team.length > 1)) || mode.key === "trioShowdown" || mode.key === "duoShowdown";
+  const usePlayerLayout = match.isShowdown || (match.teamCount || 0) > 2 || hasMultipleTeams || !match.ourTeam || !match.theirTeam;
 
   return (
     <div className={`rounded-xl border ${style.border} ${style.bg} overflow-hidden`}>
       {/* Match header */}
       <div className="flex flex-wrap items-center justify-between gap-2 px-4 py-2.5 border-b border-border/50">
         <div className="flex items-center gap-2">
-          <span className="text-lg">{getModeIcon(match.mode)}</span>
+          {mode.imageUrl ? <Image src={mode.imageUrl} alt="" width={22} height={22} className="h-[22px] w-[22px] object-contain" /> : <span aria-hidden="true" className="text-lg">{mode.icon}</span>}
           <div>
-            <span className="text-sm font-semibold">{t(formatMode(match.mode))}</span>
+            <span className="text-sm font-semibold">{t(mode.label)}</span>
             <span className="text-xs text-muted-foreground ms-2">{match.map !== "unknown" ? match.map : ""}</span>
           </div>
         </div>
         <div className="flex flex-wrap items-center gap-2">
-          <Badge variant="outline" className={`text-xs ${matchType.className}`}>
+          <Badge variant="outline" className="text-xs text-muted-foreground">
             {<T text={matchType.label} />}
           </Badge>
-          {isPremade && (
-            <Badge variant="outline" className="text-xs text-cyan-400 border-cyan-500/40">
-              <Users className="h-3 w-3 me-1" /><T text="Club Squad " /></Badge>
+          {hasMultipleTeams && (
+            <Badge variant="outline" className="text-xs text-muted-foreground"><T text="Multiple teams" /></Badge>
           )}
           <Badge variant="outline" className={`${style.text} border-current text-xs`}>
             {<T text={style.label} />}
           </Badge>
-          {hasPointData ? (
-            <span className={`text-sm font-bold ${
-              totalTrophyChange > 0 ? "text-green-500" : totalTrophyChange < 0 ? "text-red-500" : "text-muted-foreground"
+            <span title={t(totalIsTrophies ? "Club trophy change" : "Reported change")} className={`text-sm font-bold ${
+              totalChange != null && totalChange > 0 ? "text-green-500" : totalChange != null && totalChange < 0 ? "text-red-500" : "text-muted-foreground"
             }`}>
-              {totalTrophyChange > 0 ? <T text="+{value0}" values={{ value0: String(totalTrophyChange) }} /> : totalTrophyChange < 0 ? totalTrophyChange : "±0"}
+              <bdi>{delta(totalChange)}</bdi>
             </span>
-          ) : (
-            <Badge variant="outline" className="text-[10px] h-5 px-1.5 text-muted-foreground border-border">
-              <T text=" Points N/A " /></Badge>
-          )}
           <span className="text-xs text-muted-foreground">{relative(new Date(new Date(match.battle_time).getTime() + clockDelta))}</span>
         </div>
       </div>
@@ -290,6 +256,7 @@ function MatchCard({ match, clubTags, clockDelta, brawlerIconByName }: {
           <span className="text-[11px] uppercase tracking-wide text-muted-foreground font-semibold"><T text="Club Players" /></span>
           <button
             type="button"
+            aria-expanded={expanded}
             onClick={() => setExpanded((v) => !v)}
             className="inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground"
           >
@@ -307,8 +274,9 @@ function MatchCard({ match, clubTags, clockDelta, brawlerIconByName }: {
               power={p.power}
               isClub={true}
               trophyChange={p.trophy_change}
+              pointData={p.pointData}
               isStar={p.is_star_player}
-              result={p.result}
+              result={results.size > 1 ? p.result : undefined}
               brawlerIconByName={brawlerIconByName}
             />
           ))}
@@ -316,7 +284,24 @@ function MatchCard({ match, clubTags, clockDelta, brawlerIconByName }: {
       </div>
 
       {/* Teams */}
-      {expanded && (match.isShowdown ? (
+      {expanded && (match.teams && match.teams.some(team => team.length > 1) ? (
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 px-4 py-3">
+          {match.teams.map((team, index) => (
+            <div key={team.map(player => normalizeTag(player.tag)).sort().join("|")}>
+              <p className="mb-2 text-xs font-semibold text-muted-foreground">{t("Team {number}", { number: index + 1 })}</p>
+              {team.map(player => {
+                const playerTag = normalizeTag(player.tag);
+                const clubPlayer = match.clubPlayers.find(item => normalizeTag(item.tag) === playerTag);
+                return <PlayerRow key={playerTag} tag={player.tag} name={clubPlayer?.name || player.name}
+                  brawler={clubPlayer?.brawler || player.brawler} power={clubPlayer?.power ?? player.power}
+                  isClub={normalizedClubTags.has(playerTag) || !!clubPlayer} trophyChange={clubPlayer?.trophy_change}
+                  pointData={clubPlayer?.pointData}
+                  isStar={clubPlayer?.is_star_player} brawlerIconByName={brawlerIconByName} />;
+              })}
+            </div>
+          ))}
+        </div>
+      ) : usePlayerLayout ? (
         /* Showdown layout: single column with club player(s) */
         <div className="px-4 py-3">
           <div className="flex items-center gap-1.5 mb-2">
@@ -337,6 +322,7 @@ function MatchCard({ match, clubTags, clockDelta, brawlerIconByName }: {
                   power={clubPlayer?.power || p.power}
                   isClub={isClub}
                   trophyChange={clubPlayer?.trophy_change}
+                  pointData={clubPlayer?.pointData}
                   isStar={clubPlayer?.is_star_player}
                   brawlerIconByName={brawlerIconByName}
                 />
@@ -388,6 +374,7 @@ function MatchCard({ match, clubTags, clockDelta, brawlerIconByName }: {
                       power={clubPlayer?.power || p.power}
                       isClub={isClub}
                       trophyChange={clubPlayer?.trophy_change}
+                      pointData={clubPlayer?.pointData}
                       isStar={clubPlayer?.is_star_player}
                       brawlerIconByName={brawlerIconByName}
                     />
@@ -403,6 +390,7 @@ function MatchCard({ match, clubTags, clockDelta, brawlerIconByName }: {
                     power={p.power}
                     isClub={true}
                     trophyChange={p.trophy_change}
+                    pointData={p.pointData}
                     isStar={p.is_star_player}
                     brawlerIconByName={brawlerIconByName}
                   />
@@ -448,12 +436,14 @@ export default function BattleFeedPage() {
   const [matches, setMatches] = useState<Match[]>([]);
   const [total, setTotal] = useState(0);
   const [modes, setModes] = useState<string[]>([]);
+  const [contextCounts, setContextCounts] = useState<Record<string, number>>({});
   const [memberList, setMemberList] = useState<MemberOption[]>([]);
   const [clubTags, setClubTags] = useState<Set<string>>(new Set());
   const [isLoading, setIsLoading] = useState(true);
   const [isLoadingMore, setIsLoadingMore] = useState(false);
   const [filtersOpen, setFiltersOpen] = useState(false);
   const [filterMode, setFilterMode] = useState<string>("");
+  const [filterContext, setFilterContext] = useState<string>("");
   const [filterPlayer, setFilterPlayer] = useState<string>("");
   const [selectedRange, setSelectedRange] = useState<TimeRangeKey>("7d");
   const [memberSearch, setMemberSearch] = useState<string>("");
@@ -480,6 +470,7 @@ export default function BattleFeedPage() {
           range: selectedRange,
         });
         if (filterMode) params.set("mode", filterMode);
+        if (filterContext) params.set("context", filterContext);
         if (filterPlayer) params.set("player", filterPlayer);
 
         const [data, membersData] = await Promise.all([
@@ -523,6 +514,7 @@ export default function BattleFeedPage() {
         } else {
           setMatches(data.matches || []);
           setModes(data.modes || []);
+          setContextCounts(Object.fromEntries((data.contexts || []).map(context => [context.key, context.count])));
           if (data.members) setMemberList(data.members);
         }
         setTotal(data.total || 0);
@@ -544,7 +536,7 @@ export default function BattleFeedPage() {
         }
       }
     },
-    [filterMode, filterPlayer, selectedRange]
+    [filterMode, filterContext, filterPlayer, selectedRange]
   );
 
   useEffect(() => {
@@ -643,20 +635,40 @@ export default function BattleFeedPage() {
     [filterPlayer, memberList]
   );
 
-  const filterControls = (<div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:gap-2">
+  const availableModes = useMemo(() => Array.from(new Map(
+    [...modes, ...(filterMode ? [filterMode] : [])].map(raw => {
+      const mode = getBattleModeInfo(raw);
+      return [mode.key, mode] as const;
+    })
+  ).values()).sort((left, right) => t(left.label).localeCompare(t(right.label))), [modes, filterMode, t]);
+
+  const filterControls = (<div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-end sm:gap-2">
+            <label className="flex min-w-0 flex-col gap-1 text-xs text-muted-foreground">
+              <T text="Game mode" />
             <select
               aria-label={t("Game mode")} value={filterMode}
               onChange={(e) => setFilterMode(e.target.value)}
-              className="h-9 rounded-md border border-border bg-background px-2 text-sm"
+              className="h-9 max-w-full rounded-md border border-border bg-background px-2 text-sm text-foreground"
             >
               <option value=""><T text="All Modes" /></option>
-              {modes.map((m) => (
-                <option key={m} value={m}>
-                  {getModeIcon(m)} {t(formatMode(m))}
+              {availableModes.map((mode) => (
+                <option key={mode.key} value={mode.key}>
+                  {mode.icon} {t(mode.label)}
                 </option>
               ))}
             </select>
+            </label>
+            <label className="flex min-w-0 flex-col gap-1 text-xs text-muted-foreground">
+              <T text="Battle type / event" />
+              <select aria-label={t("Battle type / event")} value={filterContext}
+                onChange={event => setFilterContext(event.target.value)}
+                className="h-9 max-w-full rounded-md border border-border bg-background px-2 text-sm text-foreground">
+                <option value="">{t("All battle types")}</option>
+                {battleContextOptions.map(context => <option key={context.key} value={context.key}>{t(context.label)}{contextCounts[context.key] !== undefined ? ` (${number(contextCounts[context.key])})` : ""}</option>)}
+              </select>
+            </label>
             <div className="relative" data-member-filter>
+              <p className="mb-1 text-xs text-muted-foreground"><T text="Member" /></p>
               <div className="relative">
                 <input
                   type="text"
@@ -715,8 +727,8 @@ export default function BattleFeedPage() {
                 )}
               </div>
             </div>
-            {(filterMode || filterPlayer) && (
-              <Button variant="ghost" size="sm" className="h-9 px-2" aria-label={t("Clear filters")} onClick={() => { setFilterMode(""); setFilterPlayer(""); setMemberSearch(""); }}>
+            {(filterMode || filterContext || filterPlayer) && (
+              <Button variant="ghost" size="sm" className="h-9 px-2" aria-label={t("Clear filters")} onClick={() => { setFilterMode(""); setFilterContext(""); setFilterPlayer(""); setMemberSearch(""); }}>
                 <X className="h-3.5 w-3.5" />
               </Button>
             )}
@@ -726,7 +738,7 @@ export default function BattleFeedPage() {
     <LayoutWrapper>
       <div className="space-y-4">
         {/* Header + Filters */}
-        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <div className="flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">
           <div>
             <h1 className="text-2xl font-bold flex items-center gap-2">
               <Swords className="h-6 w-6 text-blue-500" />
@@ -738,10 +750,11 @@ export default function BattleFeedPage() {
           </div>
 
           <div className="hidden sm:block">{filterControls}</div>
-          <div className="sm:hidden"><Button variant="outline" onClick={() => setFiltersOpen(true)}>{t("Filters")}</Button><Sheet open={filtersOpen} onOpenChange={setFiltersOpen}><SheetContent side="bottom" className="max-h-[85dvh] overflow-y-auto"><SheetHeader><SheetTitle>{t("Filters")}</SheetTitle><SheetDescription>{t("Choose a game mode or member.")}</SheetDescription></SheetHeader><div className="mt-5">{filterControls}</div><Button className="mt-5 w-full" onClick={() => setFiltersOpen(false)}>{t("Done")}</Button></SheetContent></Sheet></div>
+          <div className="sm:hidden"><Button variant="outline" onClick={() => setFiltersOpen(true)}>{t("Filters")}</Button><Sheet open={filtersOpen} onOpenChange={setFiltersOpen}><SheetContent side="bottom" className="max-h-[85dvh] overflow-y-auto"><SheetHeader><SheetTitle>{t("Filters")}</SheetTitle><SheetDescription>{t("Choose a mode, battle type or member.")}</SheetDescription></SheetHeader><div className="mt-5">{filterControls}</div><Button className="mt-5 w-full" onClick={() => setFiltersOpen(false)}>{t("Done")}</Button></SheetContent></Sheet></div>
         </div>
 
         <TimeRangePicker value={selectedRange} onChange={range => { if (range !== selectedRange) { setIsLoading(true); setSelectedRange(range); } }} />
+        <p className="text-xs text-muted-foreground"><T text="Battle types use recorded API information. Mega Pig, tournaments and older records may be unclassified when the event is not identified." /></p>
         <DataConfidenceNotice />
         {loadError && <div role="alert" className="rounded-lg border border-destructive/40 p-4 text-sm"><T text="Could not load the battles." /> <Button variant="ghost" onClick={() => loadMatches(rawOffset && matches.length ? rawOffset : 0, matches.length > 0, true)}><T text="Retry" /></Button></div>}
 
@@ -754,7 +767,7 @@ export default function BattleFeedPage() {
           <Card>
             <CardContent className="py-12 text-center text-muted-foreground">
               <Swords className="h-12 w-12 mx-auto mb-3 opacity-30" />
-              <p className="font-medium"><T text="No battles match this period." /></p>
+              <p className="font-medium"><T text={filterContext ? "No recorded battles match this battle type and period." : "No battles match this period."} /></p>
               <p className="text-sm mt-1"><T text="Try another period or clear the filters." /></p>
             </CardContent>
           </Card>
