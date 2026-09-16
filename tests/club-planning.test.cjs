@@ -73,3 +73,27 @@ test('changing administrator access remounts the planning workspace instead of r
   const Page=loadTypeScript('src/app/club-planning/page.tsx',{...componentMocks,react:renderer.react,'@/hooks/use-admin-session':{useAdminSession:()=>({isAdmin})},'@/lib/client-fetch':{fetchJsonWithTimeout:async()=>({goals:[],events:[]})}},{window:windowMock}).default;
   const admin=await renderer.render(Page);const before=elements(admin).find(e=>e.props?.isAdmin===true);assert.equal(before.key,'admin');isAdmin=false;const publicTree=await renderer.render(Page);const after=elements(publicTree).find(e=>e.props?.isAdmin===false);assert.equal(after.key,'public');
 });
+
+test('collapsed event sections reveal invalid controls without discarding the draft',async()=>{
+  const renderer=hookRenderer();
+  class Element { constructor(parentElement){this.parentElement=parentElement;} }
+  class Details extends Element { open=false; }
+  const {ClubEventEditor}=loadTypeScript('src/components/club-event-editor.tsx',{...componentMocks,react:renderer.react},{HTMLElement:Element,HTMLDetailsElement:Details});
+  const tree=await renderer.render(()=>ClubEventEditor({event:null,data:{goals:[],events:[],roster:[]},onSaved(){},onCancel(){}}));
+  const form=elements(tree).find(node=>node.type==='form'),outer=new Details(form),inner=new Details(outer),input=new Element(inner);
+  form.props.onInvalidCapture({target:input,currentTarget:form});
+  assert.equal(inner.open,true);assert.equal(outer.open,true);
+  const wins=elements(tree).find(node=>node.type==='label'&&textContent(node).startsWith('Manual wins'));
+  assert.equal(wins,undefined,'custom events do not display Mega Pig results');
+});
+
+test('optional empty goals overview hides only a successful empty result and keeps refresh errors visible',async()=>{
+  const renderer=hookRenderer();let resource={data:{goals:[],events:[]},error:null,loading:false,reload:async()=>true};
+  const{ClubGoalsOverview}=loadTypeScript('src/components/club-goals-overview.tsx',{...componentMocks,react:renderer.react,'@/lib/club-planning-client':{usePlanningResource:()=>resource}},{window:windowMock});
+  assert.equal(await renderer.render(()=>ClubGoalsOverview({hideWhenEmpty:true})),null);
+  assert.match(textContent(await renderer.render(()=>ClubGoalsOverview({}))),/No club goals/);
+  resource={...resource,error:'Planning unavailable'};
+  assert.match(textContent(await renderer.render(()=>ClubGoalsOverview({hideWhenEmpty:true}))),/Planning unavailable/);
+  resource={...resource,error:null,data:{...resource.data,refreshDeferred:true}};
+  assert.match(textContent(await renderer.render(()=>ClubGoalsOverview({hideWhenEmpty:true}))),/Progress refresh delayed/);
+});

@@ -238,9 +238,6 @@ function MatchCard({ match, clubTags, clockDelta, brawlerIconByName }: {
           <Badge variant="outline" className="text-xs text-muted-foreground">
             {<T text={matchType.label} />}
           </Badge>
-          {hasMultipleTeams && (
-            <Badge variant="outline" className="text-xs text-muted-foreground"><T text="Multiple teams" /></Badge>
-          )}
           <Badge variant="outline" className={`${style.text} border-current text-xs`}>
             {<T text={style.label} />}
           </Badge>
@@ -262,7 +259,7 @@ function MatchCard({ match, clubTags, clockDelta, brawlerIconByName }: {
             onClick={() => setExpanded((v) => !v)}
             className="inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground"
           >
-            {expanded ? <T text="Hide Teams" /> : <T text="Show Teams" />}
+            {expanded ? <T text="Hide details" /> : <T text="Match details" />}
             {expanded ? <ChevronUp className="h-3.5 w-3.5" /> : <ChevronDown className="h-3.5 w-3.5" />}
           </button>
         </div>
@@ -714,7 +711,7 @@ export default function BattleFeedPage() {
         </div>
 
         {filterDate ? <div className="flex items-center gap-3 rounded-lg border p-3"><span>{filterDate} · UTC</span><Button variant="ghost" size="sm" onClick={()=>setFilterDate("")}>{t("Clear date filter")}</Button></div> : <TimeRangePicker value={selectedRange} onChange={range => { if (range !== selectedRange) { setIsLoading(true); setSelectedRange(range); } }} />}
-        <p className="text-xs text-muted-foreground"><T text="Battle types use recorded API information. Mega Pig, tournaments and older records may be unclassified when the event is not identified." /></p>
+        <details className="text-xs text-muted-foreground"><summary className="w-fit cursor-pointer rounded focus-visible:outline-2 focus-visible:outline-primary">{t("About battle types")}</summary><p className="mt-2 max-w-2xl">{t("A battle may be unclassified if the game does not identify its event. This can affect Mega Pig, tournaments and older battles.")}</p></details>
         <DataConfidenceNotice />
         {loadError && <div role="alert" className="rounded-lg border border-destructive/40 p-4 text-sm"><T text="Could not load the battles." /> <Button variant="ghost" onClick={() => loadMatches(rawOffset && matches.length ? rawOffset : 0, matches.length > 0, true)}><T text="Retry" /></Button></div>}
 

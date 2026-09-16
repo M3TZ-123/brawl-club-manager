@@ -141,13 +141,11 @@ export default function SettingsPage() {
             <p role="alert"><T text="Could not load settings. Please try again." /></p>
             <Button onClick={() => { void loadSettingsFromDB(true).catch(() => {}); }}><T text="Retry" /></Button>
           </CardContent></Card>
-        ) : <Tabs defaultValue="general" className="space-y-4">
+        ) : <Tabs defaultValue={apiKeyConfigured && clubTag ? "activity" : "general"} className="space-y-4">
               <TabsList className="flex flex-wrap h-auto gap-1 p-1">
-                <TabsTrigger value="general" className="text-xs sm:text-sm"><T text="General" /></TabsTrigger>
                 <TabsTrigger value="activity" className="text-xs sm:text-sm"><T text="Activity" /></TabsTrigger>
                 <TabsTrigger value="notifications" className="text-xs sm:text-sm"><T text="Notifications" /></TabsTrigger>
-                <TabsTrigger value="appearance" className="text-xs sm:text-sm"><T text="Appearance" /></TabsTrigger>
-                <TabsTrigger value="data" className="text-xs sm:text-sm"><T text="Data" /></TabsTrigger>
+                <TabsTrigger value="general" className="text-xs sm:text-sm"><T text="Club connection" /></TabsTrigger>
               </TabsList>
 
               {/* General Settings */}
@@ -156,7 +154,7 @@ export default function SettingsPage() {
                   <CardHeader>
                     <CardTitle className="flex items-center gap-2">
                       <Key className="h-5 w-5" />
-                      <T text=" API Configuration " /></CardTitle>
+                      <T text="Club connection" /></CardTitle>
                     <CardDescription>
                       <T text=" Configure your Brawl Stars API connection " /></CardDescription>
                   </CardHeader>
@@ -177,7 +175,9 @@ export default function SettingsPage() {
                         <T text=" Your club&apos;s unique tag (found in-game) " /></p>
                     </div>
 
-                    <div className="space-y-2">
+                    <details open={!apiKeyConfigured} className="rounded-lg border p-3">
+                      <summary className="cursor-pointer text-sm font-medium"><T text={apiKeyConfigured ? "Change API key" : "Set up API key"} /></summary>
+                      <div className="mt-3 space-y-2">
                       <label htmlFor="settings-api-key" className="text-sm font-medium"><T text="API Key" /></label>
                       <Input
                         id="settings-api-key"
@@ -202,7 +202,8 @@ export default function SettingsPage() {
                           <T text=" developer.brawlstars.com " /><ExternalLink className="h-3 w-3" />
                         </a>
                       </p>
-                    </div>
+                      </div>
+                    </details>
 
                     {generalError && <p role="alert" className="text-sm text-destructive">{t(generalError)}</p>}
                     <Button onClick={handleSaveGeneral} disabled={saving || !effectiveClubTag.trim()}>
@@ -254,20 +255,17 @@ export default function SettingsPage() {
                         <T text=" Players with no recorded battle or trophy change past this threshold are marked inactive " /></p>
                     </div>
 
-                    <div className="p-4 rounded-lg bg-muted/50">
-                      <h4 className="font-medium mb-2"><T text="Sync Schedule" /></h4>
-                      <p className="text-sm text-muted-foreground">
-                        <T text="View sync and storage details in the Admin page. Use Sync Now for an immediate update." /></p>
-                    </div>
-
-                    <div className="p-4 rounded-lg bg-muted/50">
-                      <h4 className="font-medium mb-2"><T text="Activity Detection" /></h4>
+                    <details className="p-4 rounded-lg bg-muted/50">
+                      <summary className="cursor-pointer font-medium"><T text="How activity is measured" /></summary>
+                      <div className="mt-3 space-y-3">
                       <ul className="text-sm text-muted-foreground space-y-1">
                         <li><T text="Active: battle or trophy change in the last 24 hours" /></li>
                         <li><T text="Low activity: last recorded activity between 24 and " />{effectiveInactivityThreshold} <T text=" hours ago" /></li>
                         <li><T text="Inactive: no recorded activity for more than " />{effectiveInactivityThreshold} <T text=" hours" /></li>
                       </ul>
-                    </div>
+                      <p className="text-sm text-muted-foreground"><T text="View sync and storage details in the Admin page. Use Sync Now for an immediate update." /></p>
+                      </div>
+                    </details>
 
                     {activityError && <p role="alert" className="text-sm text-destructive">{t(activityError)}</p>}
                     <Button onClick={handleSaveActivity} disabled={saving}>
@@ -313,7 +311,9 @@ export default function SettingsPage() {
                       />
                     </div>
 
-                    <div className="space-y-2">
+                    <details className="rounded-lg border p-3">
+                      <summary className="cursor-pointer text-sm font-medium"><T text="Discord delivery" /> · <span className="font-normal text-muted-foreground"><T text={discordWebhookConfigured ? "Configured" : "Optional"} /></span></summary>
+                      <div className="mt-3 space-y-2">
                       <label htmlFor="settings-discord-webhook" className="text-sm font-medium"><T text="Discord Webhook URL" /></label>
                       <Input
                         id="settings-discord-webhook"
@@ -330,16 +330,17 @@ export default function SettingsPage() {
                       <p id="settings-discord-webhook-hint" className="text-xs text-muted-foreground">
                         <T text=" Optional: Send notifications to a Discord channel. " />{discordWebhookConfigured ? <T text=" Leave blank to keep the saved webhook." /> : ""}
                       </p>
-                    </div>
+                      </div>
+                    </details>
 
-                    <div className="p-4 rounded-lg bg-muted/50">
-                      <h4 className="font-medium mb-2"><T text="Notification Events" /></h4>
-                      <ul className="text-sm text-muted-foreground space-y-1">
+                    <details className="p-4 rounded-lg bg-muted/50">
+                      <summary className="cursor-pointer font-medium"><T text="Notification Events" /></summary>
+                      <ul className="mt-3 text-sm text-muted-foreground space-y-1">
                         <li><T text="• Member joins the club" /></li>
                         <li><T text="• Member leaves the club" /></li>
                         <li><T text="• Inactive members summary (once per day)" /></li>
                       </ul>
-                    </div>
+                    </details>
 
                     {notifError && <p role="alert" className="text-sm text-destructive">{t(notifError)}</p>}
                     <Button onClick={handleSaveNotifications} disabled={saving}>
@@ -360,16 +361,9 @@ export default function SettingsPage() {
               </TabsContent>
 
               {/* Appearance Settings */}
-              <TabsContent value="appearance">
-                <Card>
-                  <CardHeader>
-                    <CardTitle className="flex items-center gap-2">
-                      <Palette className="h-5 w-5" />
-                      <T text=" Appearance " /></CardTitle>
-                    <CardDescription>
-                      <T text=" Customize the look and feel " /></CardDescription>
-                  </CardHeader>
-                  <CardContent className="space-y-4">
+              <details className="rounded-lg border bg-card p-4">
+                <summary className="cursor-pointer font-medium"><Palette className="me-2 inline h-4 w-4" /><T text="Appearance" /></summary>
+                  <div className="mt-4 space-y-4">
                     <fieldset>
                       <legend className="text-sm font-medium mb-3"><T text="Theme" /></legend>
                       <div className="flex gap-3">
@@ -383,7 +377,7 @@ export default function SettingsPage() {
                               : "border-border hover:border-primary/50"
                           }`}
                         >
-                          <div className="h-20 rounded bg-white border mb-2"></div>
+                          <div className="h-8 rounded bg-white border mb-2" aria-hidden="true"></div>
                           <p className="font-medium"><T text="Light" /></p>
                         </button>
                         <button
@@ -396,28 +390,18 @@ export default function SettingsPage() {
                               : "border-border hover:border-primary/50"
                           }`}
                         >
-                          <div className="h-20 rounded bg-zinc-900 border border-zinc-700 mb-2"></div>
+                          <div className="h-8 rounded bg-zinc-900 border border-zinc-700 mb-2" aria-hidden="true"></div>
                           <p className="font-medium"><T text="Dark" /></p>
                         </button>
                       </div>
                     </fieldset>
-                  </CardContent>
-                </Card>
-              </TabsContent>
+                  </div>
+              </details>
 
               {/* Data Settings */}
-              <TabsContent value="data">
-                <Card>
-                  <CardHeader>
-                    <CardTitle className="flex items-center gap-2">
-                      <Database className="h-5 w-5" />
-                      <T text=" Data Management " /></CardTitle>
-                    <CardDescription>
-                      <T text=" Manage your stored data " /></CardDescription>
-                  </CardHeader>
-                  <CardContent className="space-y-4">
-                    <div className="p-4 rounded-lg bg-muted/50">
-                      <h4 className="font-medium mb-2"><T text="History and backups" /></h4>
+              <details className="rounded-lg border bg-card p-4">
+                <summary className="cursor-pointer font-medium"><Database className="me-2 inline h-4 w-4" /><T text="History and backups" /></summary>
+                    <div className="mt-4">
                       <ul className="text-sm text-muted-foreground space-y-1">
                         <li><T text="Display preferences are saved on this device." /></li>
                         <li><T text="Club history is saved securely and backed up daily." /></li>
@@ -425,9 +409,7 @@ export default function SettingsPage() {
                       </ul>
                     </div>
 
-                  </CardContent>
-                </Card>
-              </TabsContent>
+              </details>
             </Tabs>}
           </div>
       </AdminGate>

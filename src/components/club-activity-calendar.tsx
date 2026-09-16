@@ -15,9 +15,10 @@ export function ClubActivityCalendar({ range }: { range?: ClubIntelligenceRange 
       {(["7d", "30d", "90d"] as const).map(key => <option key={key} value={key}>{t("Last {days} days", { days: number(Number.parseInt(key, 10)) })}</option>)}
     </select></label>}
     {data && <>
-      <p className="text-sm text-muted-foreground">{t("Current members' recorded battles; one battle can count for multiple members, including before they joined. Days use UTC.")}</p>
-      <p className="text-sm">{t("{count} recorded participations across {days} days with recorded battles.", { count: number(data.observedParticipations), days: number(data.recordedDays) })}</p>
-      {data.rows.length ? <div className="max-h-[36rem] overflow-auto rounded-md border" tabIndex={0} aria-label={t("Member activity calendar")}>
+      <p className="text-sm">{t("{count} recorded participations · {days} days", { count: number(data.observedParticipations), days: number(data.recordedDays) })} <span className="text-muted-foreground">UTC</span></p>
+      <p className="text-xs text-muted-foreground">{t("Recorded battles only; — means unknown.")}</p>
+      {data.rows.some(row => row.cells.some(cell => cell.coverage === "possible_gap")) && <p className="text-xs text-amber-600 dark:text-amber-400">{t("Possible history gaps are marked in amber.")}</p>}
+      {data.rows.length ? <div className="max-h-[28rem] overflow-auto rounded-md border" tabIndex={0} aria-label={t("Member activity calendar")}>
         <table className="w-full border-collapse text-xs"><caption className="sr-only">{t("Select a day to inspect its recorded battles.")}</caption>
           <thead><tr><th className="sticky start-0 top-0 z-20 min-w-32 bg-background p-2 text-start">{t("Member")}</th>{data.days.map(day => <th key={day} className="sticky top-0 z-10 min-w-12 bg-background p-2 font-normal"><time dateTime={day}>{day.slice(5)}</time></th>)}</tr></thead>
           <tbody>{data.rows.map(row => <tr key={row.playerTag} className="border-t"><th className="sticky start-0 z-10 max-w-40 bg-background p-2 text-start"><Link href={`/members/${encodeURIComponent(row.playerTag)}`} className="block truncate hover:text-primary">{row.playerName}</Link></th>
@@ -30,8 +31,11 @@ export function ClubActivityCalendar({ range }: { range?: ClubIntelligenceRange 
             })}</tr>)}</tbody>
         </table>
       </div> : <p className="text-sm text-muted-foreground">{t("No current members found.")}</p>}
-      <p className="text-xs text-muted-foreground">{t("Zero means no recorded battles, not proof of no play. Dashed cells have limited coverage; amber cells have a possible gap.")}</p>
-      <p className="text-xs text-muted-foreground">{t("Gap checks cover 28 days. Older counts remain recorded observations, without a completeness guarantee.")}</p>
+      <details className="text-xs text-muted-foreground"><summary className="cursor-pointer font-medium">{t("Reading this calendar")}</summary><div className="mt-2 space-y-2">
+        <p>{t("Current members' recorded battles; one battle can count for multiple members, including before they joined. Days use UTC.")}</p>
+        <p>{t("Zero means no recorded battles, not proof of no play. Dashed cells have limited coverage; amber cells have a possible gap.")}</p>
+        <p>{t("Gap checks cover 28 days. Older counts remain recorded observations, without a completeness guarantee.")}</p>
+      </div></details>
     </>}
   </ClubIntelligencePanel>;
 }

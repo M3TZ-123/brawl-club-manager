@@ -24,7 +24,7 @@ import { fetchJsonCached, invalidateJsonCache } from "@/lib/client-data-cache";
 import { useAppStore } from "@/lib/store";
 import { useAdminSession } from "@/hooks/use-admin-session";
 import { cn } from "@/lib/utils";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
@@ -391,7 +391,6 @@ export default function MembersPage() {
     return {
       progress: known.length ? known.reduce((sum, member) => sum + getProgress(member, timeRange)!, 0) : null,
       known: known.length,
-      gained: filteredMembers.filter(member => hasGain(member, timeRange)).length,
     };
   }, [filteredMembers, timeRange]);
 
@@ -543,11 +542,11 @@ export default function MembersPage() {
         <Card>
           <CardHeader>
             <div className="space-y-4">
-              <div>
-                <CardTitle><T text="Members" /></CardTitle>
+              <div className="flex flex-wrap items-center justify-between gap-3"><div>
+                <h1 className="text-2xl font-semibold"><T text="Members" /></h1>
                 <p className="mt-1 text-sm text-muted-foreground">
                   <T text="Choose a period to compare trophy progress." /></p>
-              </div>
+              </div>{isAdmin && <Button asChild><Link href="/reviews"><T text="Notes and departure reasons" /></Link></Button>}</div>
 
               <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
                 <div className="relative min-w-0 lg:w-72">
@@ -583,7 +582,6 @@ export default function MembersPage() {
                 >
                   <Columns3 className="h-4 w-4" />
                   <T text=" Columns " /></Button>
-                {isAdmin && <Button asChild variant="outline" size="sm"><Link href="/reviews"><T text="Member notes" /></Link></Button>}
                 {isAdmin && (
                   <Button
                     variant="outline"
@@ -610,7 +608,7 @@ export default function MembersPage() {
           </CardHeader>
 
           <CardContent className="space-y-4">
-            <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 sm:gap-3">
+            <div className="grid gap-2 sm:grid-cols-2 sm:gap-3">
               <SummaryCard
                 title={t("Members shown")}
                 value={formatNumber(filteredMembers.length)}
@@ -620,18 +618,10 @@ export default function MembersPage() {
               />
               <SummaryCard
                 title={progressLabel}
-                className="order-last col-span-2 sm:order-none sm:col-span-1"
                 value={summary.progress == null ? t("Not enough history") : formatDelta(summary.progress)}
                 description={t("{known} of {total} members have period data", { known: formatNumber(summary.known), total: formatNumber(filteredMembers.length) })}
                 icon={Trophy}
                 tone="text-yellow-500"
-              />
-              <SummaryCard
-                title={t("Gained trophies")}
-                value={formatNumber(summary.gained)}
-                description={t(period.label)}
-                icon={TrendingUp}
-                tone="text-green-500"
               />
             </div>
             <div className="flex gap-2 overflow-x-auto pb-1">
@@ -848,6 +838,7 @@ export default function MembersPage() {
               </SheetHeader>
 
               <div className="mt-6 space-y-5">
+                <MemberReviewButton prominent member={selectedMember} initialRange={timeRange} />
                 <div className="flex flex-wrap items-center gap-2">
                   <Badge variant="secondary">{<T text={selectedMember.role} />}</Badge>
                   <span className={cn("rounded-full border px-2.5 py-0.5 text-xs font-semibold", getActivityClass(getActivityStatus(selectedMember)))}>
@@ -872,7 +863,9 @@ export default function MembersPage() {
                   </div>
                 </div>
 
-                <div className="space-y-3 rounded-lg border border-border bg-muted/20 p-4 text-sm">
+                <details className="rounded-lg border border-border bg-muted/20 p-4 text-sm">
+                  <summary className="cursor-pointer font-medium"><T text="More account details" /></summary>
+                  <div className="mt-3 space-y-3">
                   <div className="flex justify-between gap-4">
                     <span className="text-muted-foreground"><T text="Last battle" /></span>
                     <span className="text-end font-medium">
@@ -899,9 +892,10 @@ export default function MembersPage() {
                     <span className="text-muted-foreground"><T text="Brawlers" /></span>
                     <span className="text-end font-medium">{selectedMember.brawlers_count}</span>
                   </div>
-                </div>
+                  </div>
+                </details>
 
-                <div className="grid gap-2 sm:grid-cols-2"><MemberReviewButton member={selectedMember} initialRange={timeRange} />
+                <div className="grid gap-2 sm:grid-cols-2">
                   <Button
                     variant="outline"
                     onClick={() => copyText(selectedMember.player_tag, "tag")}
@@ -909,7 +903,7 @@ export default function MembersPage() {
                   >
                     {copied === "tag" ? <Check className="h-4 w-4" /> : <Copy className="h-4 w-4" />}
                     <T text=" Copy Tag " /></Button>
-                  <Button asChild className="gap-2">
+                  <Button asChild variant="outline" className="gap-2">
                     <Link href={`/members/${encodeURIComponent(selectedMember.player_tag)}`}>
                       <ExternalLink className="h-4 w-4" />
                       <T text=" Open Profile " /></Link>

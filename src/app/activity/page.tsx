@@ -9,6 +9,7 @@ import { LayoutWrapper } from "@/components/layout-wrapper";
 import { fetchJsonCached } from "@/lib/client-data-cache";
 import { TimeRangePicker } from "@/components/time-range-picker";
 import { ClubActivityCalendar } from "@/components/club-activity-calendar";
+import type { ClubIntelligenceRange } from "@/lib/club-intelligence-types";
 import { TIME_RANGES, type TimeRangeKey } from "@/lib/time-range";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -385,6 +386,8 @@ function useCategories() {
 export default function LeaderboardPage() {
   const categories = useCategories();
   const { t, reportDate } = useI18n();
+  const [view, setView] = useState<"calendar" | "rankings">("calendar");
+  const [calendarRange, setCalendarRange] = useState<ClubIntelligenceRange>("7d");
   const [period, setPeriod] = useState<LeaderboardResponse["period"]>();
   const [leaderboards, setLeaderboards] = useState<Leaderboards | null>(null);
   const [memberCount, setMemberCount] = useState(0);
@@ -428,17 +431,20 @@ export default function LeaderboardPage() {
   }, [selectedRange]);
 
   useEffect(() => {
+    if (view !== "rankings") return;
+    const requests = loadSequence;
     setIsLoading(true);
     loadLeaderboard();
-  }, [loadLeaderboard]);
+    return () => { requests.current++; };
+  }, [loadLeaderboard, view]);
 
   useEffect(() => {
     const handleClubDataUpdated = () => {
-      loadLeaderboard(true);
+      if (view === "rankings") loadLeaderboard(true);
     };
     window.addEventListener("club-data-updated", handleClubDataUpdated);
     return () => window.removeEventListener("club-data-updated", handleClubDataUpdated);
-  }, [loadLeaderboard]);
+  }, [loadLeaderboard, view]);
 
   const minBattlesValue = useMemo(() => {
     const parsed = Number.parseInt(minBattles, 10);
@@ -477,12 +483,18 @@ export default function LeaderboardPage() {
     <LayoutWrapper><DataConfidenceNotice />
       <div className="space-y-4">
         <h1 className="text-2xl font-bold"><T text="Club activity" /></h1>
-        <ClubActivityCalendar />
+        <div className="flex flex-wrap gap-2" role="group" aria-label={t("Activity view")}>
+          <Button size="sm" variant={view === "calendar" ? "default" : "outline"} aria-pressed={view === "calendar"} onClick={() => setView("calendar")}>{t("Daily activity")}</Button>
+          <Button size="sm" variant={view === "rankings" ? "default" : "outline"} aria-pressed={view === "rankings"} onClick={() => setView("rankings")}>{t("Member rankings")}</Button>
+        </div>
+        {view === "calendar" ? <>
+          <label className="flex items-center gap-2 text-sm">{t("Calendar period")}<select value={calendarRange} onChange={event => setCalendarRange(event.target.value as ClubIntelligenceRange)} className="rounded-md border bg-background px-3 py-2">
+            {(["7d", "30d", "90d"] as const).map(key => <option key={key} value={key}>{key === "7d" ? t("Last 7 days") : t("Last {days} days", { days: Number.parseInt(key, 10) })}</option>)}
+          </select></label>
+          <ClubActivityCalendar range={calendarRange} />
+        </> : <>
         <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
           <div>
-            <h2 className="text-xl font-bold flex items-center gap-2">
-              <Trophy className="h-6 w-6 text-yellow-500" />
-              <T text=" Club Leaderboard " /></h2>
             <p className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-sm text-muted-foreground">
               {!isLoading && !loadError && <span>{memberCount} <T text="Members" /></span>}
             </p>
@@ -504,7 +516,7 @@ export default function LeaderboardPage() {
               />
             </div>
 
-            <div className="grid gap-2 sm:grid-cols-3 xl:flex xl:items-center">
+            <details className="text-sm"><summary className="cursor-pointer font-medium">{t("More filters")}{(roleFilter !== "all" || activityFilter !== "all" || minBattles) && ` · ${t("Applied")}`}</summary><div className="mt-2 grid gap-2 sm:grid-cols-3">
               <label className="flex items-center gap-2 rounded-md border border-border bg-background px-3">
                 <Filter className="h-4 w-4 text-muted-foreground" />
                 <select
@@ -539,7 +551,7 @@ export default function LeaderboardPage() {
                 className="h-10 rounded-md border border-border bg-background px-3 text-sm outline-none placeholder:text-muted-foreground focus:border-primary"
                 aria-label={t("Minimum tracked battles")}
               />
-            </div>
+            </div></details>
 
             {(searchQuery || roleFilter !== "all" || activityFilter !== "all" || minBattles) && (
               <Button variant="outline" size="sm" onClick={resetFilters} className="h-10">
@@ -590,7 +602,6 @@ export default function LeaderboardPage() {
                           <div>
                             <CardTitle className="text-lg">{<T text={cat.label} />}</CardTitle>
                             <CardDescription>{cat.description(t(rangeLabel))}</CardDescription>
-                            <p className="mt-1 text-xs text-muted-foreground">{cat.help(t(rangeLabel), minWinRateBattles)}</p>
                           </div>
                         </div>
                         <div className="text-sm text-muted-foreground sm:text-end">
@@ -611,6 +622,7 @@ export default function LeaderboardPage() {
                         emptyText={rawData.length > 0 ? "No members match these filters." : cat.key === "trophyLeaders" ? "No current members found." : "No recorded results for this period."}
                       />
                       <LeaderboardTable members={data} columns={cat.columns} />
+                      <details className="mt-3 text-xs text-muted-foreground"><summary className="cursor-pointer">{t("Ranking details")}</summary><p className="mt-2">{cat.help(t(rangeLabel), minWinRateBattles)}</p></details>
                     </CardContent>
                   </Card>
                 </TabsContent>
@@ -618,6 +630,7 @@ export default function LeaderboardPage() {
             })}
           </Tabs>
         )}
+        </>}
       </div>
     </LayoutWrapper>
   );

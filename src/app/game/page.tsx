@@ -12,9 +12,10 @@ import { gameRegions, type GameEvent, type GameRanking, type GameRegion, type Ga
 const regionNames: Record<GameRegion,string> = { global: "Global", TN: "Tunisia", DZ: "Algeria", MA: "Morocco", FR: "France", EG: "Egypt", SA: "Saudi Arabia", US: "United States" };
 export default function GamePage() {
   const { t, number, dateTime } = useI18n();
+  const [view, setView] = useState<"maps" | "rankings">("maps");
   const [events, setEvents] = useState<GameSnapshot<GameEvent[]> | null>(null);
   const [rankings, setRankings] = useState<GameSnapshot<GameRanking[]> | null>(null);
-  const [region,setRegion] = useState<GameRegion>("global"), [kind,setKind] = useState<GameRankingKind>("players");
+  const [region,setRegion] = useState<GameRegion>("global"), [kind,setKind] = useState<GameRankingKind>("clubs");
   const [eventError,setEventError] = useState(""), [rankError,setRankError] = useState("");
   const [rankLoading,setRankLoading] = useState(false);
   const [clock,setClock] = useState<number | null>(null);
@@ -34,14 +35,16 @@ export default function GamePage() {
       .finally(() => { if (request === rankRequests.current) setRankLoading(false); });
   }, [kind,region]);
   useEffect(() => {
+    if (view !== "rankings") return;
     const requests = rankRequests;
     void loadRankings();
     const timer = setInterval(() => { if (document.visibilityState === "visible") void loadRankings(); }, 300_000);
     const visible = () => { if (document.visibilityState === "visible") void loadRankings(); };
     document.addEventListener("visibilitychange", visible);
     return () => { requests.current++; clearInterval(timer); document.removeEventListener("visibilitychange", visible); };
-  }, [loadRankings]);
+  }, [loadRankings, view]);
   useEffect(() => {
+    if (view !== "maps") return;
     void loadEvents();
     const requests = eventRequests;
     const tick = () => { if (document.visibilityState === "visible") setClock(Date.now()); };
@@ -50,11 +53,12 @@ export default function GamePage() {
     const reload = setInterval(refresh,60_000);
     document.addEventListener("visibilitychange",refresh);
     return () => { requests.current++; clearInterval(timer); clearInterval(reload); document.removeEventListener("visibilitychange",refresh); };
-  }, [loadEvents]);
+  }, [loadEvents, view]);
   const rows = events?.data || [];
   return <LayoutWrapper><div className="space-y-8">
-    <header><h1 className="text-3xl font-bold flex items-center gap-3"><Globe2 className="text-primary" />{t("Game")}</h1><p className="text-muted-foreground mt-2">{t("Official map rotation and trophy rankings")}</p></header>
-    <section className="space-y-4" aria-labelledby="rotation-heading">
+    <header><h1 className="text-2xl font-bold flex items-center gap-3"><Globe2 className="text-primary" />{t("Maps and rankings")}</h1><p className="text-sm text-muted-foreground mt-2">{t("Check the current maps or compare club rankings.")}</p></header>
+    <div role="group" aria-label={t("Maps and rankings")} className="flex flex-wrap gap-2"><Button variant={view === "maps" ? "default" : "outline"} aria-pressed={view === "maps"} onClick={() => { setClock(Date.now()); setView("maps"); }}>{t("Current maps")}</Button><Button variant={view === "rankings" ? "default" : "outline"} aria-pressed={view === "rankings"} onClick={() => setView("rankings")}>{t("Trophy rankings")}</Button></div>
+    <section hidden={view !== "maps"} className="space-y-4" aria-labelledby="rotation-heading">
       <div className="flex flex-wrap items-center justify-between gap-3"><h2 id="rotation-heading" className="text-xl font-semibold flex items-center gap-2"><MapPinned className="w-5" />{t("Current events")}</h2><Button variant="outline" onClick={() => void loadEvents(true)}>{t("Refresh")}</Button></div>
       {eventError && <p role="alert" className="text-amber-500">{t(eventError)}</p>}
       {!events && !eventError && <p role="status">{t("Loading...")}</p>}
@@ -69,18 +73,17 @@ export default function GamePage() {
         return <article key={`${event.slotId}:${event.startTime}`} className="rounded-lg border bg-card p-5 space-y-3">
           <p className="text-sm text-muted-foreground">{mode.icon} {t(mode.label)}</p><h3 className="font-bold text-lg break-words">{event.map}</h3>
           <p className={expired ? "text-muted-foreground text-sm" : "text-primary text-sm"}>{expired ? t("Event ended") : t(upcoming ? "Starts in {hours}h {minutes}m" : "Ends in {hours}h {minutes}m", {hours,minutes})}</p>
-          <p className="text-xs text-muted-foreground">{t("Ends")}: {dateTime(event.endTime)}</p>
           <Link href={`/analysis?map=${encodeURIComponent(event.map)}&mode=${encodeURIComponent(event.mode)}`} className="text-sm text-primary underline underline-offset-4">{t("Club results on this map")}</Link>
         </article>;
       })}</div>
       <Link href="/readiness" className="text-primary inline-block underline underline-offset-4">{t("Find club brawlers for these maps")}</Link>
     </section>
-    <section className="space-y-4" aria-labelledby="rankings-heading">
+    <section hidden={view !== "rankings"} className="space-y-4" aria-labelledby="rankings-heading">
       <div className="flex flex-wrap items-end gap-4"><h2 id="rankings-heading" className="text-xl font-semibold flex items-center gap-2 me-auto"><Trophy className="w-5" />{t("Trophy rankings")}</h2>
         <label className="text-sm space-y-1"><span className="block">{t("Region")}</span><select value={region} onChange={e => {setRankings(null);setRankError("");setRegion(e.target.value as GameRegion);}} className="bg-background border rounded-md p-2">{gameRegions.map(r => <option key={r} value={r}>{t(regionNames[r])}</option>)}</select></label>
         <label className="text-sm space-y-1"><span className="block">{t("Ranking")}</span><select value={kind} onChange={e => {setRankings(null);setRankError("");setKind(e.target.value as GameRankingKind);}} className="bg-background border rounded-md p-2"><option value="players">{t("Players")}</option><option value="clubs">{t("Clubs")}</option></select></label>
       </div>
-      <p className="text-sm text-muted-foreground">{t("Top 50 · shared hourly update")}</p>
+      <p className="text-sm text-muted-foreground">{t("Top 50")}</p>
       {rankError && <div role="alert" className="flex flex-wrap items-center gap-3 text-amber-500"><p>{t(rankError)}</p><Button variant="outline" disabled={rankLoading} onClick={() => { setRankLoading(true); void loadRankings(true); }}>{t("Retry")}</Button></div>}
       {!rankings && !rankError && <p role="status">{t("Loading...")}</p>}
       {rankings?.stale && <p className="text-amber-500">{t("Showing the last available update")}</p>}

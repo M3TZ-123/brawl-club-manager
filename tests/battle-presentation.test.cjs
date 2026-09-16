@@ -87,7 +87,7 @@ test("desktop and mobile distinguish modes from battle types, retaining zero-cou
     assert.match(textContent(control), /Mega Pig \(0\)/);
     assert.match(textContent(control), /Unclassified \(9\)/);
   }
-  assert.match(textContent(tree), /may be unclassified when the event is not identified/);
+  assert.match(textContent(tree), /may be unclassified if the game does not identify its event/);
 });
 
 test("mode, context and period filters survive pagination and clear together", async () => {
@@ -124,7 +124,7 @@ test("empty event filters explain missing identification instead of claiming tha
   select(tree, "Battle type / event").props.onChange({ target: { value: "mega_pig" } });
   tree = await page.render();
   assert.match(textContent(tree), /No recorded battles match this battle type and period/);
-  assert.match(textContent(tree), /Mega Pig, tournaments and older records may be unclassified/);
+  assert.match(textContent(tree), /may be unclassified.*Mega Pig, tournaments and older battles/);
 });
 
 test("unknown outcomes stay neutral and zero trophies differ from unreported trophies", async () => {
@@ -161,12 +161,12 @@ test("trio showdown preserves multiple teams and opposing club members do not im
   const page = feedHarness({ matches: [match({ mode: "trioShowdown", isShowdown: true, teamCount: 4, teams, clubPlayers })] });
   const mounted = page.mount(cards(await page.render())[0]);
   let tree = await mounted.render();
-  assert.match(textContent(tree), /Trio Showdown.*Multiple teams.*Mixed results/);
+  assert.match(textContent(tree), /Trio Showdown.*Mixed results/);
   assert.doesNotMatch(textContent(tree), /Club Squad/);
   assert.equal(textContent(elements(tree).find(element => element.props?.title === "Reported change")), "—", "A partial sum must not masquerade as the total");
   const compactRows = elements(tree).filter(element => element.type?.name === "PlayerRow");
   assert.deepEqual(compactRows.map(element => element.props.result), ["victory", "defeat"]);
-  await action(tree, "Show Teams")();
+  await action(tree, "Match details")();
   tree = await mounted.render();
   assert.match(textContent(tree), /Team 1.*Team 2.*Team 3.*Team 4/);
   assert.doesNotMatch(textContent(tree), /Your Team|Opponents|Club Squad/);
@@ -178,7 +178,7 @@ test("missing team data uses a players list without inventing team membership", 
   const page = feedHarness({ matches: [match({ clubPlayers: [player("#ONE"), player("#TWO")] })] });
   const mounted = page.mount(cards(await page.render())[0]);
   let tree = await mounted.render();
-  await action(tree, "Show Teams")();
+  await action(tree, "Match details")();
   tree = await mounted.render();
   assert.match(textContent(tree), /Players/);
   assert.doesNotMatch(textContent(tree), /Your Team|Opponents|Club Squad/);

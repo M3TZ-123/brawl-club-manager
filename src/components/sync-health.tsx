@@ -91,14 +91,42 @@ export function SyncHealthCard() {
   const warnings = (fullRun?.warnings || []).filter(code => warningMessages[code]);
   const allFresh = [fullFreshness, health?.rosterFreshness, health?.battleFreshness, health?.rankedFreshness].every(value => value === "fresh") && warnings.length === 0 && !fullFailed;
   const currentStatus = !health ? "Unavailable" : health.running ? "Running" : allFresh ? "Fresh" : fullFreshness === "stale" ? "Stale" : fullFreshness === "never" ? "No successful sync yet" : "Partial";
-  return <Card><CardHeader><CardTitle>{t("Sync health")}</CardTitle></CardHeader><CardContent className="space-y-4"><p className="text-xs text-muted-foreground">{health ? t("Light roster every {roster} minutes; full profiles and battles every {full} minutes; ranked every {ranked} minutes.", { roster: health.rosterIntervalMinutes || 2, full: health.expectedIntervalMinutes, ranked: health.rankedIntervalMinutes || health.expectedIntervalMinutes }) : t("Unavailable")}</p><dl className="space-y-3 text-sm">
-    <div className="flex justify-between gap-3"><dt>{t("Fetch status")}</dt><dd className="font-semibold">{t(currentStatus)}</dd></div>
-    <FreshnessRow label="Light roster" timestamp={health?.lastRosterSuccessAt} freshness={health?.rosterFreshness} />
-    <FreshnessRow label="Full profiles" timestamp={health?.lastFullSuccessAt ?? health?.lastSuccessAt} freshness={fullFreshness} />
-    <FreshnessRow label="Battle log fetch" timestamp={health?.lastBattleSuccessAt} freshness={health?.battleFreshness} />
-    <FreshnessRow label="Ranked data" timestamp={health?.lastRankedSuccessAt} freshness={health?.rankedFreshness} />
-    <div className="flex flex-wrap justify-between gap-2"><dt>{t("Last attempt")}</dt><dd className="text-end">{health?.lastAttemptAt ? <LocalDate value={health.lastAttemptAt} time /> : t("No sync attempt recorded")}<p className="text-xs text-muted-foreground">{t(health?.latestRun?.scope || "Unknown")} · {t(health?.lastOutcome || "Unknown")}</p></dd></div>
-    <div className="flex flex-wrap justify-between gap-2"><dt>{t("Last completed full attempt")}</dt><dd className="text-end">{fullRun?.finishedAt || fullRun?.startedAt ? <LocalDate value={fullRun.finishedAt || fullRun.startedAt} time /> : t("No sync attempt recorded")}<p className="text-xs text-muted-foreground">{t(fullRun?.status || "Unknown")}</p></dd></div>
-    <div className="flex justify-between gap-3"><dt>{t("Full sync interval")}</dt><dd>{health?.expectedIntervalMinutes ? t("Every {minutes} minutes", { minutes: health.expectedIntervalMinutes }) : t("Unknown")}</dd></div>
-  </dl><p className="text-xs text-muted-foreground">{t("Roster checks update membership and trophies. Battle and ranked timestamps advance only after complete refreshes.")}</p>{fullFailed && <p role="status" className="rounded border border-amber-500/30 bg-amber-500/10 p-3 text-sm">{t("The latest full sync did not complete. The displayed data comes from an earlier successful update.")}</p>}{warnings.length > 0 && <div role="status" className="rounded border border-amber-500/30 bg-amber-500/10 p-3 text-sm"><p className="font-medium">{t("Partial update")}</p><ul className="mt-1 list-disc space-y-1 ps-4">{warnings.map(code => <li key={code}>{t(warningMessages[code])}</li>)}</ul></div>}<BattleCoverageSection coverage={health?.battleCoverage} />{health?.capacity && <CapacitySection capacity={health.capacity} />}</CardContent></Card>;
+  const coverageNeedsAttention = health?.battleCoverage?.status !== "observed";
+  const capacity = health?.capacity;
+  // Only a validated, current healthy sample may be tucked into diagnostics.
+  const capacityHealthy = capacity?.level === "ok" && capacity.stale === false
+    && typeof capacity.usedBytes === "number" && Number.isFinite(capacity.usedBytes) && capacity.usedBytes >= 0
+    && typeof capacity.budgetBytes === "number" && Number.isFinite(capacity.budgetBytes) && capacity.budgetBytes > 0
+    && typeof capacity.percent === "number" && Number.isFinite(capacity.percent) && capacity.percent >= 0
+    && Number.isFinite(Date.parse(capacity.sampledAt || ""));
+  return <Card>
+    <CardHeader><CardTitle>{t("Sync health")}</CardTitle></CardHeader>
+    <CardContent className="space-y-4">
+      <dl className="space-y-3 text-sm">
+        <div className="flex justify-between gap-3"><dt>{t("Fetch status")}</dt><dd className="font-semibold">{t(currentStatus)}</dd></div>
+        <FreshnessRow label="Full profiles" timestamp={health?.lastFullSuccessAt ?? health?.lastSuccessAt} freshness={fullFreshness} />
+        <FreshnessRow label="Battle log fetch" timestamp={health?.lastBattleSuccessAt} freshness={health?.battleFreshness} />
+      </dl>
+      {fullFailed && <p role="status" className="rounded border border-amber-500/30 bg-amber-500/10 p-3 text-sm">{t("The latest full sync did not complete. The displayed data comes from an earlier successful update.")}</p>}
+      {warnings.length > 0 && <div role="status" className="rounded border border-amber-500/30 bg-amber-500/10 p-3 text-sm"><p className="font-medium">{t("Partial update")}</p><ul className="mt-1 list-disc space-y-1 ps-4">{warnings.map(code => <li key={code}>{t(warningMessages[code])}</li>)}</ul></div>}
+      {coverageNeedsAttention && <BattleCoverageSection coverage={health?.battleCoverage} />}
+      {capacity && !capacityHealthy && <CapacitySection capacity={capacity} />}
+      <details className="rounded-lg border p-3">
+        <summary className="cursor-pointer text-sm font-medium">{t("Schedule and diagnostics")}</summary>
+        <div className="mt-4 space-y-4">
+          <p className="text-xs text-muted-foreground">{health ? t("Light roster every {roster} minutes; full profiles and battles every {full} minutes; ranked every {ranked} minutes.", { roster: health.rosterIntervalMinutes || 2, full: health.expectedIntervalMinutes, ranked: health.rankedIntervalMinutes || health.expectedIntervalMinutes }) : t("Unavailable")}</p>
+          <dl className="space-y-3 text-sm">
+            <FreshnessRow label="Light roster" timestamp={health?.lastRosterSuccessAt} freshness={health?.rosterFreshness} />
+            <FreshnessRow label="Ranked data" timestamp={health?.lastRankedSuccessAt} freshness={health?.rankedFreshness} />
+            <div className="flex flex-wrap justify-between gap-2"><dt>{t("Last attempt")}</dt><dd className="text-end">{health?.lastAttemptAt ? <LocalDate value={health.lastAttemptAt} time /> : t("No sync attempt recorded")}<p className="text-xs text-muted-foreground">{t(health?.latestRun?.scope || "Unknown")} · {t(health?.lastOutcome || "Unknown")}</p></dd></div>
+            <div className="flex flex-wrap justify-between gap-2"><dt>{t("Last completed full attempt")}</dt><dd className="text-end">{fullRun?.finishedAt || fullRun?.startedAt ? <LocalDate value={fullRun.finishedAt || fullRun.startedAt} time /> : t("No sync attempt recorded")}<p className="text-xs text-muted-foreground">{t(fullRun?.status || "Unknown")}</p></dd></div>
+            <div className="flex justify-between gap-3"><dt>{t("Full sync interval")}</dt><dd>{health?.expectedIntervalMinutes ? t("Every {minutes} minutes", { minutes: health.expectedIntervalMinutes }) : t("Unknown")}</dd></div>
+          </dl>
+          <p className="text-xs text-muted-foreground">{t("Roster checks update membership and trophies. Battle and ranked timestamps advance only after complete refreshes.")}</p>
+          {!coverageNeedsAttention && <BattleCoverageSection coverage={health?.battleCoverage} />}
+          {capacity && capacityHealthy && <CapacitySection capacity={capacity} />}
+        </div>
+      </details>
+    </CardContent>
+  </Card>;
 }

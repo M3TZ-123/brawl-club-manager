@@ -10,11 +10,11 @@ export function ClubTrendLine({points,label,rank=false}:{points:{at:string;value
   const start=Date.parse(ordered[0].at),end=Date.parse(ordered.at(-1)!.at),timeSpan=end-start||1;
   const segments:string[]=[];let segment:string[]=[];
   for(const p of ordered){
-    if(p.value===null){if(segment.length)segments.push(segment.join(" "));segment=[];continue;}
+    if(p.value===null||!Number.isFinite(p.value)){if(segment.length)segments.push(segment.join(" "));segment=[];continue;}
     const x=10+380*(Date.parse(p.at)-start)/timeSpan;
     const y=rank?12+76*(p.value-min)/span:88-76*(p.value-min)/span;
     segment.push(`${x},${y}`);
   }
   if(segment.length)segments.push(segment.join(" "));
-  return <figure className="space-y-1"><figcaption className="text-sm text-muted-foreground">{label} · {number(min)}–{number(max)}</figcaption><svg viewBox="0 0 400 100" role="img" aria-label={label} className="w-full h-28 text-primary" preserveAspectRatio="none"><path d="M10 90H390" stroke="currentColor" opacity="0.2"/>{segments.map((line,index)=><polyline key={index} points={line} fill="none" stroke="currentColor" strokeWidth="2.5" vectorEffect="non-scaling-stroke"/>)}</svg><div className="flex justify-between text-xs text-muted-foreground"><span>{date(ordered[0].at)}</span><span>{date(ordered.at(-1)!.at)}</span></div></figure>;
+  return <details className="text-sm"><summary className="cursor-pointer font-medium text-primary">{label}</summary><figure className="mt-2 space-y-1"><figcaption className="text-xs text-muted-foreground">{number(min)}–{number(max)}</figcaption><svg viewBox="0 0 400 100" role="img" aria-label={label} className="h-28 w-full text-primary" preserveAspectRatio="none"><path d="M10 90H390" stroke="currentColor" opacity="0.2"/>{segments.map((line,index)=><polyline key={index} points={line} fill="none" stroke="currentColor" strokeWidth="2.5" vectorEffect="non-scaling-stroke"/>)}</svg><div className="flex justify-between text-xs text-muted-foreground"><span>{date(ordered[0].at)}</span><span>{date(ordered.at(-1)!.at)}</span></div></figure></details>;
 }

@@ -32,7 +32,6 @@ import {
   Calendar,
   RefreshCw,
   ArrowLeft,
-  TrendingUp,
   Clock3,
 } from "lucide-react";
 import Link from "next/link";
@@ -187,6 +186,7 @@ export default function MemberDetailPage({ params }: PageProps) {
   const [period, setPeriod] = useState<MemberDetailResponse["period"]>();
   const [topBrawlers, setTopBrawlers] = useState<TopBrawler[]>([]);
   const [recentMatches, setRecentMatches] = useState<RecentMatch[]>([]);
+  const [showAllMatches, setShowAllMatches] = useState(false);
   const [selectedRange, setSelectedRange] = useState<TimeRangeKey>("7d");
   const [loadError, setLoadError] = useState(false);
   const [refreshError, setRefreshError] = useState<string | null>(null);
@@ -221,6 +221,7 @@ export default function MemberDetailPage({ params }: PageProps) {
       setPeriod(data.period);
       setTopBrawlers(data.topBrawlers || []);
       setRecentMatches(data.recentMatches || []);
+      setShowAllMatches(false);
     } catch (error) {
       if (sequence !== loadSequence.current) return;
       setLoadError(true);
@@ -359,8 +360,8 @@ export default function MemberDetailPage({ params }: PageProps) {
 
                     </div>
                   </div>
-                  <MemberReviewButton member={{ ...memberHistory, ...member }} initialRange={selectedRange} />
-                  {isAdmin && <Button onClick={handleRefresh} disabled={isRefreshing}>
+                  <MemberReviewButton prominent member={{ ...memberHistory, ...member }} initialRange={selectedRange} />
+                  {isAdmin && <Button variant="outline" onClick={handleRefresh} disabled={isRefreshing}>
                     <RefreshCw className={`h-4 w-4 mr-2 ${isRefreshing ? "animate-spin" : ""}`} />
                     <T text="Refresh Stats" />
                   </Button>}
@@ -373,7 +374,7 @@ export default function MemberDetailPage({ params }: PageProps) {
             <h2 className="text-lg font-semibold"><T text={memberHistory?.is_current_member === false ? "Stored account snapshot" : "Current account"} /></h2>
             {memberHistory?.is_current_member === false && <p className="text-sm text-muted-foreground"><T text="This former member's account details come from the latest stored profile." /></p>}
             {/* Stats Grid */}
-            <div className="grid gap-4 md:grid-cols-3">
+            <div className="grid gap-4 sm:grid-cols-2">
               <Card>
                 <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
                   <CardTitle className="text-sm font-medium"><T text="Trophies" /></CardTitle>
@@ -405,18 +406,6 @@ export default function MemberDetailPage({ params }: PageProps) {
                 </CardContent>
               </Card>
 
-              <Card>
-                <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                  <CardTitle className="text-sm font-medium"><T text="Experience" /></CardTitle>
-                  <TrendingUp className="h-4 w-4 text-blue-500" />
-                </CardHeader>
-                <CardContent>
-                  <div className="text-2xl font-bold"><T text="Level " />{member.exp_level}</div>
-                  <p className="text-xs text-muted-foreground">
-                    {member.brawlers_count} <T text=" Brawlers " /></p>
-                </CardContent>
-              </Card>
-
             </div>
 
             <DataConfidenceNotice />
@@ -425,11 +414,10 @@ export default function MemberDetailPage({ params }: PageProps) {
               observations={trophyObservations} observationIntervalMs={observationIntervalMs} period={period}
               stats={enhancedStats ? { battles: enhancedStats.totalBattles, wins: enhancedStats.totalWins, losses: enhancedStats.totalLosses, winRate: enhancedStats.winRate, activeDays: enhancedStats.activeDays } : battleStats} />
 
-            <PlayerProgress playerTag={member.player_tag} range={selectedRange} />
-
             <details className="rounded-lg border p-4">
               <summary className="cursor-pointer font-semibold"><T text={memberHistory?.is_current_member === false ? "Lifetime victories and stored brawlers" : "Lifetime victories and current brawlers"} /></summary>
               <div className="mt-4 space-y-4">
+                <p className="text-sm text-muted-foreground"><T text="Experience" />: <T text="Level " />{member.exp_level} · {member.brawlers_count} <T text="Brawlers" /></p>
             {/* Victories Breakdown */}
             <div className="grid gap-4 md:grid-cols-3">
               <Card>
@@ -517,7 +505,7 @@ export default function MemberDetailPage({ params }: PageProps) {
                   <p className="text-sm text-muted-foreground"><T text="No battles recorded in this period." /></p>
                 ) : (
                   <div className="space-y-2">
-                    {recentMatches.map((match, index) => {
+                    {(showAllMatches ? recentMatches : recentMatches.slice(0, 5)).map((match, index) => {
                       const result = formatBattleResult(match.result);
                       const mode = getBattleModeInfo(match.mode, match.event_mode_id);
                       const context = match.context || describeBattleContext(match);
@@ -549,9 +537,16 @@ export default function MemberDetailPage({ params }: PageProps) {
                     })}
                   </div>
                 )}
+                {recentMatches.length > 5 && <Button variant="outline" size="sm" className="mt-3" aria-expanded={showAllMatches} onClick={() => setShowAllMatches(value => !value)}>
+                  <T text={showAllMatches ? "Show fewer battles" : "Show all recent battles"} />
+                </Button>}
               </CardContent>
             </Card>
 
+            <PlayerProgress playerTag={member.player_tag} range={selectedRange} />
+            <details className="rounded-lg border p-4">
+              <summary className="cursor-pointer font-semibold"><T text="Membership History" /></summary>
+              <div className="mt-4 space-y-4">
             <MembershipTimeline playerTag={member.player_tag} />
             {/* Member History */}
             {memberHistory && (
@@ -601,6 +596,8 @@ export default function MemberDetailPage({ params }: PageProps) {
                 </CardContent>
               </Card>
             )}
+              </div>
+            </details>
           </div>
     </LayoutWrapper>
   );

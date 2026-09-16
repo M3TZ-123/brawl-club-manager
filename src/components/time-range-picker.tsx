@@ -31,6 +31,6 @@ export function TimeRangePicker(props: FinitePickerProps | AllPickerProps) {
       {props.includeAll && <Button type="button" size="sm" variant={value === "all" ? "default" : "outline"}
         aria-pressed={value === "all"} onClick={() => props.onChange("all")}>{t("All Time")}</Button>}
     </div>
-    {value !== "all" && <p className="text-xs text-muted-foreground">{t(dayBased && value === "24h" ? "Today (UTC)" : TIME_RANGES[value].label)}</p>}
+    {dayBased && value === "24h" && <p className="text-xs text-muted-foreground">{t("Today (UTC)")}</p>}
   </div>;
 }

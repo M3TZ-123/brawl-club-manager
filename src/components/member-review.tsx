@@ -27,12 +27,12 @@ function reviewEnvelope(value: { review: MemberReview | null }) {
   return value;
 }
 
-export function MemberReviewButton({ member, initialRange = "7d" }: { member: ReviewMember; initialRange?: TimeRangeKey }) {
+export function MemberReviewButton({ member, initialRange = "7d", prominent = false }: { member: ReviewMember; initialRange?: TimeRangeKey; prominent?: boolean }) {
   const { isAdmin } = useAdminSession();
   const { t } = useI18n();
   const [open, setOpen] = useState(false);
   if (!isAdmin) return <Button asChild variant="outline" size="sm"><Link href={`/reviews?member=${encodeURIComponent(member.player_tag)}`}>{t("Member notes")}</Link></Button>;
-  return <><Button variant="outline" size="sm" onClick={() => setOpen(true)}>{t("Member notes")}</Button>{open && <MemberReviewSheet key={member.player_tag} member={member} initialRange={initialRange} open onOpenChange={setOpen} />}</>;
+  return <><Button variant={prominent ? "default" : "outline"} size="sm" onClick={() => setOpen(true)}>{t(prominent ? "Notes and departure reasons" : "Member notes")}</Button>{open && <MemberReviewSheet key={member.player_tag} member={member} initialRange={initialRange} open onOpenChange={setOpen} />}</>;
 }
 
 export function MemberReviewSheet({ member, open, onOpenChange, initialRange = "7d" }: { member: ReviewMember; open: boolean; onOpenChange: (open: boolean) => void; initialRange?: TimeRangeKey }) {
@@ -144,8 +144,6 @@ export function MemberReviewSheet({ member, open, onOpenChange, initialRange = "
         {contextUnavailable && <p role="status" className="text-sm text-muted-foreground">{t("Activity details are unavailable. You can still edit this member's notes.")}</p>}
         {possibleGap && <p role="status" className="rounded border border-amber-500/30 bg-amber-500/10 p-3 text-sm">{t("A possible gap remains in the recorded battle history.")} {t("A fresh fetch does not recover earlier battles that may be absent. Review recorded activity with this limitation in mind.")}</p>}
         {stale && <p role="status" className="rounded border border-amber-500/30 bg-amber-500/10 p-3 text-sm">{t("Data is stale. Refresh the club before judging inactivity.")}</p>}
-        <section className="space-y-3 rounded border p-3"><h3 className="font-semibold">{t("Review context")}</h3><TimeRangePicker value={range} onChange={setRange} /><p>{t("Review reason")}: {t(reason)}</p><p>{t("Recent activity")}: {t(context.activity_status || "Unknown")}</p><p>{t("Last Battle")}: {context.last_battle_at ? <LocalDate value={context.last_battle_at} time /> : t("No recorded battles")}</p><p>{t("Trophy progress · {period}", { period: t(period.label) })}: {progress == null ? t("Not enough history") : delta(progress)}</p></section>
-        <section className="space-y-2 rounded border p-3"><h3 className="font-semibold">{t("Membership context")}</h3><p>{t("First observed")}: <LocalDate value={history?.first_seen} /></p><p>{t("Observed joins")}: {history?.times_joined == null ? t("Unknown") : number(history.times_joined)} · {t("Observed departures")}: {history?.times_left == null ? t("Unknown") : number(history.times_left)}</p><p className="text-xs text-muted-foreground">{t("Counts cover the retained tracking period.")}</p></section>
         <label className="block space-y-2"><span>{t("Review status")}</span><select disabled={saving} className="h-10 w-full rounded border bg-background px-3" value={status} onChange={event => { setStatus(event.target.value as MemberReview["status"]); setSaved(false); }}><option value="pending">{t("Pending")}</option><option value="reviewed">{t("Reviewed")}</option><option value="follow_up">{t("Follow up")}</option></select></label>
         {status === "follow_up" && <label className="block space-y-2"><span>{t("Follow-up date")}</span><input disabled={saving} type="datetime-local" dir="ltr" value={followUp} onChange={event => { setFollowUp(event.target.value); setSaved(false); }} className="h-10 w-full rounded border bg-background px-3" /></label>}
         <Button onClick={save} disabled={saving || conflict}>{t(saving ? "Saving..." : "Save review")}</Button>
@@ -153,6 +151,10 @@ export function MemberReviewSheet({ member, open, onOpenChange, initialRange = "
       {error && <div role="alert" className="text-sm text-destructive">{t(error)}{loading ? null : <Button variant="ghost" onClick={conflict ? loadLatest : ready ? save : load} disabled={saving}>{t("Retry")}</Button>}</div>}
       {conflict && latest && <section className="space-y-3 rounded border p-3"><h3 className="font-semibold">{t("Latest saved notes")}</h3><p className="whitespace-pre-wrap break-words text-sm">{latest.review?.notes || t("No private notes")}</p><p className="text-sm">{t("Your draft is still in the editor. Choose which version to keep.")}</p><div className="flex flex-wrap gap-2"><Button variant="outline" onClick={() => resolveConflict(true)}>{t("Use saved version")}</Button><Button variant="outline" onClick={() => resolveConflict(false)}>{t("Keep my draft")}</Button></div></section>}
       {saved && <p role="status" className="text-sm text-green-500">{t("Review saved")}</p>}
+      {ready && <details className="rounded-lg border p-3"><summary className="cursor-pointer font-semibold">{t("Activity and membership context")}</summary><div className="mt-3 space-y-4 text-sm">
+        <section className="space-y-2"><h3 className="font-semibold">{t("Review context")}</h3><TimeRangePicker value={range} onChange={setRange} /><p>{t("Review reason")}: {t(reason)}</p><p>{t("Recent activity")}: {t(context.activity_status || "Unknown")}</p><p>{t("Last Battle")}: {context.last_battle_at ? <LocalDate value={context.last_battle_at} time /> : t("No recorded battles")}</p><p>{t("Trophy progress · {period}", { period: t(period.label) })}: {progress == null ? t("Not enough history") : delta(progress)}</p></section>
+        <section className="space-y-2 border-t pt-3"><h3 className="font-semibold">{t("Membership context")}</h3><p>{t("First observed")}: <LocalDate value={history?.first_seen} /></p><p>{t("Observed joins")}: {history?.times_joined == null ? t("Unknown") : number(history.times_joined)} · {t("Observed departures")}: {history?.times_left == null ? t("Unknown") : number(history.times_left)}</p><p className="text-xs text-muted-foreground">{t("Counts cover the retained tracking period.")}</p></section>
+      </div></details>}
       {ready && <MemberAdministrationPanel playerTag={member.player_tag} isCurrent={history?.is_current_member ?? member.is_current_member} />}
     </div>
   </SheetContent></Sheet>;

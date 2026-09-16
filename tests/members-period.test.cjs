@@ -142,7 +142,8 @@ test("members default to seven-day progress, with one progress column and period
   for (const metric of ["trophies_24h", "trophies_3d", "trophies_7d", "trophies_30d", "trophies_90d"]) assert.equal(table.props.columnVisibility[metric], false);
   assert.equal(summary(tree, "Progress · 7 days").value, "+15");
   assert.equal(summary(tree, "Progress · 7 days").description, "3 of 4 members have period data");
-  assert.equal(summary(tree, "Gained trophies").value, "1");
+  const gainedFilter = elements(tree).find(element => element.type === "button" && elements(element).some(child => child.type === "T" && child.props.text === "Gained trophies"));
+  assert.equal(textContent(gainedFilter), "Gained trophies1", "The gain count is retained on its actionable filter instead of a duplicate summary");
 });
 
 test("changing the selected period updates gain filters, sort order, and null placement", async () => {
@@ -220,7 +221,8 @@ test("visitor member details expose the notes entry point while sync controls st
   find(tree, "MembersTable").props.onMemberSelect(fixtures[0]); tree = await adminPage.render();
   assert.equal(find(tree, "MemberReviewButton").props.initialRange, "30d");
   assert.match(textContent(tree), /Sync Now/);
-  assert.match(textContent(tree), /Member notes/);
+  assert.equal(elements(tree).some(element => element.type === "Link" && element.props.href === "/reviews"), true);
+  assert.equal(find(tree, "MemberReviewButton").props.prominent, true);
   assert.doesNotMatch(textContent(tree), /Member reviews/);
 });
 

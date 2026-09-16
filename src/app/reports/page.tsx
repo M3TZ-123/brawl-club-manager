@@ -8,12 +8,13 @@ import { TimeRangePicker } from "@/components/time-range-picker";
 import { type TimeRangeKey } from "@/lib/time-range";
 import { DataConfidenceNotice } from "@/components/sync-health";
 import { LayoutWrapper } from "@/components/layout-wrapper";
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { fetchJsonCached, invalidateJsonCache } from "@/lib/client-data-cache";
 import { clubEventLabel } from "@/lib/club-event-display";
 import { ClubReportCard } from "@/components/club-report-card";
 import { ClubGrowthPeriod } from "@/components/club-growth-period";
+import type { ClubIntelligenceRange } from "@/lib/club-intelligence-types";
 
 import { Download, RefreshCw, TrendingUp, TrendingDown, Users, Trophy } from "lucide-react";
 
@@ -67,8 +68,8 @@ function ReportChartSkeleton() {
 function ReportSkeleton() {
   return (
     <div className="space-y-6">
-      <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-5">
-        {Array.from({ length: 5 }).map((_, index) => (
+      <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+        {Array.from({ length: 4 }).map((_, index) => (
           <Card key={index}>
             <CardContent className="h-28 animate-pulse p-6">
               <div className="h-4 w-24 rounded bg-muted" />
@@ -76,10 +77,6 @@ function ReportSkeleton() {
             </CardContent>
           </Card>
         ))}
-      </div>
-      <div className="grid gap-6 md:grid-cols-2">
-        <ReportChartSkeleton />
-        <ReportChartSkeleton />
       </div>
     </div>
   );
@@ -102,6 +99,9 @@ export default function ReportsPage() {
   const [isLoading, setIsLoading] = useState(true);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [selectedRange, setSelectedRange] = useState<TimeRangeKey>("7d");
+  const [view, setView] = useState<"report" | "growth">("report");
+  const [growthRange, setGrowthRange] = useState<ClubIntelligenceRange>("7d");
+  const [showCharts, setShowCharts] = useState(false);
   const [loadError, setLoadError] = useState(false);
   const loadSequence = useRef(0);
 
@@ -218,12 +218,12 @@ export default function ReportsPage() {
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
         <div>
           <h1 className="text-2xl font-bold"><T text="Club Report" /></h1>
-          {report && !isLoading && !loadError && (
+          {view === "report" && report && !isLoading && !loadError && (
             <p className="text-muted-foreground">
               {formatReportDate(report.period.start)} - {formatReportDate(report.period.end)} <T text=" (UTC) " /></p>
               )}
             </div>
-            <div className="flex flex-wrap gap-2">
+            {view === "report" && <div className="flex flex-wrap gap-2">
               {report && !isLoading && !loadError && <ClubReportCard report={report} />}
               <Button
                 aria-label={t("Refresh")}
@@ -240,11 +240,15 @@ export default function ReportsPage() {
                 <Download className="h-4 w-4 sm:me-2" />
                 <span className="hidden sm:inline"><T text="Export" /></span>
               </Button>
-            </div>
+            </div>}
           </div>
 
+          <div className="mb-4 flex flex-wrap gap-2" role="group" aria-label={t("Report view")}>
+            <Button size="sm" variant={view === "report" ? "default" : "outline"} aria-pressed={view === "report"} onClick={() => setView("report")}>{t("Period report")}</Button>
+            <Button size="sm" variant={view === "growth" ? "default" : "outline"} aria-pressed={view === "growth"} onClick={() => setView("growth")}>{t("Roster growth")}</Button>
+          </div>
+          {view === "growth" ? <ClubGrowthPeriod range={growthRange} onChange={setGrowthRange} /> : <>
           <div className="mb-5"><TimeRangePicker value={selectedRange} onChange={range => { if (range !== selectedRange) { setIsLoading(true); setSelectedRange(range); } }} dayBased /></div>
-          <div className="mb-5"><ClubGrowthPeriod /></div>
 
           {isLoading ? (
             <ReportSkeleton />
@@ -253,7 +257,7 @@ export default function ReportsPage() {
           ) : report && (
             <div className="space-y-6">
               {/* Summary Cards */}
-              <div className="grid grid-cols-2 gap-3 lg:grid-cols-5">
+              <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
                 <Card>
                   <CardHeader className="flex flex-row items-center justify-between space-y-0 p-4 pb-2">
                     <CardTitle className="text-sm font-medium"><T text="Current Members" /></CardTitle>
@@ -284,41 +288,20 @@ export default function ReportsPage() {
                   <CardContent className="p-4 pt-0">
                     <div className="text-xl font-bold sm:text-2xl">{report.summary.weeklyBattles > 0 ? `${report.summary.weeklyWinRate}%` : "—"}</div>
                     <p className="text-xs text-muted-foreground">
-                      {formatNumber(report.summary.weeklyWins)}<T text="W / " />{formatNumber(report.summary.weeklyBattles)} <T text=" battles " /></p>
+                      {t("{wins} wins from {battles} recorded battles", { wins: formatNumber(report.summary.weeklyWins), battles: formatNumber(report.summary.weeklyBattles) })}</p>
                   </CardContent>
                 </Card>
 
                 <Card>
                   <CardHeader className="flex flex-row items-center justify-between space-y-0 p-4 pb-2">
-                    <CardTitle className="text-sm font-medium"><T text="Current activity" /></CardTitle>
+                    <CardTitle className="text-sm font-medium"><T text="Recorded battles" /></CardTitle>
                     <Users className="h-4 w-4 text-green-500" />
                   </CardHeader>
                   <CardContent className="p-4 pt-0">
-                    <div className="text-xl font-bold sm:text-2xl">{report.summary.activityRate}%</div>
-                    <p className="text-xs text-muted-foreground">
-                      {report.summary.activeMembers} <T text=" active in the last 24 hours " /></p>
+                    <div className="text-xl font-bold sm:text-2xl">{formatNumber(report.summary.weeklyBattles)}</div>
                   </CardContent>
                 </Card>
 
-                <Card>
-                  <CardHeader className="flex flex-row items-center justify-between space-y-0 p-4 pb-2">
-                    <CardTitle className="text-sm font-medium"><T text="Avg Trophies" /></CardTitle>
-                    <Trophy className="h-4 w-4 text-purple-500" />
-                  </CardHeader>
-                  <CardContent className="p-4 pt-0">
-                    <div className="text-xl font-bold sm:text-2xl">
-                      {formatNumber(report.summary.avgTrophies)}
-                    </div>
-                  </CardContent>
-                </Card>
-              </div>
-
-              {/* Charts */}
-              <div className="grid gap-6 md:grid-cols-2">
-                <div><p className="mb-2 text-sm font-medium"><T text="Current activity" /></p><ActivityPieChart data={activityData} /></div>
-                {report.trophyTrend.length > 0 && (
-                  <PeriodTrophyChart dayBased points={report.trophyTrend.map(point => ({ recordedAt: `${point.date}T00:00:00.000Z`, trophies: point.trophies }))} />
-                )}
               </div>
 
               {/* Top Gainers & Losers */}
@@ -398,13 +381,12 @@ export default function ReportsPage() {
               </div>
 
               {/* Recent Events */}
-              <Card>
-                <CardHeader>
-                  <CardTitle><T text="Club changes" /></CardTitle>
-                  <CardDescription><T text="Roster changes in this period" /></CardDescription>
-                </CardHeader>
-                <CardContent>
-                  <div className="space-y-2">
+              <details className="rounded-lg border bg-card p-4" open={showCharts} onToggle={event => setShowCharts(event.currentTarget.open)}><summary className="cursor-pointer font-medium"><T text="Charts and current roster details" /></summary><div className="mt-4 space-y-4">
+                <dl className="grid grid-cols-2 gap-3 text-sm"><div><dt className="text-muted-foreground"><T text="Avg Trophies" /></dt><dd className="font-semibold">{formatNumber(report.summary.avgTrophies)}</dd></div><div><dt className="text-muted-foreground"><T text="Current activity" /></dt><dd className="font-semibold">{report.summary.activityRate}%</dd><dd className="text-xs text-muted-foreground">{report.summary.activeMembers} <T text=" active in the last 24 hours " /></dd></div></dl>
+                {showCharts && <div className="grid gap-4 md:grid-cols-2"><ActivityPieChart data={activityData} />{report.trophyTrend.length > 0 && <PeriodTrophyChart dayBased points={report.trophyTrend.map(point => ({ recordedAt: `${point.date}T00:00:00.000Z`, trophies: point.trophies }))} />}</div>}
+              </div></details>
+              <details className="rounded-lg border bg-card p-4"><summary className="cursor-pointer font-medium"><T text="Club changes" /></summary>
+                  <div className="mt-3 space-y-2">
                     {report.recentEvents.map((event, index) => (
                       <div
                         key={index}
@@ -432,10 +414,10 @@ export default function ReportsPage() {
                         <T text="No events in this period." /></p>
                     )}
                   </div>
-                </CardContent>
-              </Card>
+              </details>
             </div>
           )}
+          </>}
     </LayoutWrapper>
   );
 }

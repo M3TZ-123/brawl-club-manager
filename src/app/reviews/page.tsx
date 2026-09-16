@@ -18,6 +18,7 @@ import { Input } from "@/components/ui/input";
 import { ClubAdministrationSettings } from "@/components/club-administration-settings";
 
 type QueueMember = ReviewMember & { is_current_member: boolean };
+const REVIEW_PAGE_SIZE = 30;
 
 function ReviewQueue() {
   const { t, number } = useI18n();
@@ -29,6 +30,7 @@ function ReviewQueue() {
   const [filter, setFilter] = useState("pending");
   const [membership, setMembership] = useState("all");
   const [search, setSearch] = useState("");
+  const [visibleCount, setVisibleCount] = useState(REVIEW_PAGE_SIZE);
   const [selected, setSelected] = useState<QueueMember | null>(null);
   const [error, setError] = useState(false);
   const [loading, setLoading] = useState(true);
@@ -62,7 +64,7 @@ function ReviewQueue() {
       if (openedTag.current !== requestedTag) {
         openedTag.current = requestedTag;
         setSelected(requestedMember ?? null);
-        if (requestedMember) { setFilter("all"); setMembership("all"); setSearch(""); }
+        if (requestedMember) { setFilter("all"); setMembership("all"); setSearch(""); setVisibleCount(REVIEW_PAGE_SIZE); }
       }
     } catch {
       if (!current.signal.aborted && sequence === loadSequence.current) setError(true);
@@ -75,6 +77,7 @@ function ReviewQueue() {
     const resetSession = () => {
       cancelRead(); openedTag.current = "";
       setMembers([]); setReviews([]); setSelected(null); setLinkMissing(false); setError(false);
+      setVisibleCount(REVIEW_PAGE_SIZE);
       setSessionRevision(value => value + 1);
     };
     window.addEventListener("admin-session-changed", resetSession);
@@ -103,30 +106,29 @@ function ReviewQueue() {
     (filter === "all" || statusOf(member) === filter) &&
     (!searchTerm || `${member.player_name} ${member.player_tag}`.toLowerCase().includes(searchTerm))
   ).sort((a, b) => Number(b.activity_status === "inactive") - Number(a.activity_status === "inactive"));
+  const displayed = visible.slice(0, visibleCount);
 
   if (!isAdmin || sessionLoading) return null;
   return <div className="mx-auto max-w-5xl space-y-5">
     <header>
-      <h1 className="text-2xl font-bold">{t("Member notes")}</h1>
+      <h1 className="text-2xl font-bold">{t("Notes and departure reasons")}</h1>
       <p className="mt-1 text-muted-foreground">{t("Private notes and follow-ups for current and former members.")}</p>
-      <p className="mt-2 text-sm text-muted-foreground">{t("Private member notes can record why someone left or was removed. These reasons are entered by administrators.")}</p>
     </header>
     <DataConfidenceNotice />
-    <ClubAdministrationSettings graceOnly />
     <div className="space-y-3">
       <div role="group" aria-label={t("Review status")} className="flex flex-wrap gap-2">
         {["pending", "follow_up", "reviewed", "all"].map(value => <Button key={value} size="sm"
-          variant={filter === value ? "default" : "outline"} aria-pressed={filter === value} onClick={() => setFilter(value)}>
+          variant={filter === value ? "default" : "outline"} aria-pressed={filter === value} onClick={() => { setFilter(value); setVisibleCount(REVIEW_PAGE_SIZE); }}>
           {t(value === "all" ? "All reviews" : value)}
           {!loading && !error && <span className="ms-1.5 opacity-70">{number(membershipRows.filter(member => value === "all" || statusOf(member) === value).length)}</span>}
         </Button>)}
       </div>
       <div className="flex flex-col gap-3 sm:flex-row"><div className="relative min-w-0 flex-1">
         <Search className="absolute start-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-        <Input value={search} onChange={event => setSearch(event.target.value)} placeholder={t("Search members...")}
+        <Input value={search} onChange={event => { setSearch(event.target.value); setVisibleCount(REVIEW_PAGE_SIZE); }} placeholder={t("Search members...")}
           aria-label={t("Search members...")} className="ps-9" />
       </div>
-      <select aria-label={t("Membership status")} value={membership} onChange={event => setMembership(event.target.value)} className="h-10 rounded-md border bg-background px-3 text-sm">
+      <select aria-label={t("Membership status")} value={membership} onChange={event => { setMembership(event.target.value); setVisibleCount(REVIEW_PAGE_SIZE); }} className="h-10 rounded-md border bg-background px-3 text-sm">
         <option value="all">{t("All Members")}</option><option value="current">{t("Current Members")}</option><option value="former">{t("Former Members")}</option>
       </select></div>
     </div>
@@ -135,8 +137,9 @@ function ReviewQueue() {
       {t("Review unavailable")} <Button variant="ghost" onClick={load}>{t("Retry")}</Button>
     </div>}
     {!loading && !error && linkMissing && <p role="status" className="rounded-lg border p-4 text-sm">{t("No member record was found for this link.")}</p>}
-    {!loading && !error && <div className="space-y-3">
-      {visible.map(member => {
+    {!loading && !error && <div id="review-members" className="space-y-3">
+      {visible.length > 0 && <p role="status" className="text-sm text-muted-foreground">{t("Showing {shown} of {total} matching members", { shown: number(displayed.length), total: number(visible.length) })}</p>}
+      {displayed.map(member => {
         const review = reviewMap.get(member.player_tag);
         return <article key={member.player_tag} className="flex flex-wrap items-center justify-between gap-3 rounded-lg border bg-card p-4">
           <div className="min-w-0 flex-1 space-y-1">
@@ -154,7 +157,9 @@ function ReviewQueue() {
         </article>;
       })}
       {visible.length === 0 && <p className="rounded-lg border py-10 text-center text-muted-foreground">{t("No members match these review filters.")}</p>}
+      {displayed.length < visible.length && <Button variant="outline" aria-controls="review-members" onClick={() => setVisibleCount(count => Math.min(count + REVIEW_PAGE_SIZE, visible.length))}>{t("Load More")}</Button>}
     </div>}
+    <details className="rounded-lg border p-4"><summary className="cursor-pointer font-semibold">{t("Review alert settings")}</summary><div className="mt-4"><ClubAdministrationSettings graceOnly /></div></details>
     {selected && <MemberReviewSheet key={selected.player_tag} member={selected} open onOpenChange={open => { if (!open) setSelected(null); }} />}
   </div>;
 }

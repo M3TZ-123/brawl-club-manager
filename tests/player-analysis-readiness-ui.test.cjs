@@ -100,7 +100,7 @@ test("analysis keeps teammate counts separate from participations and preserves 
     limits: { truncated: true, groupCounts: { pairs: 300, maps: 0, modes: 0, brawlers: 0 } },
   }), { name: "AnalysisContent" });
   let tree = await page.render();
-  assert.match(textContent(tree), /Possible gaps in battle history/); assert.match(textContent(tree), /exceeds the analysis limit/);
+  assert.match(textContent(tree), /Possible gaps in battle history/); assert.match(textContent(tree), /Partial results — choose a shorter period/);
   action(tree, "Teammates")(); tree = await page.render();
   assert.match(textContent(tree), /2 shared matches/); assert.match(textContent(tree), /do not prove a premade party/);
   assert.match(textContent(tree), /Showing 1 of 300 groups/);

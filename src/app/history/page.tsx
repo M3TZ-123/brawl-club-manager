@@ -11,7 +11,7 @@ import { type TimeRangeKey } from "@/lib/time-range";
 import { invalidateJsonCache } from "@/lib/client-data-cache";
 import { fetchJsonWithTimeout } from "@/lib/client-fetch";
 import { useAdminSession } from "@/hooks/use-admin-session";
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import {
   Table,
@@ -204,46 +204,12 @@ export default function HistoryPage() {
           <div><h1 className="text-2xl font-bold"><T text="Member History" /></h1><p className="mt-1 text-sm text-muted-foreground"><T text="Membership records matching this period" /></p></div>
           <TimeRangePicker value={timeRange} onChange={range => { if (range !== timeRange) { setIsLoading(true); setTimeRange(range); } }} includeAll />
         </div>
-        <p className="text-sm text-muted-foreground"><T text="Private member notes can record why someone left or was removed. These reasons are entered by administrators." /></p>
-        <details className="rounded-xl border bg-card p-4"><summary className="cursor-pointer font-semibold"><T text="Club growth and retention" /></summary><div className="grid gap-4 pt-4 xl:grid-cols-2"><ClubRetention /><ClubIdentity showHistory /></div></details>
-        {!isAdmin && <p className="text-sm"><Link href="/reviews" className="text-primary underline"><T text="Sign in to view or add member notes" /></Link></p>}
         {loadError && <div role="alert" className="rounded-lg border border-destructive/40 p-4 text-sm"><T text="Could not load member history." /> <Button variant="ghost" onClick={() => loadHistory()}><T text="Retry" /></Button></div>}
         {isAdmin && noteError && <p role="alert" className="text-sm text-destructive"><T text={noteError} /></p>}
         {/* Stats */}
-        <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
-          <Card>
-            <CardHeader className="pb-2">
-              <CardTitle className="text-sm font-medium"><T text="Total Records" /></CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="text-2xl font-bold">{isLoading || loadError ? "—" : history.length}</div>
-                </CardContent>
-              </Card>
-              <Card>
-                <CardHeader className="pb-2">
-                  <CardTitle className="text-sm font-medium"><T text="Current Members" /></CardTitle>
-                </CardHeader>
-                <CardContent>
-                  <div className="text-2xl font-bold text-green-500">{isLoading || loadError ? "—" : currentCount}</div>
-                </CardContent>
-              </Card>
-              <Card>
-                <CardHeader className="pb-2">
-                  <CardTitle className="text-sm font-medium"><T text="Former Members" /></CardTitle>
-                </CardHeader>
-                <CardContent>
-                  <div className="text-2xl font-bold text-red-500">{isLoading || loadError ? "—" : formerCount}</div>
-                </CardContent>
-              </Card>
-              <Card>
-                <CardHeader className="pb-2">
-                  <CardTitle className="text-sm font-medium"><T text="Returning Members" /></CardTitle>
-                </CardHeader>
-                <CardContent>
-                  <div className="text-2xl font-bold text-yellow-500">{isLoading || loadError ? "—" : returningCount}</div>
-                </CardContent>
-              </Card>
-            </div>
+        <dl className="grid grid-cols-2 gap-3 rounded-lg border bg-card p-3 text-sm sm:grid-cols-4">
+          {([["Total Records", history.length], ["Current Members", currentCount], ["Former Members", formerCount], ["Returning Members", returningCount]] as const).map(([label, count]) => <div key={label}><dt className="text-xs text-muted-foreground"><T text={label} /></dt><dd className="mt-1 text-lg font-semibold">{isLoading || loadError ? "—" : number(count)}</dd></div>)}
+        </dl>
 
             {/* History Table */}
             <Card>
@@ -251,8 +217,6 @@ export default function HistoryPage() {
                 <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
                   <div>
                     <CardTitle><T text="Members" /></CardTitle>
-                    <CardDescription>
-                      <T text=" Track who has been in your club and identify returning members " /></CardDescription>
                   </div>
                   <div className="flex flex-col sm:flex-row gap-2">
                     <div className="relative">
@@ -284,7 +248,7 @@ export default function HistoryPage() {
                   </div>
                 ) : loadError ? null : (
                   <>
-                  <p className="mb-4 text-sm text-muted-foreground"><T text="First observed is the earliest retained evidence, not the actual join date. Counts cover the tracked history only." /></p>
+                  <p className="mb-3 text-xs text-muted-foreground"><T text="First observed is not an exact joining date." /></p>
                   <div className="space-y-3 md:hidden">{filteredHistory.length ? filteredHistory.map(member => <HistoryMemberCard key={member.player_tag} member={member} isAdmin={isAdmin} onReview={() => setReviewMember(member)} />) : <p><T text="No member history found" /></p>}</div>
                   <div className="hidden overflow-x-auto md:block">
                   <Table className="min-w-[700px] sm:min-w-full">
@@ -422,11 +386,7 @@ export default function HistoryPage() {
             </Card>
 
             {/* Legend */}
-            <Card>
-              <CardHeader>
-                <CardTitle className="text-sm"><T text="Member Status Legend" /></CardTitle>
-              </CardHeader>
-              <CardContent>
+            <details className="rounded-lg border p-3 text-sm"><summary className="cursor-pointer font-medium"><T text="Understanding member history" /></summary><div className="mt-3 space-y-3">
                 <div className="flex flex-wrap gap-4">
                   <div className="flex items-center gap-2">
                     <Badge variant="success"><T text="Current" /></Badge>
@@ -444,8 +404,11 @@ export default function HistoryPage() {
                       <T text=" No longer in the club " /></span>
                   </div>
                 </div>
-              </CardContent>
-            </Card>
+                <p className="text-xs text-muted-foreground"><T text="First observed is the earliest retained evidence, not the actual join date. Counts cover the tracked history only." /></p>
+                <p className="text-xs text-muted-foreground"><T text="Private member notes can record why someone left or was removed. These reasons are entered by administrators." /></p>
+                {!isAdmin && <p className="text-sm"><Link href="/reviews" className="text-primary underline"><T text="Sign in to view or add member notes" /></Link></p>}
+              </div></details>
+            <details className="rounded-xl border bg-card p-4"><summary className="cursor-pointer font-semibold"><T text="Club growth and retention" /></summary><div className="grid gap-4 pt-4 xl:grid-cols-2"><ClubRetention /><ClubIdentity showHistory /></div></details>
           </div>
       {isAdmin && reviewMember && <MemberReviewSheet key={reviewMember.player_tag} member={reviewMember} open onOpenChange={open => { if (!open) setReviewMember(null); }} />}
     </LayoutWrapper>

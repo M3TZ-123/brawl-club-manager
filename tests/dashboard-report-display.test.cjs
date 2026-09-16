@@ -27,7 +27,7 @@ function activityHarness(response) {
     "@/lib/client-data-cache": { fetchJsonCached: async () => response },
   }, { window: windowMock }).default;
   return {
-    render() { activeRenderer = renderer; return renderer.render(component); },
+    async render() { activeRenderer = renderer; let tree = await renderer.render(component); if (!elements(tree).some(element => element.type === "Tabs")) { action(tree, "Member rankings")(); tree = await renderer.render(component); } return tree; },
     async renderChild(element) { activeRenderer = hookRenderer(); return activeRenderer.render(() => element.type(element.props)); },
   };
 }

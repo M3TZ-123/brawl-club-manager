@@ -9,7 +9,7 @@ import type { ClubIntelligenceRange, ClubIntelligenceResponse } from "@/lib/club
 export const useClubIntelligence = (range: ClubIntelligenceRange = "7d") => useFeatureResource<ClubIntelligenceResponse>(`/api/club-intelligence?range=${range}`, "roster,battles,ranked");
 export function ClubIntelligencePanel({ title, resource, children }: { title: string; resource: ReturnType<typeof useClubIntelligence>; children: ReactNode }) {
   const { t, dateTime } = useI18n();
-  return <Card><CardHeader className="pb-3"><CardTitle>{t(title)}</CardTitle></CardHeader><CardContent className="space-y-4">
+  return <Card><CardHeader className="p-4 pb-3"><CardTitle className="text-base">{t(title)}</CardTitle></CardHeader><CardContent className="space-y-3 p-4 pt-0">
     {resource.error && <div role="alert" className="text-sm text-destructive">{t("Club insights are temporarily unavailable.")} <Button variant="ghost" size="sm" onClick={resource.reload}>{t("Retry")}</Button></div>}
     {resource.loading && !resource.data && <p role="status" className="text-sm text-muted-foreground">{t("Loading...")}</p>}
     {resource.data && <>{resource.error && <p className="text-xs text-muted-foreground">{t("Showing the last available update")} · {dateTime(resource.data.generatedAt)}</p>}{children}</>}

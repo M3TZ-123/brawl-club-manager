@@ -81,6 +81,9 @@ export function PlayerProgress({ playerTag, range }: { playerTag: string; range:
     {resource.error && <div role="alert" className="flex flex-wrap items-center gap-3 rounded-lg border p-3 text-sm">{t("Player progress could not be loaded.")} <Button variant="outline" size="sm" onClick={resource.reload}>{t("Retry")}</Button></div>}
     {resource.loading && !data && <p role="status" className="text-sm text-muted-foreground">{t("Loading player progress…")}</p>}
     {data && <>
+      <details className="rounded-xl border bg-card">
+        <summary className="cursor-pointer p-4 font-semibold">{t("More account details")}</summary>
+        <div className="space-y-3 border-t p-4">
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
         {([
           ["Official highest trophies", data.profile.highestTrophies, "highestTrophies"],
@@ -90,6 +93,8 @@ export function PlayerProgress({ playerTag, range }: { playerTag: string; range:
         ] as const).map(([label, value, field]) => <Card key={field}><CardContent className="p-3 sm:p-4"><p className="text-xs text-muted-foreground">{t(label)}</p><p className="mt-1 break-words text-xl font-bold">{unknownNumber(value)}</p>{field === "fame" && data.profile.fameTierName && <p className="text-xs">{data.profile.fameTierName}</p>}{data.profile.fieldCheckedAt[field] && <p className="mt-1 text-xs text-muted-foreground"><LocalDate value={data.profile.fieldCheckedAt[field]} time /></p>}</CardContent></Card>)}
       </div>
       <p className="text-xs text-muted-foreground">{t("Profile checked")}: <LocalDate value={data.profile.lastCheckedAt} time /> · {t("Missing fields remain unknown until reported.")}</p>
+        </div>
+      </details>
 
       <details open={collectionOpen} onToggle={event => setCollectionOpen(event.currentTarget.open)} className="rounded-xl border bg-card">
         <summary className="cursor-pointer p-4 font-semibold">{t("Brawler collection")} <span className="text-sm font-normal text-muted-foreground">· {number(data.collection.total)} {t("matching brawlers")}</span></summary>

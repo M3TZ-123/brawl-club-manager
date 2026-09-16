@@ -100,3 +100,20 @@ test("a failed initial recruitment read ends loading and leaves a usable retry",
   const add = elements(tree).find(node => node.type === "Button" && textContent(node) === "Add candidate");
   assert.equal(add.props.disabled, true);
 });
+
+test("switching recruitment views preserves candidate input and mounted private editors", async () => {
+  const page=harness(()=>({candidates:[candidate()]}));
+  let tree=await page.render();
+  const tagInput=value=>elements(value).find(node=>node.type==='Input'&&node.props.placeholder==='#...');
+  const applicationList=value=>elements(value).find(node=>node.type?.name==='RecruitmentApplications');
+  const originalCard=card(tree);assert.equal(applicationList(tree),undefined);
+  tagInput(tree).props.onChange({target:{value:'#UNSAVED'}});tree=await page.render();
+  action(tree,'Applications')();tree=await page.render();
+  assert.ok(applicationList(tree));assert.equal(card(tree).key,originalCard.key);
+  assert.equal(elements(tree).find(node=>node.type==='section'&&elements(node).some(child=>child.type?.name==='CandidateCard')).props.hidden,true);
+  action(tree,'Recruitment settings')();tree=await page.render();
+  assert.ok(applicationList(tree),'visited application editors remain mounted while hidden');
+  action(tree,'Candidates')();tree=await page.render();
+  assert.equal(tagInput(tree).props.value,'#UNSAVED');assert.equal(card(tree).key,originalCard.key);
+  assert.equal(page.requests.length,1,'view changes do not repeat candidate reads');
+});

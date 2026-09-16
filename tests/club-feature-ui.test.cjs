@@ -12,7 +12,7 @@ test('calendar links preserve the exact member and UTC day through the battle fe
   let tree=await renderer.render(Page);assert.equal(requests.length,1);const params=new URL(requests[0],'https://club.test').searchParams;assert.equal(params.get('player'),'#PYLQ');assert.equal(params.get('date'),'2026-08-04');assert.match(textContent(tree),/2026-08-04.*UTC/);
   action(tree,'Clear date filter')();tree=await renderer.render(Page);const reset=new URL(requests.at(-1),'https://club.test').searchParams;assert.equal(reset.get('date'),null);assert.equal(reset.get('player'),'#PYLQ');assert.equal(reset.get('range'),'7d');
 });
-test('grouped navigation opens the member group for member details and keeps private destinations gated',async()=>{
+test('primary navigation stays visible and private destinations remain gated in secondary groups',async()=>{
   const renderer=hookRenderer();let isAdmin=false,pathname='/members/%23PYLQ';
   const react={...renderer.react,createContext:()=>({Provider:'Provider'}),useContext:()=>({isOpen:true,close(){},toggle(){}})};
   const state={sidebarOpen:true,toggleSidebar(){},setSidebarOpen(){},clubName:'Club',lastSyncTime:null,clubTag:'#PYLQ',apiKeyConfigured:true,loadSettingsFromDB(){}};
@@ -20,9 +20,12 @@ test('grouped navigation opens the member group for member details and keeps pri
   const{LayoutWrapper}=loadTypeScript('src/components/layout-wrapper.tsx',{...componentMocks,react,'next/navigation':{usePathname:()=>pathname},'@/lib/store':{useAppStore:store},'@/hooks/use-admin-session':{useAdminSession:()=>({isAdmin,isLoading:false})},'@/components/sync-health':{useSyncHealth:()=>({})}},{window:{...windowMock,matchMedia:()=>({matches:false})}});
   const render=()=>renderer.render(()=>{const layout=LayoutWrapper({children:null});const sidebar=elements(layout).find(e=>e.type?.name==='SimpleSidebar');assert.ok(sidebar);return sidebar.type(sidebar.props);});
   let tree=await render();const group=(tree,name)=>elements(tree).find(e=>e.type==='details'&&textContent(e.props.children[0])===name);
-  assert.equal(group(tree,'Members').props.open,true);assert.equal(group(tree,'Overview').props.open,false);
+  assert.equal(elements(tree).filter(e=>e.type==='details').length,2);
+  assert.equal(group(tree,'More club tools').props.open,false);
+  assert.equal(elements(tree).find(e=>e.props?.href==='/members').props['aria-current'],'page');
+  for(const section of elements(tree).filter(e=>e.type==='details'))assert.equal(elements(section).some(e=>e.props?.href==='/members'),false,'Primary Members link is never hidden in a disclosure');
   let links=elements(tree).filter(e=>e.props?.href).map(e=>e.props.href);assert.ok(links.includes('/club-planning'));for(const href of ['/reviews','/settings','/recruitment'])assert.equal(links.includes(href),false);
-  isAdmin=true;pathname='/recruitment';tree=await render();links=elements(tree).filter(e=>e.props?.href).map(e=>e.props.href);for(const href of ['/reviews','/settings','/recruitment'])assert.ok(links.includes(href));assert.equal(group(tree,'Rivals and recruitment').props.open,true);
+  isAdmin=true;pathname='/recruitment';tree=await render();links=elements(tree).filter(e=>e.props?.href).map(e=>e.props.href);for(const href of ['/reviews','/settings','/recruitment'])assert.ok(links.includes(href));assert.equal(group(tree,'Management').props.open,true);
 });
 test('roster comparison has its own explicit period and passes each selected range to the growth panel',async()=>{
   const renderer=hookRenderer();const{ClubGrowthPeriod}=loadTypeScript('src/components/club-growth-period.tsx',{...componentMocks,react:renderer.react,'@/components/club-growth':{ClubGrowth:'ClubGrowth'}});

@@ -176,3 +176,67 @@ test("the private review queue aborts all three reads and rejects late responses
   assert.equal(await page.render(), null); assert.equal(page.requests.length, 3);
   page.unmount();
 });
+
+function largeQueueResponse({ url }) {
+  const history = Array.from({ length: 95 }, (_, index) => member(`#MEMBER${index}`, { player_name: `Player ${index}`, is_current_member: index < 5 }));
+  return Promise.resolve(Response.json(url === "/api/member-reviews" ? { reviews: [
+    { player_tag: "#MEMBER94", status: "reviewed", notes: "Known departure reason" },
+  ] } : url === "/api/members" ? { members: history.slice(0, 5) } : { history }));
+}
+const queueCards = tree => elements(tree).filter(element => element.type === "article");
+const queueStatus = (tree, value) => elements(tree).find(element => element.type === "Button" && element.key === value);
+
+test("review batches preserve full-data counts and search finds off-page members while filters reset the visible batch", async () => {
+  const page = queueHarness({ respond: largeQueueResponse });
+  let tree = await page.render();
+  assert.equal(queueCards(tree).length, 30);
+  assert.match(textContent(tree), /Showing 30 of 94 matching members/);
+  assert.equal(textContent(queueStatus(tree, "pending")), "pending94");
+  assert.equal(textContent(queueStatus(tree, "all")), "All reviews95");
+  action(tree, "Load More")(); tree = await page.render();
+  assert.equal(queueCards(tree).length, 60);
+  assert.equal(new Set(queueCards(tree).map(row => row.key)).size, 60);
+  assert.equal(page.requests.length, 3, "Client pagination must not fetch or mutate data");
+  elements(tree).find(element => element.type === "Input").props.onChange({ target: { value: "#MEMBER88" } });
+  tree = await page.render();
+  assert.equal(queueCards(tree).length, 1);
+  assert.match(textContent(queueCards(tree)[0]), /Player 88/);
+  assert.equal(textContent(queueStatus(tree, "pending")), "pending94", "Search must not truncate status counts");
+  elements(tree).find(element => element.type === "Input").props.onChange({ target: { value: "" } });
+  tree = await page.render();
+  assert.equal(queueCards(tree).length, 30);
+  action(tree, "Load More")(); tree = await page.render();
+  queueStatus(tree, "all").props.onClick(); tree = await page.render();
+  assert.equal(queueCards(tree).length, 30, "Review status change resets the batch");
+  action(tree, "Load More")(); tree = await page.render();
+  elements(tree).find(element => element.type === "select").props.onChange({ target: { value: "former" } });
+  tree = await page.render();
+  assert.equal(queueCards(tree).length, 30, "Membership change resets the batch");
+  assert.equal(textContent(queueStatus(tree, "all")), "All reviews90");
+  action(tree, "Load More")(); tree = await page.render();
+  action(tree, "Load More")(); tree = await page.render();
+  assert.equal(queueCards(tree).length, 90);
+  assert.equal(elements(tree).some(element => element.type === "Button" && textContent(element) === "Load More"), false);
+  assert.equal(page.requests.length, 3);
+  page.unmount();
+});
+
+test("an off-page former-member deep link opens after sign-in without expanding all cards or reopening after dismissal", async () => {
+  const page = queueHarness({ admin: false, requested: "#MEMBER94", respond: largeQueueResponse });
+  assert.equal(await page.render(), null);
+  assert.equal(page.requests.length, 0);
+  page.session.isAdmin = true;
+  let tree = await page.render();
+  assert.equal(queueCards(tree).length, 30);
+  assert.equal(queueCards(tree).some(row => row.key === "#MEMBER94"), false);
+  const sheet = elements(tree).find(element => element.type === "MemberReviewSheet");
+  assert.equal(sheet.props.member.player_tag, "#MEMBER94");
+  assert.equal(sheet.props.member.is_current_member, false);
+  assert.equal(textContent(queueStatus(tree, "all")), "All reviews95");
+  sheet.props.onOpenChange(false); tree = await page.render();
+  action(tree, "Load More")(); tree = await page.render();
+  page.window.dispatchEvent({ type: "member-reviews-updated" }); tree = await page.render();
+  assert.equal(queueCards(tree).length, 60, "A background refresh preserves the current batch");
+  assert.equal(elements(tree).some(element => element.type === "MemberReviewSheet"), false);
+  page.unmount();
+});

@@ -44,23 +44,23 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 
 const navigation = [
-  { group:"Overview", name: "Dashboard", href: "/", icon: LayoutDashboard },
-  { group:"Members", name: "Members", href: "/members", icon: Users },
-  { group:"Members", name: "Brawler readiness", href: "/readiness", icon: Crosshair },
-  { group:"Members", name: "Member notes", href: "/reviews", icon: ShieldCheck, adminOnly: true },
-  { group:"Activity and performance", name: "Leaderboard", href: "/activity", icon: Trophy },
-  { group:"Activity and performance", name: "Battle Feed", href: "/battle-feed", icon: Swords },
-  { group:"Activity and performance", name: "Analysis", href: "/analysis", icon: BarChart3 },
-  { group:"Growth and history", name: "Reports", href: "/reports", icon: FileText },
-  { group:"Growth and history", name: "History", href: "/history", icon: History },
-  { group:"Club planning", name: "Club planning", href: "/club-planning", icon: CalendarDays },
-  { group:"Club planning", name: "Game", href: "/game", icon: Gamepad2 },
-  { group:"Rivals and recruitment", name: "Club rivals", href: "/rivals", icon: Flag },
-  { group:"Rivals and recruitment", name: "Recruitment", href: "/recruitment", icon: UserSearch, adminOnly: true },
-  { group:"Rivals and recruitment", name: "Join the club", href: "/join", icon: UserPlus },
-  { group:"Club management", name: "Notifications", href: "/notifications", icon: Bell },
-  { group:"Club management", name: "Settings", href: "/settings", icon: Settings, adminOnly: true },
-  { group:"Club management", name: "Admin", href: "/admin", icon: ShieldCheck, adminOnly: true },
+  { group:"Club", name: "Dashboard", href: "/", icon: LayoutDashboard },
+  { group:"Club", name: "Members", href: "/members", icon: Users },
+  { group:"Club", name: "Member activity", href: "/activity", icon: Trophy },
+  { group:"Club", name: "Battle Feed", href: "/battle-feed", icon: Swords },
+  { group:"Club", name: "Goals and events", href: "/club-planning", icon: CalendarDays },
+  { group:"More club tools", name: "Reports", href: "/reports", icon: FileText },
+  { group:"More club tools", name: "History", href: "/history", icon: History },
+  { group:"More club tools", name: "Analysis", href: "/analysis", icon: BarChart3 },
+  { group:"More club tools", name: "Brawler readiness", href: "/readiness", icon: Crosshair },
+  { group:"More club tools", name: "Club rivals", href: "/rivals", icon: Flag },
+  { group:"More club tools", name: "Maps and rankings", href: "/game", icon: Gamepad2 },
+  { group:"More club tools", name: "Join the club", href: "/join", icon: UserPlus },
+  { group:"Management", name: "Member notes", href: "/reviews", icon: ShieldCheck, adminOnly: true },
+  { group:"Management", name: "Recruitment", href: "/recruitment", icon: UserSearch, adminOnly: true },
+  { group:"Management", name: "Notifications", href: "/notifications", icon: Bell },
+  { group:"Management", name: "Settings", href: "/settings", icon: Settings, adminOnly: true },
+  { group:"Management", name: "Admin", href: "/admin", icon: ShieldCheck, adminOnly: true },
 ];
 
 // Simple sidebar context
@@ -87,6 +87,15 @@ function SimpleSidebar() {
   const { clubName, lastSyncTime, isSyncing, clubTag, apiKeyConfigured, notificationsEnabled } = useAppStore();
   const { isOpen, close } = useSidebarContext();
   const { isAdmin, isLoading: isAdminLoading } = useAdminSession();
+  const visibleNavigation = navigation.filter(item => !item.adminOnly || isAdmin);
+  const isCurrent = (href: string) => pathname === href || href !== "/" && pathname.startsWith(`${href}/`);
+  const renderLinks = (group: string) => visibleNavigation.filter(item => item.group === group).map(item => (
+    <Link key={item.href} href={item.href} aria-current={isCurrent(item.href) ? "page" : undefined}
+      onClick={() => { if (window.innerWidth < 768) close(); }}
+      className={cn("flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-colors", isCurrent(item.href) ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:bg-accent hover:text-foreground")}>
+      <item.icon className="size-4 shrink-0" /><span>{t(item.name)}</span>
+    </Link>
+  ));
 
   // Ensure settings (including lastSyncTime) are loaded from DB on any page
   useEffect(() => {
@@ -179,35 +188,12 @@ function SimpleSidebar() {
           </div>
 
           {/* Navigation */}
-          <nav className="min-h-0 flex-1 overflow-y-auto px-3 py-4 space-y-1">
-            {[...new Set(navigation.map(item=>item.group))].map(group=><details key={group} open={navigation.some(item=>item.group===group&&(pathname===item.href || item.href!=="/"&&pathname.startsWith(`${item.href}/`)))} className="rounded-lg pb-1">
-              <summary className="cursor-pointer px-3 py-2 text-sm font-semibold text-foreground marker:text-muted-foreground">{t(group)}</summary>
-              {navigation
-              .filter((item) => item.group===group&&(!item.adminOnly || isAdmin))
-              .map((item) => {
-              const isActive = pathname === item.href;
-              return (
-                <Link
-                  key={item.name}
-                  href={item.href}
-                  onClick={() => {
-                    // Only close on mobile
-                    if (window.innerWidth < 768) {
-                      close();
-                    }
-                  }}
-                  className={cn(
-                    "flex items-center gap-3 px-3 py-2.5 rounded-lg font-medium transition-all duration-200",
-                    isActive 
-                      ? "bg-primary text-primary-foreground" 
-                      : "text-muted-foreground hover:bg-accent hover:text-foreground"
-                  )}
-                >
-                  <item.icon className="size-5" />
-                  <span><T text={item.name} /></span>
-                </Link>
-              );
-            })}</details>)}
+          <nav aria-label={t("Main navigation")} className="min-h-0 flex-1 overflow-y-auto px-3 py-4 space-y-3">
+            <div className="space-y-1">{renderLinks("Club")}</div>
+            {["More club tools", "Management"].map(group => <details key={group} open={visibleNavigation.some(item => item.group === group && isCurrent(item.href))} className="border-t pt-2">
+              <summary className="cursor-pointer rounded-md px-3 py-2 text-sm font-medium text-muted-foreground hover:text-foreground focus-visible:outline-2 focus-visible:outline-primary">{t(group)}</summary>
+              <div className="mt-1 space-y-1">{renderLinks(group)}</div>
+            </details>)}
           </nav>
 
           {/* Sync */}

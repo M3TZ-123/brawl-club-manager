@@ -2,8 +2,8 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
-import { ArrowUpRight, ListChecks, Swords, Target, Trophy } from "lucide-react";
-import { T, useI18n } from "@/components/locale-provider";
+import { ArrowUpRight, ListChecks, Swords } from "lucide-react";
+import { useI18n } from "@/components/locale-provider";
 import { useAppStore } from "@/lib/store";
 import { fetchJsonCached } from "@/lib/client-data-cache";
 import { TIME_RANGES, type TimeRangeKey } from "@/lib/time-range";
@@ -15,7 +15,6 @@ import { SetupWizard } from "@/components/setup-wizard";
 import { StatsCards } from "@/components/stats-cards";
 import { ActivityTimeline } from "@/components/activity-timeline";
 import { ClubIdentity } from "@/components/club-identity";
-import { ClubGrowthPeriod } from "@/components/club-growth-period";
 import { ClubStrength } from "@/components/club-strength";
 import { ClubGoalsOverview } from "@/components/club-goals-overview";
 import { ClubJoinSummary } from "@/components/club-join-summary";
@@ -64,24 +63,23 @@ function DashboardSkeleton() {
   </div>;
 }
 
-function MemberSignalList({ members, range, attention = false, numbered = false, emptyText }: {
-  members: DashboardMember[]; range: TimeRangeKey; attention?: boolean; numbered?: boolean; emptyText: string;
+function MemberSignalList({ members, range, attention = false, emptyText }: {
+  members: DashboardMember[]; range: TimeRangeKey; attention?: boolean; emptyText: string;
 }) {
-  const { delta, number, t } = useI18n();
+  const { delta, t } = useI18n();
   if (!members.length) return <p className="rounded-lg border border-dashed p-5 text-center text-sm text-muted-foreground">{t(emptyText)}</p>;
-  return <div className="divide-y divide-border/60">{members.map((member, index) => {
+  return <div className="divide-y divide-border/60">{members.map(member => {
     const change = member[TIME_RANGES[range].metric];
     const status = member.activity_status;
     return <div key={member.player_tag} className="flex items-center justify-between gap-3 py-3 first:pt-0 last:pb-0">
       <Link href={`/members/${encodeURIComponent(member.player_tag)}`} className="flex min-w-0 items-center gap-3 hover:text-primary">
-        {numbered && <span className="w-5 shrink-0 text-sm font-semibold text-muted-foreground">{number(index + 1)}</span>}
         <div className="min-w-0"><p className="truncate text-sm font-semibold">{member.player_name}</p>
           <p className="text-xs text-muted-foreground"><bdi dir="ltr">{member.player_tag}</bdi></p></div>
       </Link>
       <div className="shrink-0 text-end">
         {attention ? <div className="mb-1 flex items-center justify-end gap-2"><span className={`text-xs ${status === "inactive" ? "text-red-400" : status === "minimal" ? "text-amber-400" : "text-muted-foreground"}`}>
           {t(status === "inactive" ? "Inactive" : status === "minimal" ? "Low activity" : "Active")}</span><MemberReviewButton member={member} initialRange={range} /></div>
-          : numbered && <p className="text-sm font-medium">{number(member.trophies)}</p>}
+          : null}
         <p className={`text-sm font-medium ${change == null || change === 0 ? "text-muted-foreground" : change > 0 ? "text-green-500" : "text-red-400"}`}>
           {change == null ? t("Not enough history") : delta(change)}
         </p>
@@ -91,8 +89,9 @@ function MemberSignalList({ members, range, attention = false, numbered = false,
 }
 
 export default function DashboardPage() {
-  const { t, number, delta, reportDate } = useI18n();
-  const { clubTag, apiKeyConfigured, requiredTrophies, lastSyncTime, isLoadingSettings, hasLoadedSettings, loadSettingsFromDB } = useAppStore();
+  const { t, number, reportDate } = useI18n();
+  const { clubTag, apiKeyConfigured, lastSyncTime, isLoadingSettings, hasLoadedSettings, loadSettingsFromDB } = useAppStore();
+  const [view, setView] = useState<"summary" | "about">("summary");
   const [range, setRange] = useState<TimeRangeKey>("7d");
   const [dashboard, setDashboard] = useState<DashboardResponse | null>(null);
   const [insights, setInsights] = useState<ClubInsights | null>(null);
@@ -136,51 +135,43 @@ export default function DashboardPage() {
   return <LayoutWrapper><div className="space-y-6">
     <div className="flex flex-col justify-between gap-4 xl:flex-row xl:items-start">
       <div><h1 className="text-2xl font-bold">{t("Club overview")}</h1>
-        <p className="mt-1 text-sm text-muted-foreground">{t("Activity, progress and changes in your club.")}</p>
-        {requiredTrophies != null && <p className="mt-2 flex items-center gap-1.5 text-xs text-muted-foreground"><Trophy className="h-3.5 w-3.5" />{t("Entry requirement: {count} trophies", { count: number(requiredTrophies) })}</p>}
+        <p className="mt-1 text-sm text-muted-foreground">{t("Your club at a glance.")}</p>
       </div>
-      <TimeRangePicker value={range} onChange={value => { if (value === range) return; generation.current++; setRange(value); setDashboard(null); setInsights(null); setError(false); setInsightsError(false); setIsLoading(true); }} />
+      <div className="flex gap-2" role="group" aria-label={t("Overview sections")}>
+        <Button variant={view === "summary" ? "default" : "outline"} aria-pressed={view === "summary"} onClick={() => setView("summary")}>{t("Summary")}</Button>
+        <Button variant={view === "about" ? "default" : "outline"} aria-pressed={view === "about"} onClick={() => setView("about")}>{t("About the club")}</Button>
+      </div>
     </div>
     <DataConfidenceNotice />
-    <ClubGoalsOverview />
-    <div className="grid gap-4 xl:grid-cols-2"><ClubIdentity /><ClubJoinSummary /></div>
+    {view === "about" ? <div className="space-y-5"><div className="grid gap-5 xl:grid-cols-2"><ClubIdentity /><ClubJoinSummary /></div><ClubStrength /></div> : <>
+    <TimeRangePicker value={range} onChange={value => { if (value === range) return; generation.current++; setRange(value); setDashboard(null); setInsights(null); setError(false); setInsightsError(false); setIsLoading(true); }} />
     {error && <div role="alert" className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-destructive/30 bg-destructive/5 p-4 text-sm">
       <p>{t("Could not refresh the dashboard. Please try again.")}</p><Button variant="outline" size="sm" onClick={() => loadData(true)}>{t("Retry")}</Button>
     </div>}
     {isLoading || loadedKey !== `${clubTag}:${range}` ? <DashboardSkeleton /> : dashboard && <>
       <StatsCards {...dashboard.summary} />
-      <div className="grid gap-4 xl:grid-cols-2"><ClubGrowthPeriod /><ClubStrength /></div>
       {insightsError && <p role="status" className="text-sm text-muted-foreground">{t("Battle statistics are temporarily unavailable.")}</p>}
-      {insights && <section aria-label={t("Battle summary")} className="space-y-2">
-        <div className="grid gap-4 sm:grid-cols-2">
-          <Card><CardContent className="p-5"><p className="flex items-center gap-2 text-sm text-muted-foreground"><Swords className="h-4 w-4" />{t("Recorded battles")}</p>
-            <p className="mt-2 text-3xl font-bold">{number(insights.thisWeekTotal)}</p>
-            <p className="mt-1 text-xs text-muted-foreground">{insights.prevWeekTotal > 0 ? t("{change}% vs previous period", { change: delta(insights.trendDiff) }) : t("Previous period has no recorded battles")}</p>
-          </CardContent></Card>
-          <Card><CardContent className="p-5"><p className="flex items-center gap-2 text-sm text-muted-foreground"><Target className="h-4 w-4" />{t("Win Rate")}</p>
-            <p className="mt-2 text-3xl font-bold">{insights.totalBattlesThisWeek > 0 ? `${number(insights.winRate)}%` : "—"}</p>
-            <p className="mt-1 text-xs text-muted-foreground">{t("{wins} wins / {battles} battles", { wins: number(insights.totalWins), battles: number(insights.totalBattlesThisWeek) })}</p>
-          </CardContent></Card>
-        </div>
-        <p className="text-xs text-muted-foreground">{insights.period ? `${reportDate(insights.period.start)} – ${reportDate(insights.period.end)} · ` : ""}{t("Battle totals use UTC calendar days.")}</p>
-        {insights.megaBoss.isTracked && <p className="text-sm text-muted-foreground">{t("Mega Boss: {wins} wins in {battles} recorded battles", { wins: number(insights.megaBoss.totalWins), battles: number(insights.megaBoss.totalBattles) })}</p>}
+      {insights && <section aria-label={t("Battle summary")} className="flex flex-wrap items-center justify-between gap-3 rounded-lg border bg-card p-4 text-sm">
+        <div><p className="flex flex-wrap items-center gap-x-4 gap-y-1"><Swords className="h-4 w-4 text-primary" /><span>{t("{count} recorded participations", { count: number(insights.thisWeekTotal) })}</span><span>{t("Win Rate")}: <strong>{insights.totalBattlesThisWeek > 0 ? `${number(insights.winRate)}%` : "—"}</strong></span></p>
+          <p className="mt-1 text-xs text-muted-foreground">{insights.period ? `${reportDate(insights.period.start)} – ${reportDate(insights.period.end)} · UTC` : t("Battle totals use UTC calendar days.")}</p></div>
+        <Link href="/reports" className="font-medium text-primary hover:underline">{t("View full report")}</Link>
       </section>}
       <div className="grid gap-4 lg:grid-cols-2">
-        <Card><CardHeader><CardTitle className="flex items-center gap-2 text-base"><ArrowUpRight className="h-5 w-5 text-green-500" />{t("Top trophy gains")}</CardTitle><p className="text-xs text-muted-foreground">{t(TIME_RANGES[range].label)}</p></CardHeader>
-          <CardContent><MemberSignalList members={dashboard.topGainers || []} range={range} emptyText={dashboard.summary?.trophyProgressKnownMembers === 0 && dashboard.summary.totalMembers > 0 ? "Not enough history to compare trophies for this period." : "No positive trophy progress recorded for this period."} /></CardContent></Card>
         <Card><CardHeader><CardTitle className="flex items-center gap-2 text-base"><ListChecks className="h-5 w-5 text-amber-500" />{t("Needs Attention")}</CardTitle><p className="text-xs text-muted-foreground">{t("Recent activity and trophy progress in the selected period.")}</p></CardHeader>
           <CardContent><MemberSignalList members={dashboard.attentionMembers || []} range={range} attention emptyText="No urgent member issues found." /></CardContent></Card>
+        <Card><CardHeader><CardTitle className="flex items-center gap-2 text-base"><ArrowUpRight className="h-5 w-5 text-green-500" />{t("Top trophy gains")}</CardTitle></CardHeader>
+          <CardContent><MemberSignalList members={dashboard.topGainers || []} range={range} emptyText={dashboard.summary?.trophyProgressKnownMembers === 0 && dashboard.summary.totalMembers > 0 ? "Not enough history to compare trophies for this period." : "No positive trophy progress recorded for this period."} /></CardContent></Card>
       </div>
-      <Card><CardHeader className="pb-3"><CardTitle className="text-base">{t("Club changes")}</CardTitle><p className="text-xs text-muted-foreground">{t(range === "24h" ? "Today (UTC)" : TIME_RANGES[range].label)}</p></CardHeader>
-        <CardContent className="grid grid-cols-2 gap-4 sm:grid-cols-4">{([
-          ["Joined", dashboard.changeSummary?.joins], ["Left", dashboard.changeSummary?.leaves],
-          ["Names", dashboard.changeSummary?.nameChanges], ["Roles", dashboard.changeSummary?.roleChanges],
-        ] as const).map(([label, count]) => <div key={label}><p className="text-xs text-muted-foreground">{t(label)}</p><p className="mt-1 text-2xl font-semibold">{number(count ?? 0)}</p></div>)}</CardContent></Card>
+      <ClubGoalsOverview hideWhenEmpty />
       <div className="grid gap-4 lg:grid-cols-2">
-        <Card><CardHeader className="flex flex-row items-center justify-between gap-3"><div><CardTitle className="text-base">{t("Trophy leaders")}</CardTitle><p className="mt-1 text-xs text-muted-foreground">{t("Current trophies and progress in the selected period")}</p></div><Link href="/members" className="text-sm font-medium text-primary hover:underline"><T text="Open Members" /></Link></CardHeader>
-          <CardContent><MemberSignalList members={dashboard.topMembers || []} range={range} numbered emptyText="No current members found." /></CardContent></Card>
-        <ActivityTimeline events={dashboard.recentEvents || []} />
+        <ActivityTimeline events={(dashboard.recentEvents || []).slice(0, 4)} />
+        <nav aria-label={t("Club shortcuts")} className="grid content-start gap-3">{([
+          ["/members", "Open Members", "Find a member, check activity or add a note."],
+          ["/club-planning", "Goals and events", "Set a goal or prepare the next club event."],
+          ["/history", "History", "See who joined, left or returned."],
+        ] as const).map(([href, title, description]) => <Link key={href} href={href} className="rounded-lg border bg-card p-4 transition-colors hover:bg-accent"><p className="font-medium">{t(title)}</p><p className="mt-1 text-sm text-muted-foreground">{t(description)}</p></Link>)}</nav>
       </div>
+    </>}
     </>}
   </div></LayoutWrapper>;
 }
