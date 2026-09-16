@@ -34,6 +34,26 @@ test("many admin controls share one read and one listener set, including a fresh
   assert.equal(f.requests.length, 1, "A fresh accepted session is reused across navigation"); stop();
 });
 
+test("failed initial session checks show a retry state rather than missing administrator setup", async () => {
+  const f = fixture(); const stop = f.module.subscribeAdminSession(() => {});
+  f.requests[0].resolve(Response.json({ error: "Unavailable" }, { status: 503 })); await settle();
+  assert.equal(f.module.getAdminSession().checkError, true);
+  assert.equal(f.module.getAdminSession().isAdmin, false);
+  const renderer = hookRenderer();
+  const { AdminGate } = loadTypeScript("src/components/admin-gate.tsx", { ...componentMocks, react: renderer.react,
+    "@/hooks/use-admin-session": { useAdminSession: () => ({ ...f.module.getAdminSession(), refresh: f.module.refreshAdminSession }) },
+  });
+  let tree = await renderer.render(() => AdminGate({ children: "Private content" }));
+  assert.match(textContent(tree), /Could not check admin access/);
+  assert.doesNotMatch(textContent(tree), /Ask the app owner|Private content/);
+  elements(tree).find(node => node.type === "Button" && textContent(node) === "Retry").props.onClick();
+  assert.equal(f.requests.length, 2); assert.equal(f.module.getAdminSession().isLoading, true);
+  f.requests[1].resolve(json({ configured: true, isAdmin: true })); await settle();
+  tree = await renderer.render(() => AdminGate({ children: "Private content" }));
+  assert.equal(f.module.getAdminSession().checkError, false);
+  assert.equal(textContent(tree), "Private content"); stop();
+});
+
 test("logout clears private UI and requests immediately; a delayed old GET cannot restore admin", async () => {
   const f = fixture(); const stop = f.module.subscribeAdminSession(() => {});
   const old = f.requests[0];

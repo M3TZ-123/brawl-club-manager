@@ -19,7 +19,7 @@ function AdminPanel({ onLogout }: { onLogout: () => Promise<void> }) {
       <Button variant="outline" className="gap-2" onClick={onLogout}><LogOut className="h-4 w-4" /><T text="Sign Out" /></Button>
     </div>
     <div className="grid gap-4 sm:grid-cols-2">
-      <Card><CardContent className="p-5"><Link href="/reviews" className="flex items-center gap-3 hover:text-primary"><ClipboardList className="h-5 w-5" /><div><p className="font-semibold"><T text="Member reviews" /></p><p className="mt-1 text-sm text-muted-foreground"><T text="Notes and follow-ups for your members." /></p></div></Link></CardContent></Card>
+      <Card><CardContent className="p-5"><Link href="/reviews" className="flex items-center gap-3 hover:text-primary"><ClipboardList className="h-5 w-5" /><div><p className="font-semibold"><T text="Member notes" /></p><p className="mt-1 text-sm text-muted-foreground"><T text="Notes and follow-ups for your members." /></p></div></Link></CardContent></Card>
       <Card><CardContent className="p-5"><Link href="/settings" className="flex items-center gap-3 hover:text-primary"><Settings className="h-5 w-5" /><div><p className="font-semibold"><T text="Settings" /></p><p className="mt-1 text-sm text-muted-foreground"><T text="Club connection, activity rules and notifications." /></p></div></Link></CardContent></Card>
     </div>
     <SyncHealthCard />

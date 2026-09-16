@@ -206,6 +206,7 @@ test("translated Brawl API failures retain status and verification returns actio
       await assert.rejects(api.getClub("#CLUB", "test-only"), (error) => error instanceof api.BrawlApiError && error.status === status);
       const route = loadTypeScript("src/app/api/verify-club/route.ts", {
         "@/lib/brawl-api": api, "@/lib/admin-auth": { rejectUnauthorizedAdminMutation: () => null },
+        "@/lib/supabase-admin": { supabaseAdmin: { from: () => { throw new Error("Provided key needs no settings read"); } } },
         "next/server": { NextResponse: { json: (body, init) => ({ body, status: init?.status || 200 }) } },
       }, { console: quietConsole });
       const result = await route.POST({ json: async () => ({ clubTag: "#CLUB", apiKey: "test-only" }) });

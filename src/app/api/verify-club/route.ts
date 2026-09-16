@@ -1,15 +1,27 @@
 import { NextRequest, NextResponse } from "next/server";
 import { BrawlApiError, getClub } from "@/lib/brawl-api";
 import { rejectUnauthorizedAdminMutation } from "@/lib/admin-auth";
+import { supabaseAdmin } from "@/lib/supabase-admin";
 
 export async function POST(request: NextRequest) {
   try {
     const authResponse = rejectUnauthorizedAdminMutation(request);
     if (authResponse) return authResponse;
 
-    const { clubTag, apiKey } = await request.json();
+    const body = await request.json().catch(() => null);
+    const clubTag = typeof body?.clubTag === "string" ? body.clubTag.trim().replace(/^%23/i, "#").toUpperCase() : "";
+    const suppliedKey = typeof body?.apiKey === "string" ? body.apiKey.trim() : "";
+    if (!/^#?[A-Z0-9]{1,20}$/.test(clubTag)) {
+      return NextResponse.json({ error: "Enter a valid club tag." }, { status: 400 });
+    }
+    let apiKey = suppliedKey;
+    if (!apiKey) {
+      const { data, error } = await supabaseAdmin.from("settings").select("value").eq("key", "api_key").maybeSingle();
+      if (error) throw error;
+      apiKey = data?.value?.trim() || process.env.BRAWL_API_KEY || "";
+    }
 
-    if (!clubTag || !apiKey) {
+    if (!apiKey) {
       return NextResponse.json(
         { error: "Club tag and API key are required" },
         { status: 400 }
@@ -21,6 +33,7 @@ export async function POST(request: NextRequest) {
 
     return NextResponse.json({
       success: true,
+      clubTag: club.tag,
       clubName: club.name,
       memberCount: club.members.length,
       requiredTrophies: club.requiredTrophies,

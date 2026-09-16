@@ -116,7 +116,7 @@ export async function GET(request: NextRequest) {
       const reviews = new Map((await loadMemberReviews()).map(review => [review.player_tag, review]));
       result = result.map(row => {
         const review = reviews.get(String(row.player_tag));
-        return { ...row, notes: review?.notes || null, review_status: review?.status || "pending", follow_up_at: review?.follow_up_at || null };
+        return { ...row, notes: review?.notes || null, review_status: review?.status || "pending", follow_up_at: review?.follow_up_at || null, review_updated_at: review?.updated_at || null };
       });
     }
     return historyResponse({ history: result });
@@ -137,7 +137,8 @@ export async function PATCH(request: NextRequest) {
 
     const body = await request.json().catch(() => null);
     if (!body || typeof body !== "object" || Array.isArray(body)) throw new ReviewInputError("Invalid notes payload");
-    const review = await saveMemberReview({ player_tag: body.player_tag, notes: body.notes });
+    const review = await saveMemberReview({ player_tag: body.player_tag, notes: body.notes,
+      ...(Object.prototype.hasOwnProperty.call(body, "expected_updated_at") ? { expected_updated_at: body.expected_updated_at } : {}) });
     return historyResponse({ success: true, review });
   } catch (error) {
     if (error instanceof ReviewInputError) return historyResponse({ error: error.message }, error.status);

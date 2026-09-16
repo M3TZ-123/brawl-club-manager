@@ -1,5 +1,10 @@
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
+import { fetchJsonWithTimeout } from "@/lib/client-fetch";
+
+let settingsRead: Promise<void> | null = null;
+let settingsGeneration = 0;
+export type SettingsChanges = Partial<Pick<AppState, "clubTag" | "clubName" | "apiKey" | "inactivityThreshold" | "refreshInterval" | "notificationsEnabled" | "discordWebhook" | "requiredTrophies">>;
 
 interface AppState {
   // Club info
@@ -13,6 +18,7 @@ interface AppState {
   isSyncing: boolean;
   isLoadingSettings: boolean;
   hasLoadedSettings: boolean;
+  settingsError: string | null;
   theme: "light" | "dark";
   locale: "en" | "ar";
   sidebarOpen: boolean;
@@ -42,7 +48,7 @@ interface AppState {
   setDiscordWebhook: (webhook: string) => void;
   setRequiredTrophies: (trophies: number | null) => void;
   loadSettingsFromDB: (force?: boolean) => Promise<void>;
-  saveSettingsToDB: () => Promise<void>;
+  saveSettingsToDB: (changes?: SettingsChanges) => Promise<void>;
 }
 
 function parseIntegerSetting(value: unknown, fallback: number, min = 1, max = Number.MAX_SAFE_INTEGER): number {
@@ -68,6 +74,7 @@ export const useAppStore = create<AppState>()(
       isSyncing: false,
       isLoadingSettings: true,
       hasLoadedSettings: false,
+      settingsError: null,
       theme: "dark",
       locale: "en",
       sidebarOpen: true,
@@ -95,97 +102,77 @@ export const useAppStore = create<AppState>()(
       setDiscordWebhook: (webhook) => set({ discordWebhook: webhook }),
       setRequiredTrophies: (trophies) => set({ requiredTrophies: trophies }),
       
-      // Load settings from database (only once)
+      // Concurrent initial readers share one request; stale pre-save reads cannot
+      // replace settings accepted after a successful mutation.
       loadSettingsFromDB: async (force = false) => {
-        // Skip if already loaded
-        if (get().hasLoadedSettings && !force) {
-          return;
-        }
-        try {
-          if (!get().hasLoadedSettings) set({ isLoadingSettings: true });
-          const syncTimeAtRequest = get().lastSyncTime;
-          const response = await fetch("/api/settings", { cache: "no-store" });
-          if (response.ok) {
-            const settings = await response.json();
+        if (get().hasLoadedSettings && !force) return;
+        if (settingsRead && !force) return settingsRead;
+        const generation = ++settingsGeneration;
+        const syncTimeAtRequest = get().lastSyncTime;
+        // Background confirmation must not unmount an in-progress setup flow.
+        // Its initiating control owns the pending state after the initial read.
+        if (!get().hasLoadedSettings) set({ isLoadingSettings: true });
+        const pending = (async () => {
+          try {
+            const settings = await fetchJsonWithTimeout<Record<string, string>>("/api/settings", { cache: "no-store" });
+            if (generation !== settingsGeneration) return;
             set({
-              clubTag: settings.club_tag || "",
-              clubName: settings.club_name || "",
-              apiKey: "",
+              clubTag: settings.club_tag || "", clubName: settings.club_name || "", apiKey: "",
               apiKeyConfigured: settings.api_key_configured === "true",
               inactivityThreshold: parseIntegerSetting(settings.inactivity_threshold, get().inactivityThreshold, 48, 168),
               refreshInterval: parseIntegerSetting(settings.refresh_interval, get().refreshInterval, 60, 1440),
-              notificationsEnabled: settings.notifications_enabled == null
-                ? get().notificationsEnabled
-                : settings.notifications_enabled === "true",
-              discordWebhook: "",
-              discordWebhookConfigured: settings.discord_webhook_configured === "true",
-              requiredTrophies: settings.required_trophies != null
-                ? parseNullableIntegerSetting(settings.required_trophies, get().requiredTrophies)
-                : get().requiredTrophies,
-              ...(get().lastSyncTime === syncTimeAtRequest
-                ? { lastSyncTime: settings.last_sync_time || null }
-                : {}),
+              notificationsEnabled: settings.notifications_enabled == null ? get().notificationsEnabled : settings.notifications_enabled === "true",
+              discordWebhook: "", discordWebhookConfigured: settings.discord_webhook_configured === "true",
+              requiredTrophies: settings.required_trophies === "" ? null : settings.required_trophies != null
+                ? parseNullableIntegerSetting(settings.required_trophies, get().requiredTrophies) : get().requiredTrophies,
+              ...(get().lastSyncTime === syncTimeAtRequest ? { lastSyncTime: settings.last_sync_time || null } : {}),
+              settingsError: null,
             });
-          } else {
-            throw new Error("Failed to load settings");
+          } catch (error) {
+            if (generation === settingsGeneration) set({ settingsError: "Could not load settings. Please try again." });
+            if (force) throw error;
+          } finally {
+            if (generation === settingsGeneration) set({ isLoadingSettings: false, hasLoadedSettings: true });
           }
-        } catch (error) {
-          console.error("Failed to load settings from DB:", error);
-          if (force) throw error;
-        } finally {
-          set({ isLoadingSettings: false, hasLoadedSettings: true });
-        }
+        })();
+        settingsRead = pending;
+        try { await pending; } finally { if (settingsRead === pending) settingsRead = null; }
       },
-      
-      // Save settings to database
-      saveSettingsToDB: async () => {
+      saveSettingsToDB: async (changes) => {
         const state = get();
-        try {
-          const apiKey = state.apiKey.trim();
-          const discordWebhook = state.discordWebhook.trim();
-          const payload: Record<string, string> = {
-            club_tag: state.clubTag,
-            club_name: state.clubName,
-            inactivity_threshold: String(state.inactivityThreshold),
-            refresh_interval: String(state.refreshInterval),
-            notifications_enabled: String(state.notificationsEnabled),
-          };
-
-          if (apiKey) {
-            payload.api_key = apiKey;
-          }
-
-          if (discordWebhook) {
-            payload.discord_webhook = discordWebhook;
-          }
-
-          if (state.requiredTrophies != null && Number.isFinite(state.requiredTrophies)) {
-            payload.required_trophies = String(state.requiredTrophies);
-          }
-
-          const response = await fetch("/api/settings", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify(payload),
-          });
-          if (!response.ok) {
-            const data = await response.json().catch(() => ({}));
-            throw new Error(data.error || "Failed to save settings");
-          }
-
-          const result = await response.json().catch(() => ({}));
-
-          set({
-            apiKey: "",
-            discordWebhook: "",
-            apiKeyConfigured: apiKey ? true : state.apiKeyConfigured,
-            discordWebhookConfigured: discordWebhook ? true : state.discordWebhookConfigured,
-            ...(result.requiresSync ? { lastSyncTime: null } : {}),
-          });
-        } catch (error) {
-          console.error("Failed to save settings to DB:", error);
-          throw error;
+        if (state.settingsError) throw new Error(state.settingsError);
+        const proposed: SettingsChanges = changes ?? {
+          clubTag: state.clubTag, clubName: state.clubName, apiKey: state.apiKey,
+          inactivityThreshold: state.inactivityThreshold, refreshInterval: state.refreshInterval,
+          notificationsEnabled: state.notificationsEnabled, discordWebhook: state.discordWebhook,
+          ...(state.requiredTrophies != null ? { requiredTrophies: state.requiredTrophies } : {}),
+        };
+        const fields: Record<keyof SettingsChanges, string> = {
+          clubTag: "club_tag", clubName: "club_name", apiKey: "api_key", inactivityThreshold: "inactivity_threshold",
+          refreshInterval: "refresh_interval", notificationsEnabled: "notifications_enabled", discordWebhook: "discord_webhook", requiredTrophies: "required_trophies",
+        };
+        const payload: Record<string, string> = {};
+        for (const key of Object.keys(proposed) as Array<keyof SettingsChanges>) {
+          const value = proposed[key];
+          if (value === undefined || ((key === "apiKey" || key === "discordWebhook") && !String(value).trim())) continue;
+          payload[fields[key]] = value == null ? "" : String(value).trim();
         }
+        settingsGeneration++; settingsRead = null;
+        set({ isLoadingSettings: false });
+        const result = await fetchJsonWithTimeout<{ success: boolean; requiresSync?: boolean }>("/api/settings", {
+          method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload),
+        });
+        if (result.success !== true) throw new Error("Failed to save settings");
+        // A read begun while the POST was pending may still contain the old row.
+        settingsGeneration++; settingsRead = null;
+        const applied = { ...proposed }; delete applied.apiKey; delete applied.discordWebhook;
+        if (applied.clubTag !== undefined) applied.clubTag = "#" + applied.clubTag.trim().replace(/^%23/i, "#").replace(/^#/, "").toUpperCase();
+        if (applied.clubName !== undefined) applied.clubName = applied.clubName.trim().slice(0, 120);
+        set({ ...applied, apiKey: "", discordWebhook: "", settingsError: null, isLoadingSettings: false, hasLoadedSettings: true,
+          apiKeyConfigured: payload.api_key ? true : get().apiKeyConfigured,
+          discordWebhookConfigured: payload.discord_webhook ? true : get().discordWebhookConfigured,
+          ...(result.requiresSync ? { lastSyncTime: null } : {}),
+        });
       },
     }),
     {

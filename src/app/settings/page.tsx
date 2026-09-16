@@ -3,7 +3,8 @@ import { T, useI18n } from "@/components/locale-provider";
 
 
 import { useState, useEffect } from "react";
-import { useAppStore } from "@/lib/store";
+import { useAppStore, type SettingsChanges } from "@/lib/store";
+import { fetchJsonWithTimeout } from "@/lib/client-fetch";
 import { AdminGate } from "@/components/admin-gate";
 import { LayoutWrapper } from "@/components/layout-wrapper";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
@@ -31,21 +32,22 @@ export default function SettingsPage() {
     inactivityThreshold,
     notificationsEnabled,
     discordWebhookConfigured,
-    setClubTag,
-    setApiKey,
     setTheme,
-    setInactivityThreshold,
-    setNotificationsEnabled,
-    setDiscordWebhook,
     saveSettingsToDB,
     loadSettingsFromDB,
     hasLoadedSettings,
+    isLoadingSettings,
+    settingsError,
   } = useAppStore();
 
   const [localClubTag, setLocalClubTag] = useState<string | null>(null);
   const [localApiKey, setLocalApiKey] = useState("");
   const [localDiscordWebhook, setLocalDiscordWebhook] = useState("");
   const [localInactivityThreshold, setLocalInactivityThreshold] = useState<number | null>(null);
+  const [localNotificationsEnabled, setLocalNotificationsEnabled] = useState<boolean | null>(null);
+  const [generalError, setGeneralError] = useState("");
+  const [activityError, setActivityError] = useState("");
+  const [notifError, setNotifError] = useState("");
   const [generalStatus, setGeneralStatus] = useState<"idle" | "saving" | "saved">("idle");
   const [activityStatus, setActivityStatus] = useState<"idle" | "saving" | "saved">("idle");
   const [notifStatus, setNotifStatus] = useState<"idle" | "saving" | "saved">("idle");
@@ -58,6 +60,8 @@ export default function SettingsPage() {
 
   const effectiveClubTag = localClubTag ?? clubTag;
   const effectiveInactivityThreshold = localInactivityThreshold ?? inactivityThreshold;
+  const effectiveNotificationsEnabled = localNotificationsEnabled ?? notificationsEnabled;
+  const saving = [generalStatus, activityStatus, notifStatus].includes("saving");
 
   const parseBoundedInput = (value: string, fallback: number, min: number, max: number) => {
     const parsed = Number.parseInt(value, 10);
@@ -67,49 +71,55 @@ export default function SettingsPage() {
 
   const handleSaveGeneral = async () => {
     setGeneralStatus("saving");
+    setGeneralError("");
     try {
-      setClubTag(effectiveClubTag);
-      if (localApiKey.trim()) {
-        setApiKey(localApiKey);
+      const normalizeTag = (value: string) => "#" + value.trim().replace(/^%23/i, "#").replace(/^#/, "").toUpperCase();
+      const changes: SettingsChanges = { clubTag: effectiveClubTag };
+      if (normalizeTag(effectiveClubTag) !== normalizeTag(clubTag) || localApiKey.trim() || !apiKeyConfigured) {
+        const verified = await fetchJsonWithTimeout<{ clubTag: string; clubName: string; requiredTrophies: number }>("/api/verify-club", {
+          method: "POST", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ clubTag: effectiveClubTag, apiKey: localApiKey }),
+        });
+        changes.clubTag = verified.clubTag;
+        changes.clubName = verified.clubName;
+        changes.requiredTrophies = typeof verified.requiredTrophies === "number" ? verified.requiredTrophies : null;
       }
-      await saveSettingsToDB();
+      if (localApiKey.trim()) changes.apiKey = localApiKey;
+      await saveSettingsToDB(changes);
+      setLocalClubTag(null);
       setLocalApiKey("");
       setGeneralStatus("saved");
-      setTimeout(() => setGeneralStatus("idle"), 2000);
     } catch (error) {
-      console.error("Failed to save general settings:", error);
-      alert(t("Failed to save settings. Please try again."));
+      setGeneralError(error instanceof Error ? error.message : "Failed to save settings. Please try again.");
       setGeneralStatus("idle");
     }
   };
 
   const handleSaveNotifications = async () => {
     setNotifStatus("saving");
+    setNotifError("");
     try {
-      if (localDiscordWebhook.trim()) {
-        setDiscordWebhook(localDiscordWebhook);
-      }
-      await saveSettingsToDB();
+      await saveSettingsToDB({ notificationsEnabled: effectiveNotificationsEnabled,
+        ...(localDiscordWebhook.trim() ? { discordWebhook: localDiscordWebhook } : {}),
+      });
+      setLocalNotificationsEnabled(null);
       setLocalDiscordWebhook("");
       setNotifStatus("saved");
-      setTimeout(() => setNotifStatus("idle"), 2000);
     } catch (error) {
-      console.error("Failed to save notification settings:", error);
-      alert(t("Failed to save notification settings. Please try again."));
+      setNotifError(error instanceof Error ? error.message : "Failed to save notification settings. Please try again.");
       setNotifStatus("idle");
     }
   };
 
   const handleSaveActivity = async () => {
     setActivityStatus("saving");
+    setActivityError("");
     try {
-      setInactivityThreshold(effectiveInactivityThreshold);
-      await saveSettingsToDB();
+      await saveSettingsToDB({ inactivityThreshold: effectiveInactivityThreshold });
+      setLocalInactivityThreshold(null);
       setActivityStatus("saved");
-      setTimeout(() => setActivityStatus("idle"), 2000);
     } catch (error) {
-      console.error("Failed to save activity settings:", error);
-      alert(t("Failed to save activity settings. Please try again."));
+      setActivityError(error instanceof Error ? error.message : "Failed to save activity settings. Please try again.");
       setActivityStatus("idle");
     }
   };
@@ -124,7 +134,14 @@ export default function SettingsPage() {
             <T text=" Configure your club manager preferences " /></p>
         </div>
 
-        <Tabs defaultValue="general" className="space-y-4">
+        {isLoadingSettings || !hasLoadedSettings ? (
+          <p role="status" className="py-8 text-muted-foreground"><T text="Loading..." /></p>
+        ) : settingsError ? (
+          <Card><CardContent className="space-y-3 pt-6">
+            <p role="alert"><T text="Could not load settings. Please try again." /></p>
+            <Button onClick={() => { void loadSettingsFromDB(true).catch(() => {}); }}><T text="Retry" /></Button>
+          </CardContent></Card>
+        ) : <Tabs defaultValue="general" className="space-y-4">
               <TabsList className="flex flex-wrap h-auto gap-1 p-1">
                 <TabsTrigger value="general" className="text-xs sm:text-sm"><T text="General" /></TabsTrigger>
                 <TabsTrigger value="activity" className="text-xs sm:text-sm"><T text="Activity" /></TabsTrigger>
@@ -153,7 +170,8 @@ export default function SettingsPage() {
                         spellCheck={false}
                         placeholder="#ABC123"
                         value={effectiveClubTag}
-                        onChange={(e) => setLocalClubTag(e.target.value.toUpperCase())}
+                        onChange={(e) => { setLocalClubTag(e.target.value.toUpperCase()); setGeneralStatus("idle"); }}
+                        disabled={saving}
                       />
                       <p id="settings-club-tag-hint" className="text-xs text-muted-foreground">
                         <T text=" Your club&apos;s unique tag (found in-game) " /></p>
@@ -168,7 +186,8 @@ export default function SettingsPage() {
                         type="password"
                         placeholder={t(apiKeyConfigured ? "Stored API key configured" : "Enter your API key")}
                         value={localApiKey}
-                        onChange={(e) => setLocalApiKey(e.target.value)}
+                        onChange={(e) => { setLocalApiKey(e.target.value); setGeneralStatus("idle"); }}
+                        disabled={saving}
                         autoComplete="off"
                       />
                       <p id="settings-api-key-hint" className="text-xs text-muted-foreground">
@@ -185,7 +204,8 @@ export default function SettingsPage() {
                       </p>
                     </div>
 
-                    <Button onClick={handleSaveGeneral} disabled={generalStatus === "saving"}>
+                    {generalError && <p role="alert" className="text-sm text-destructive">{t(generalError)}</p>}
+                    <Button onClick={handleSaveGeneral} disabled={saving || !effectiveClubTag.trim()}>
                       {generalStatus === "saving" ? (
                         t("Saving...")
                       ) : generalStatus === "saved" ? (
@@ -224,9 +244,11 @@ export default function SettingsPage() {
                         min="48"
                         max="168"
                         value={effectiveInactivityThreshold}
-                        onChange={(e) =>
-                          setLocalInactivityThreshold(parseBoundedInput(e.target.value, 48, 48, 168))
-                        }
+                        disabled={saving}
+                        onChange={(e) => {
+                          setLocalInactivityThreshold(parseBoundedInput(e.target.value, 48, 48, 168));
+                          setActivityStatus("idle");
+                        }}
                       />
                       <p id="settings-inactivity-hint" className="text-xs text-muted-foreground">
                         <T text=" Players with no recorded battle or trophy change past this threshold are marked inactive " /></p>
@@ -247,7 +269,8 @@ export default function SettingsPage() {
                       </ul>
                     </div>
 
-                    <Button onClick={handleSaveActivity} disabled={activityStatus === "saving"}>
+                    {activityError && <p role="alert" className="text-sm text-destructive">{t(activityError)}</p>}
+                    <Button onClick={handleSaveActivity} disabled={saving}>
                       {activityStatus === "saving" ? (
                         t("Saving...")
                       ) : activityStatus === "saved" ? (
@@ -284,8 +307,9 @@ export default function SettingsPage() {
                       <Switch
                         id="settings-notifications"
                         aria-describedby="settings-notifications-hint"
-                        checked={notificationsEnabled}
-                        onCheckedChange={setNotificationsEnabled}
+                        checked={effectiveNotificationsEnabled}
+                        onCheckedChange={(value) => { setLocalNotificationsEnabled(value); setNotifStatus("idle"); }}
+                        disabled={saving}
                       />
                     </div>
 
@@ -296,10 +320,11 @@ export default function SettingsPage() {
                         aria-describedby="settings-discord-webhook-hint"
                         dir="ltr"
                         spellCheck={false}
-                        type="url"
+                        type="password"
                         placeholder={discordWebhookConfigured ? t("Stored webhook configured") : "https://discord.com/api/webhooks/..."}
                         value={localDiscordWebhook}
-                        onChange={(e) => setLocalDiscordWebhook(e.target.value)}
+                        onChange={(e) => { setLocalDiscordWebhook(e.target.value); setNotifStatus("idle"); }}
+                        disabled={saving}
                         autoComplete="off"
                       />
                       <p id="settings-discord-webhook-hint" className="text-xs text-muted-foreground">
@@ -316,7 +341,8 @@ export default function SettingsPage() {
                       </ul>
                     </div>
 
-                    <Button onClick={handleSaveNotifications} disabled={notifStatus === "saving"}>
+                    {notifError && <p role="alert" className="text-sm text-destructive">{t(notifError)}</p>}
+                    <Button onClick={handleSaveNotifications} disabled={saving}>
                       {notifStatus === "saving" ? (
                         t("Saving...")
                       ) : notifStatus === "saved" ? (
@@ -402,7 +428,7 @@ export default function SettingsPage() {
                   </CardContent>
                 </Card>
               </TabsContent>
-            </Tabs>
+            </Tabs>}
           </div>
       </AdminGate>
     </LayoutWrapper>

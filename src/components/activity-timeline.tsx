@@ -4,6 +4,7 @@ import { T, LocalDate } from "@/components/locale-provider";
 
 import { memo } from "react";
 import { ClubEvent } from "@/types/database";
+import { clubEventLabel } from "@/lib/club-event-display";
 
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -40,7 +41,7 @@ export const ActivityTimeline = memo(function ActivityTimeline({ events }: Activ
       case "demotion":
         return <Badge variant="warning"><T text="Demoted" /></Badge>;
       default:
-        return <Badge>{type}</Badge>;
+        return <Badge><T text={clubEventLabel(type)} /></Badge>;
     }
   };
 

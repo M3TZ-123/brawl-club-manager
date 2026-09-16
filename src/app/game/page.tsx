@@ -16,26 +16,31 @@ export default function GamePage() {
   const [rankings, setRankings] = useState<GameSnapshot<GameRanking[]> | null>(null);
   const [region,setRegion] = useState<GameRegion>("global"), [kind,setKind] = useState<GameRankingKind>("players");
   const [eventError,setEventError] = useState(""), [rankError,setRankError] = useState("");
+  const [rankLoading,setRankLoading] = useState(false);
   const [clock,setClock] = useState<number | null>(null);
   const eventRequests = useRef(0);
+  const rankRequests = useRef(0);
   const loadEvents = useCallback((force = false) => {
     const request = ++eventRequests.current;
     return fetchJsonCached<GameSnapshot<GameEvent[]>>("/api/game?kind=events", { staleMs: 60_000, force })
       .then(value => { if (request === eventRequests.current) { setEvents(value); setClock(Date.now()); setEventError(""); } })
       .catch(() => { if (request === eventRequests.current) setEventError("Game data temporarily unavailable"); });
   }, []);
+  const loadRankings = useCallback((force = false) => {
+    const request = ++rankRequests.current;
+    return fetchJsonCached<GameSnapshot<GameRanking[]>>(`/api/game?kind=${kind}&region=${region}`, { staleMs: 300_000, force })
+      .then(value => { if (request === rankRequests.current) { setRankings(value); setRankError(""); } })
+      .catch(() => { if (request === rankRequests.current) setRankError("Game data temporarily unavailable"); })
+      .finally(() => { if (request === rankRequests.current) setRankLoading(false); });
+  }, [kind,region]);
   useEffect(() => {
-    let active = true;
-    const load = async () => {
-      try { const value = await fetchJsonCached<GameSnapshot<GameRanking[]>>(`/api/game?kind=${kind}&region=${region}`, { staleMs: 300_000 }); if (active) { setRankings(value); setRankError(""); } }
-      catch { if (active) setRankError("Game data temporarily unavailable"); }
-    };
-    void load();
-    const timer = setInterval(() => { if (document.visibilityState === "visible") void load(); }, 300_000);
-    const visible = () => { if (document.visibilityState === "visible") void load(); };
+    const requests = rankRequests;
+    void loadRankings();
+    const timer = setInterval(() => { if (document.visibilityState === "visible") void loadRankings(); }, 300_000);
+    const visible = () => { if (document.visibilityState === "visible") void loadRankings(); };
     document.addEventListener("visibilitychange", visible);
-    return () => { active = false; clearInterval(timer); document.removeEventListener("visibilitychange", visible); };
-  }, [region,kind]);
+    return () => { requests.current++; clearInterval(timer); document.removeEventListener("visibilitychange", visible); };
+  }, [loadRankings]);
   useEffect(() => {
     void loadEvents();
     const requests = eventRequests;
@@ -76,7 +81,7 @@ export default function GamePage() {
         <label className="text-sm space-y-1"><span className="block">{t("Ranking")}</span><select value={kind} onChange={e => {setRankings(null);setRankError("");setKind(e.target.value as GameRankingKind);}} className="bg-background border rounded-md p-2"><option value="players">{t("Players")}</option><option value="clubs">{t("Clubs")}</option></select></label>
       </div>
       <p className="text-sm text-muted-foreground">{t("Top 50 · shared hourly update")}</p>
-      {rankError && <p role="alert" className="text-amber-500">{t(rankError)}</p>}
+      {rankError && <div role="alert" className="flex flex-wrap items-center gap-3 text-amber-500"><p>{t(rankError)}</p><Button variant="outline" disabled={rankLoading} onClick={() => { setRankLoading(true); void loadRankings(true); }}>{t("Retry")}</Button></div>}
       {!rankings && !rankError && <p role="status">{t("Loading...")}</p>}
       {rankings?.stale && <p className="text-amber-500">{t("Showing the last available update")}</p>}
       {rankings?.fetchedAt && <p className="text-sm text-muted-foreground">{t("Updated")}: {dateTime(rankings.fetchedAt)}</p>}

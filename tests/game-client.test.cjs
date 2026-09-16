@@ -46,3 +46,18 @@ test('a late failed game refresh does not replace a more recent successful event
   rejectOld(new Error('Old failure'));tree=await renderer.render(Page);
   assert.match(textContent(tree),/Fresh event fixture/);assert.doesNotMatch(textContent(tree),/Game data temporarily unavailable/);
 });
+
+test('failed rankings offer an immediate retry for the same selection with a pending state',async()=>{
+  const renderer=hookRenderer();let attempts=0,finish;const pending=new Promise(resolve=>{finish=resolve;});const calls=[];
+  const snapshot=data=>({data,fetchedAt:'2026-09-16T12:00:00Z',stale:false,refreshing:false});
+  const Page=loadTypeScript('src/app/game/page.tsx',{...componentMocks,react:renderer.react,'@/lib/client-data-cache':{fetchJsonCached:async(url,options)=>{
+    if(url.includes('events'))return snapshot([]);calls.push({url,options});if(++attempts===1)throw Error('Unavailable');return pending;
+  }}},{Date:FixedDate,document:{visibilityState:'visible',addEventListener(){},removeEventListener(){}},setInterval:()=>1,clearInterval(){}}).default;
+  let tree=await renderer.render(Page);assert.match(textContent(tree),/Game data temporarily unavailable/);
+  let retry=elements(tree).find(node=>node.type==='Button'&&textContent(node)==='Retry');assert.ok(retry,'Rankings need an immediate retry without switching filters or waiting five minutes');
+  retry.props.onClick();tree=await renderer.render(Page);
+  retry=elements(tree).find(node=>node.type==='Button'&&textContent(node)==='Retry');assert.equal(retry.props.disabled,true);
+  assert.equal(calls.length,2);assert.equal(calls[1].url,'/api/game?kind=players&region=global');assert.equal(calls[1].options.force,true);
+  finish(snapshot([{tag:'#PYLQ',name:'Recovered ranking',rank:1,trophies:1000,memberCount:null,clubName:null}]));tree=await renderer.render(Page);
+  assert.match(textContent(tree),/Recovered ranking/);assert.doesNotMatch(textContent(tree),/Game data temporarily unavailable/);
+});

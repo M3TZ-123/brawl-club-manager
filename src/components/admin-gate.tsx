@@ -21,7 +21,7 @@ export function AdminGate({
   description = "Sign in to manage your club settings and member reviews.",
 }: AdminGateProps) {
   const { t } = useI18n();
-  const { configured, isAdmin, isLoading, login } = useAdminSession();
+  const { configured, isAdmin, isLoading, checkError, login, refresh } = useAdminSession();
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -47,6 +47,18 @@ export function AdminGate({
         <div className="h-10 w-10 animate-spin rounded-full border-b-2 border-primary" />
       </div>
     );
+  }
+
+  if (checkError) {
+    return <div className="flex min-h-[60vh] items-center justify-center p-4">
+      <Card className="w-full max-w-md"><CardHeader>
+        <div className="mb-2 self-end"><LanguageSelector /></div>
+        <CardTitle><T text="Admin access unavailable" /></CardTitle>
+      </CardHeader><CardContent className="space-y-3">
+        <p role="alert" className="text-sm text-muted-foreground"><T text="Could not check admin access. Please try again." /></p>
+        <Button onClick={() => { void refresh(); }}><T text="Retry" /></Button>
+      </CardContent></Card>
+    </div>;
   }
 
   if (!configured) {

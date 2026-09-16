@@ -25,12 +25,10 @@ export function SetupWizard() {
   const [error, setError] = useState("");
 
   const {
-    setClubTag: saveClubTag,
-    setApiKey: saveApiKey,
-    setClubName,
-    setRequiredTrophies,
     saveSettingsToDB,
     loadSettingsFromDB,
+    isLoadingSettings,
+    settingsError,
   } = useAppStore();
 
   const handleVerifyClub = async () => {
@@ -50,13 +48,10 @@ export function SetupWizard() {
         throw new Error(data.error || "Failed to verify club");
       }
 
-      saveClubTag(clubTag);
-      saveApiKey(apiKey);
-      setClubName(data.clubName);
-      setRequiredTrophies(typeof data.requiredTrophies === "number" ? data.requiredTrophies : null);
-      
-      // Save to database
-      await saveSettingsToDB();
+      await saveSettingsToDB({
+        clubTag: data.clubTag || clubTag, apiKey, clubName: data.clubName,
+        requiredTrophies: typeof data.requiredTrophies === "number" ? data.requiredTrophies : null,
+      });
       setApiKey("");
       
       setStep(3);
@@ -94,6 +89,18 @@ export function SetupWizard() {
       setIsLoading(false);
     }
   };
+
+  if (settingsError || isLoadingSettings) {
+    return <div className="min-h-screen flex items-center justify-center bg-background p-4">
+      <div className="fixed end-4 top-4"><LanguageSelector /></div>
+      <Card className="w-full max-w-md"><CardContent className="space-y-3 pt-6">
+        {isLoadingSettings ? <p role="status"><T text="Loading..." /></p> : <>
+          <p role="alert"><T text="Could not load settings. Please try again." /></p>
+          <Button onClick={() => { void loadSettingsFromDB(true).catch(() => {}); }}><T text="Retry" /></Button>
+        </>}
+      </CardContent></Card>
+    </div>;
+  }
 
   return (
     <AdminGate
@@ -146,7 +153,7 @@ export function SetupWizard() {
               <Button
                 className="w-full"
                 onClick={() => setStep(2)}
-                disabled={!apiKey}
+                disabled={!apiKey.trim()}
               >
                 <T text=" Continue " /></Button>
             </>
@@ -176,12 +183,12 @@ export function SetupWizard() {
                 <p role="alert" className="text-sm text-destructive">{t(error)}</p>
               )}
               <div className="flex gap-2">
-                <Button variant="outline" onClick={() => setStep(1)}>
+                <Button variant="outline" onClick={() => setStep(1)} disabled={isLoading}>
                   <T text=" Back " /></Button>
                 <Button
                   className="flex-1"
                   onClick={handleVerifyClub}
-                  disabled={!clubTag || isLoading}
+                  disabled={!clubTag.trim() || isLoading}
                 >
                   {isLoading ? <T text="Verifying..." /> : <T text="Verify Club" />}
                 </Button>
@@ -195,7 +202,7 @@ export function SetupWizard() {
                 <CheckCircle className="h-16 w-16 text-green-500 mb-4" />
                 <p className="text-lg font-medium"><T text="Ready to Sync" /></p>
                 <p className="text-muted-foreground text-center">
-                  <T text=" Your club has been verified. Click below to start syncing data. " /></p>
+                  <T text="Your configuration is saved. Start syncing to load your club data." /></p>
               </div>
               <Button
                 className="w-full"

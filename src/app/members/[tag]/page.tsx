@@ -270,13 +270,17 @@ export default function MemberDetailPage({ params }: PageProps) {
 
   const getMemberBadge = () => {
     if (!memberHistory) return null;
-    
-    if (typeof memberHistory.times_joined === "number" && memberHistory.times_joined <= 1 && memberHistory.times_left === 0) {
-      return <Badge variant="success"><T text="No recorded departures" /></Badge>;
-    } else if (memberHistory.times_joined > 1) {
+    if (memberHistory.is_current_member === false) {
+      return <Badge variant="destructive"><T text="Former" /></Badge>;
+    }
+    if (memberHistory.is_current_member !== true) return null;
+    if (memberHistory.times_left > 0 || memberHistory.last_left_at) {
       return <Badge variant="warning"><T text="Returned" /></Badge>;
     }
-    return null;
+    if (typeof memberHistory.times_joined === "number" && memberHistory.times_joined <= 1 && memberHistory.times_left === 0) {
+      return <Badge variant="success"><T text="No recorded departures" /></Badge>;
+    }
+    return <Badge variant="outline"><T text="Current" /></Badge>;
   };
 
   const trophyObservations = useMemo(() => activityHistory.map(log => ({ recordedAt: log.recorded_at, trophies: log.trophies })), [activityHistory]);
@@ -355,7 +359,7 @@ export default function MemberDetailPage({ params }: PageProps) {
 
                     </div>
                   </div>
-                  <MemberReviewButton member={member} initialRange={selectedRange} />
+                  <MemberReviewButton member={{ ...memberHistory, ...member }} initialRange={selectedRange} />
                   {isAdmin && <Button onClick={handleRefresh} disabled={isRefreshing}>
                     <RefreshCw className={`h-4 w-4 mr-2 ${isRefreshing ? "animate-spin" : ""}`} />
                     <T text="Refresh Stats" />
@@ -366,7 +370,8 @@ export default function MemberDetailPage({ params }: PageProps) {
 
             {loadError && <div role="alert" className="rounded-lg border border-destructive/30 p-3 text-sm"><T text="Could not load this member." /> <Button variant="ghost" onClick={() => loadMemberData(true)}><T text="Retry" /></Button></div>}
             {refreshError && <p role="alert" className="text-sm text-destructive"><T text={refreshError} /></p>}
-            <h2 className="text-lg font-semibold"><T text="Current account" /></h2>
+            <h2 className="text-lg font-semibold"><T text={memberHistory?.is_current_member === false ? "Stored account snapshot" : "Current account"} /></h2>
+            {memberHistory?.is_current_member === false && <p className="text-sm text-muted-foreground"><T text="This former member's account details come from the latest stored profile." /></p>}
             {/* Stats Grid */}
             <div className="grid gap-4 md:grid-cols-3">
               <Card>
@@ -423,7 +428,7 @@ export default function MemberDetailPage({ params }: PageProps) {
             <PlayerProgress playerTag={member.player_tag} range={selectedRange} />
 
             <details className="rounded-lg border p-4">
-              <summary className="cursor-pointer font-semibold"><T text="Lifetime victories and current brawlers" /></summary>
+              <summary className="cursor-pointer font-semibold"><T text={memberHistory?.is_current_member === false ? "Lifetime victories and stored brawlers" : "Lifetime victories and current brawlers"} /></summary>
               <div className="mt-4 space-y-4">
             {/* Victories Breakdown */}
             <div className="grid gap-4 md:grid-cols-3">

@@ -136,17 +136,19 @@ const Podium = memo(function Podium({
   members,
   formatValue,
   subtitle,
+  emptyText,
 }: {
   members: LeaderboardMember[];
   formatValue: (m: LeaderboardMember) => string;
   subtitle?: (m: LeaderboardMember) => string;
+  emptyText: string;
 }) {
   const top3 = useMemo(() => members.slice(0, 3), [members]);
 
   if (top3.length === 0) {
     return (
       <p className="text-center text-muted-foreground py-8">
-        <T text=" No tracked data available yet. Run Sync Now or wait for the next automatic update. " /></p>
+        <T text={emptyText} /></p>
     );
   }
 
@@ -314,9 +316,10 @@ function useCategories() {
     help: () => t("Based on recorded battles in this period."),
     formatValue: (m: LeaderboardMember) => m.weekly.battles.toString(),
     subtitle: (m: LeaderboardMember) => {
-      const draws = m.weekly.battles - m.weekly.wins - m.weekly.losses;
-      return t(draws > 0 ? "{wins} wins · {losses} losses · {draws} draws" : "{wins} wins · {losses} losses", {
-        wins: formatNumber(m.weekly.wins), losses: formatNumber(m.weekly.losses), draws: formatNumber(draws),
+      // The summary does not distinguish explicit draws from unknown results.
+      const other = Math.max(0, m.weekly.battles - m.weekly.wins - m.weekly.losses);
+      return t(other > 0 ? "{wins} wins · {losses} losses · {other} other results" : "{wins} wins · {losses} losses", {
+        wins: formatNumber(m.weekly.wins), losses: formatNumber(m.weekly.losses), other: formatNumber(other),
       });
     },
     columns: [
@@ -493,6 +496,7 @@ export default function LeaderboardPage() {
                 value={searchQuery}
                 onChange={(event) => setSearchQuery(event.target.value)}
                 placeholder={t("Search player or tag")}
+                aria-label={t("Search player or tag")}
                 className="h-10 w-full rounded-md border border-border bg-background ps-9 pe-3 text-sm outline-none transition-colors placeholder:text-muted-foreground focus:border-primary"
               />
             </div>
@@ -601,6 +605,7 @@ export default function LeaderboardPage() {
                         members={data}
                         formatValue={cat.formatValue}
                         subtitle={cat.subtitle}
+                        emptyText={rawData.length > 0 ? "No members match these filters." : cat.key === "trophyLeaders" ? "No current members found." : "No recorded results for this period."}
                       />
                       <LeaderboardTable members={data} columns={cat.columns} />
                     </CardContent>

@@ -6,7 +6,8 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { LayoutWrapper } from "@/components/layout-wrapper";
 import { TimeRangePicker } from "@/components/time-range-picker";
 import { type TimeRangeKey } from "@/lib/time-range";
-import { fetchJsonCached, invalidateJsonCache } from "@/lib/client-data-cache";
+import { invalidateJsonCache } from "@/lib/client-data-cache";
+import { fetchJsonWithTimeout } from "@/lib/client-fetch";
 import { useAdminSession } from "@/hooks/use-admin-session";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -29,56 +30,85 @@ import { Search, UserPlus, UserMinus, Pencil, Check, X, Trash2 } from "lucide-re
 export default function HistoryPage() {
   const { number } = useI18n();
   const { t } = useI18n();
-  const { isAdmin } = useAdminSession();
+  const { isAdmin, isLoading: sessionLoading } = useAdminSession();
   const [history, setHistory] = useState<MemberHistory[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState("");
   const [filter, setFilter] = useState<"all" | "current" | "former">("all");
   const [timeRange, setTimeRange] = useState<TimeRangeKey | "all">("7d");
   const [loadError, setLoadError] = useState(false);
-  const [noteError, setNoteError] = useState(false);
+  const [noteError, setNoteError] = useState("");
+  const [sessionRevision, setSessionRevision] = useState(0);
   const loadSequence = useRef(0);
-  const [noteEditor, setNoteEditor] = useState<{ tag: string; note: string } | null>(null);
+  const readController = useRef<AbortController | null>(null);
+  const writeController = useRef<AbortController | null>(null);
+  const authBlocked = useRef(!isAdmin);
+  const mounted = useRef(false);
+  const [noteEditor, setNoteEditor] = useState<{ tag: string; note: string; updatedAt: string | null } | null>(null);
   const editingTag = noteEditor?.tag ?? null;
   const editingNote = noteEditor?.note ?? "";
   const [savingNote, setSavingNote] = useState(false);
   const noteSaveInFlight = useRef(false);
   const [reviewMember, setReviewMember] = useState<MemberHistory | null>(null);
+  const cancelRead = useCallback(() => { loadSequence.current++; readController.current?.abort(); }, []);
 
-  const loadHistory = useCallback(async (force = false) => {
+  const loadHistory = useCallback(async () => {
     const sequence = ++loadSequence.current;
+    readController.current?.abort();
+    const controller = new AbortController();
+    readController.current = controller;
     setIsLoading(true);
     setLoadError(false);
     try {
       const query = `?range=${timeRange}`;
-      const data = await fetchJsonCached<{ history?: MemberHistory[] }>(`/api/history${query}`, {
-        staleMs: 30_000,
-        force,
+      const data = await fetchJsonWithTimeout<{ history?: MemberHistory[] }>(`/api/history${query}`, {
+        cache: "no-store", signal: controller.signal,
       });
-      if (sequence !== loadSequence.current) return;
+      if (controller.signal.aborted || sequence !== loadSequence.current) return;
       setHistory(data.history || []);
     } catch (error) {
-      if (sequence !== loadSequence.current) return;
+      if (controller.signal.aborted || sequence !== loadSequence.current) return;
       setLoadError(true);
       setHistory([]);
       console.error("Error loading history:", error);
     } finally {
-      if (sequence === loadSequence.current) setIsLoading(false);
+      if (!controller.signal.aborted && sequence === loadSequence.current) setIsLoading(false);
     }
   }, [timeRange]);
 
   useEffect(() => {
-    loadHistory(true);
-  }, [loadHistory, isAdmin]);
+    mounted.current = true;
+    const resetSession = () => {
+      authBlocked.current = true;
+      cancelRead();
+      writeController.current?.abort();
+      noteSaveInFlight.current = false;
+      setHistory([]); setNoteEditor(null); setReviewMember(null); setNoteError(""); setSavingNote(false);
+      setSessionRevision(value => value + 1);
+    };
+    window.addEventListener("admin-session-changed", resetSession);
+    return () => {
+      mounted.current = false; authBlocked.current = true;
+      cancelRead(); writeController.current?.abort();
+      window.removeEventListener("admin-session-changed", resetSession);
+    };
+  }, [cancelRead]);
+
+  useEffect(() => {
+    if (sessionLoading) return;
+    authBlocked.current = !isAdmin;
+    void loadHistory();
+    return cancelRead;
+  }, [loadHistory, isAdmin, sessionLoading, sessionRevision, cancelRead]);
 
   useEffect(() => {
     const handleClubDataUpdated = () => {
-      loadHistory(true);
+      if (!sessionLoading) void loadHistory();
     };
     window.addEventListener("club-data-updated", handleClubDataUpdated);
     window.addEventListener("member-reviews-updated", handleClubDataUpdated);
     return () => { window.removeEventListener("club-data-updated", handleClubDataUpdated); window.removeEventListener("member-reviews-updated", handleClubDataUpdated); };
-  }, [loadHistory]);
+  }, [loadHistory, sessionLoading]);
 
   const filteredHistory = useMemo(() => {
     let filtered = [...history];
@@ -112,9 +142,10 @@ export default function HistoryPage() {
     return <Badge variant="success"><T text="Current" /></Badge>;
   };
 
-  const startEditingNote = (playerTag: string, currentNote: string | null) => {
-    if (!isAdmin) return;
-    setNoteEditor({ tag: playerTag, note: currentNote || "" });
+  const startEditingNote = (member: MemberHistory) => {
+    if (!isAdmin || authBlocked.current) return;
+    setNoteError("");
+    setNoteEditor({ tag: member.player_tag, note: member.notes || "", updatedAt: member.review_updated_at ?? null });
   };
 
   const cancelEditingNote = () => {
@@ -122,34 +153,41 @@ export default function HistoryPage() {
   };
 
   const saveNote = async (playerTag: string, value = editingNote) => {
-    if (!isAdmin || noteSaveInFlight.current) return;
+    if (!isAdmin || sessionLoading || authBlocked.current || !mounted.current || noteSaveInFlight.current) return;
+    const controller = new AbortController();
+    writeController.current = controller;
     noteSaveInFlight.current = true;
-    setNoteError(false);
+    setNoteError("");
     try {
       setSavingNote(true);
-      const response = await fetch("/api/history", {
+      const expectedUpdatedAt = noteEditor?.tag === playerTag ? noteEditor.updatedAt : history.find(member => member.player_tag === playerTag)?.review_updated_at ?? null;
+      const data = await fetchJsonWithTimeout<{ review: { notes: string | null; updated_at: string } }>("/api/history", {
         method: "PATCH",
+        signal: controller.signal,
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ player_tag: playerTag, notes: value.trim() }),
+        body: JSON.stringify({ player_tag: playerTag, notes: value.trim(), expected_updated_at: expectedUpdatedAt }),
       });
-      if (!response.ok) throw new Error("Note update failed");
-      if (response.ok) {
+      if (!controller.signal.aborted && mounted.current) {
         invalidateJsonCache("/api/history");
         setHistory((prev) =>
           prev.map((h) =>
-            h.player_tag === playerTag ? { ...h, notes: value.trim() || null } : h
+            h.player_tag === playerTag ? { ...h, notes: data.review.notes, review_updated_at: data.review.updated_at } : h
           )
         );
         // A delayed save must not close a different member's editor, or erase
         // further typing in the same editor while that save was in flight.
-        setNoteEditor(current => current?.tag === playerTag && current.note.trim() === value.trim() ? null : current);
+        setNoteEditor(current => current?.tag !== playerTag ? current : current.note.trim() === value.trim() ? null : { ...current, updatedAt: data.review.updated_at });
+        window.dispatchEvent(new CustomEvent("member-reviews-updated"));
       }
     } catch (error) {
-      setNoteError(true);
+      if (controller.signal.aborted || !mounted.current) return;
+      setNoteError(error instanceof Error && error.message === "Review changed. Reload before saving."
+        ? "This note changed elsewhere. Your draft is preserved. Open Member notes to review the latest saved note."
+        : "Could not save the note. Your changes are still available to retry.");
       console.error("Error saving note:", error);
     } finally {
-      noteSaveInFlight.current = false;
-      setSavingNote(false);
+      if (writeController.current === controller) noteSaveInFlight.current = false;
+      if (!controller.signal.aborted && mounted.current) setSavingNote(false);
     }
   };
 
@@ -164,8 +202,10 @@ export default function HistoryPage() {
           <div><h1 className="text-2xl font-bold"><T text="Member History" /></h1><p className="mt-1 text-sm text-muted-foreground"><T text="Membership records matching this period" /></p></div>
           <TimeRangePicker value={timeRange} onChange={range => { if (range !== timeRange) { setIsLoading(true); setTimeRange(range); } }} includeAll />
         </div>
-        {loadError && <div role="alert" className="rounded-lg border border-destructive/40 p-4 text-sm"><T text="Could not load member history." /> <Button variant="ghost" onClick={() => loadHistory(true)}><T text="Retry" /></Button></div>}
-        {noteError && <p role="alert" className="text-sm text-destructive"><T text="Could not save the note. Your changes are still available to retry." /></p>}
+        <p className="text-sm text-muted-foreground"><T text="Private member notes can record why someone left or was removed. These reasons are entered by administrators." /></p>
+        {!isAdmin && <p className="text-sm"><Link href="/reviews" className="text-primary underline"><T text="Sign in to view or add member notes" /></Link></p>}
+        {loadError && <div role="alert" className="rounded-lg border border-destructive/40 p-4 text-sm"><T text="Could not load member history." /> <Button variant="ghost" onClick={() => loadHistory()}><T text="Retry" /></Button></div>}
+        {isAdmin && noteError && <p role="alert" className="text-sm text-destructive"><T text={noteError} /></p>}
         {/* Stats */}
         <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
           <Card>
@@ -255,13 +295,13 @@ export default function HistoryPage() {
                         <TableHead className="hidden lg:table-cell"><T text="Trophies At Leave" /></TableHead>
                         <TableHead className="text-center"><T text="Joined" /></TableHead>
                         <TableHead className="text-center"><T text="Left" /></TableHead>
-                        {isAdmin && <TableHead className="hidden md:table-cell"><T text="Notes" /></TableHead>}
+                        <TableHead><T text="Member notes" /></TableHead>
                       </TableRow>
                     </TableHeader>
                     <TableBody>
                       {filteredHistory.length === 0 ? (
                         <TableRow>
-                          <TableCell colSpan={isAdmin ? 9 : 8} className="text-center py-8 text-muted-foreground">
+                          <TableCell colSpan={9} className="text-center py-8 text-muted-foreground">
                             <T text=" No member history found " /></TableCell>
                         </TableRow>
                       ) : (
@@ -300,13 +340,16 @@ export default function HistoryPage() {
                                 {h.times_left == null ? t("Unknown") : number(h.times_left)}
                               </span>
                             </TableCell>
-                            {isAdmin && <TableCell className="hidden md:table-cell max-w-[200px]">
+                            <TableCell className="max-w-[240px]">
+                              {isAdmin ? <div className="space-y-2"><Button variant="outline" size="sm" onClick={() => setReviewMember(h)}><T text="Member notes" /></Button>
                               {editingTag === h.player_tag ? (
                                 <div className="flex items-center gap-1">
                                   <Input
                                     value={editingNote}
                                     onChange={(e) => setNoteEditor(current => current ? { ...current, note: e.target.value } : current)}
                                     placeholder={t("Add a note...")}
+                                    aria-label={t("Member notes")}
+                                    maxLength={1000}
                                     className="h-8 text-sm"
                                     autoFocus
                                     onKeyDown={(e) => {
@@ -335,9 +378,10 @@ export default function HistoryPage() {
                                   </Button>
                                 </div>
                               ) : (
-                                <div
-                                  className={`flex items-center gap-1 group ${isAdmin ? "cursor-pointer" : ""}`}
-                                  onClick={() => startEditingNote(h.player_tag, h.notes)}
+                                <div className="flex items-center gap-1 group">
+                                  <button
+                                  className="flex min-w-0 items-center gap-1 text-start"
+                                  onClick={() => startEditingNote(h)}
                                   title={t("Click to edit note")}
                                 >
                                   <span className="text-muted-foreground truncate">
@@ -346,6 +390,7 @@ export default function HistoryPage() {
                                   {isAdmin && (
                                     <Pencil className="h-3 w-3 text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity shrink-0" />
                                   )}
+                                  </button>
                                   {h.notes && isAdmin && (
                                     <button
                                       className="h-5 w-5 flex items-center justify-center rounded hover:bg-destructive/20 opacity-0 group-hover:opacity-100 transition-opacity shrink-0"
@@ -361,7 +406,8 @@ export default function HistoryPage() {
                                   )}
                                 </div>
                               )}
-                            </TableCell>}
+                              </div> : <Button asChild variant="outline" size="sm"><Link href={`/reviews?member=${encodeURIComponent(h.player_tag)}`}><T text="Sign in for member notes" /></Link></Button>}
+                            </TableCell>
                           </TableRow>
                         ))
                       )}
@@ -398,7 +444,7 @@ export default function HistoryPage() {
               </CardContent>
             </Card>
           </div>
-      {isAdmin && reviewMember && <MemberReviewSheet member={reviewMember} open onOpenChange={open => { if (!open) setReviewMember(null); }} />}
+      {isAdmin && reviewMember && <MemberReviewSheet key={reviewMember.player_tag} member={reviewMember} open onOpenChange={open => { if (!open) setReviewMember(null); }} />}
     </LayoutWrapper>
   );
 }

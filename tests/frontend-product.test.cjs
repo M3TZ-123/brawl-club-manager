@@ -170,7 +170,8 @@ test("mobile history expands dates and departure snapshots while keeping private
   const render = () => renderer.render(() => HistoryMemberCard({ member, isAdmin: admin, onReview() {} }));
   let tree = await render();
   assert.equal(elements(tree).some(e => e.type === "MembershipTimeline"), false);
-  tree.props.onToggle({ currentTarget: { open: true } });
+  assert.ok(elements(tree).some(e => e.type === "Link" && e.props.href === "/reviews?member=%23ABC"), "Visitors can find the sign-in link before expanding details");
+  elements(tree).find(e => e.type === "details").props.onToggle({ currentTarget: { open: true } });
   tree = await render();
   assert.match(textContent(tree), /First observed/);
   assert.match(textContent(tree), /12,345/);
@@ -179,6 +180,10 @@ test("mobile history expands dates and departure snapshots while keeping private
   admin = true; tree = await render();
   assert.match(textContent(tree), /Private fixture/);
   assert.equal(elements(tree).some(e => e.type === "MembershipTimeline"), true);
+  elements(tree).find(e => e.type === "details").props.onToggle({ currentTarget: { open: false } });
+  tree = await render();
+  assert.ok(action(tree, "Member notes"), "Administrators can open notes without expanding membership details");
+  assert.equal(elements(elements(tree).find(e => e.type === "details")).some(e => e.props?.onClick && textContent(e) === "Member notes"), false);
 });
 
 test("timeline preserves provenance, missing snapshots and opaque pagination cursor", async () => {

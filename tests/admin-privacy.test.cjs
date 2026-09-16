@@ -18,28 +18,36 @@ function request(path, { admin = false, body, origin } = {}) {
   });
 }
 
-function fixture(overrides = {}) {
+function fixture(overrides = {}, beforeWrite) {
   const tables = {
     member_history: [{ player_tag: "#PLAYER", player_name: "Member", notes: "Legacy private note", first_seen: "2026-09-01T00:00:00Z" }],
     member_reviews: [{ player_tag: "#PLAYER", status: "follow_up", follow_up_at: "2026-10-01T00:00:00.000Z", notes: "Current private note", updated_at: "2026-09-15T00:00:00Z" }],
     ...overrides,
   };
   const calls = [];
+  let revisions = 0;
   const read = readOnlyDatabase(tables);
   const database = {
     from(table) {
       calls.push(table);
       const query = read.from(table);
-      query.upsert = values => {
+      const mutation = (mode, values) => {
         assert.equal(table, "member_reviews", "Legacy notes must never be edited by review API");
-        let row = tables.member_reviews.find(row => row.player_tag === values.player_tag);
-        if (!row) {
-          row = { status: "pending", follow_up_at: null, notes: null };
-          tables.member_reviews.push(row);
-        }
-        Object.assign(row, values, { updated_at: "2026-09-16T00:00:00.000Z" });
-        return { select: () => ({ single: async () => ({ data: { ...row }, error: null }) }) };
+        const filters=[];
+        const execute=async()=>{
+          beforeWrite?.({mode,values,tables,filters});
+          let row = tables.member_reviews.find(row => mode==='update'?filters.every(([key,value])=>row[key]===value):row.player_tag === values.player_tag);
+          if(mode==='update'&&!row)return{data:null,error:null};
+          if(mode==='insert'&&row)return{data:null,error:{code:'23505',message:'duplicate private row'}};
+          if (!row) { row = { status: "pending", follow_up_at: null, notes: null }; tables.member_reviews.push(row); }
+          Object.assign(row, values, { updated_at: `2026-09-16T00:00:00.${String(++revisions).padStart(6,'0')}+00:00` });
+          return {data:{...row},error:null};
+        };
+        const chain={eq:(key,value)=>{filters.push([key,value]);return chain;},select:()=>chain,single:execute,maybeSingle:execute};return chain;
       };
+      query.upsert = values => mutation('upsert',values);
+      query.update = values => mutation('update',values);
+      query.insert = values => mutation('insert',values);
       return query;
     },
   };
@@ -57,16 +65,22 @@ test("public history excludes private and legacy notes even if a database query 
   assert.equal(history[0].player_name, "Member");
   assert.equal(Object.hasOwn(history[0], "notes"), false);
   assert.equal(Object.hasOwn(history[0], "review_status"), false);
+  assert.equal(Object.hasOwn(history[0], "review_updated_at"), false);
   assert.deepEqual(f.calls, ["member_history"]);
 });
 
 test("authenticated history uses current private notes and review state", async () => {
   const f = fixture();
+  f.tables.member_reviews[0].updated_at = "2026-09-16T00:00:00.123456+00:00";
+  f.tables.member_history.push({ player_tag: "#UNREVIEWED", player_name: "No saved review" });
   const response = await f.load("src/app/api/history/route.ts").GET(request("/api/history?days=all", { admin: true }));
   const { history } = await response.json();
-  assert.equal(history[0].notes, "Current private note");
-  assert.equal(history[0].review_status, "follow_up");
-  assert.equal(history[0].follow_up_at, "2026-10-01T00:00:00.000Z");
+  const reviewed = history.find(row => row.player_tag === "#PLAYER");
+  assert.equal(reviewed.notes, "Current private note");
+  assert.equal(reviewed.review_status, "follow_up");
+  assert.equal(reviewed.follow_up_at, "2026-10-01T00:00:00.000Z");
+  assert.equal(reviewed.review_updated_at, "2026-09-16T00:00:00.123456+00:00");
+  assert.equal(history.find(row => row.player_tag === "#UNREVIEWED").review_updated_at, null);
   assert.equal(response.headers.get("cache-control"), "no-store");
 });
 
@@ -123,6 +137,90 @@ test("review edits preserve unspecified fields and compatible history notes neve
   assert.equal(changed.follow_up_at, null);
 });
 
+test("history notes propagate exact revisions and reject stale or insert-only writes without losing saved notes", async () => {
+  const f = fixture();
+  const revision = "2026-09-16T00:00:00.123457+00:00";
+  f.tables.member_reviews[0].updated_at = revision;
+  const route = f.load("src/app/api/history/route.ts");
+  for (const expected_updated_at of ["2026-09-16T00:00:00.123456+00:00", null]) {
+    const response = await route.PATCH(request("/api/history", {
+      admin: true, body: { player_tag: "#PLAYER", notes: "Stale draft", expected_updated_at },
+    }));
+    assert.equal(response.status, 409);
+    assert.deepEqual(await response.json(), { error: "Review changed. Reload before saving." });
+    assert.equal(response.headers.get("cache-control"), "no-store");
+    assert.equal(response.headers.get("vary"), "Cookie");
+    assert.equal(f.tables.member_reviews[0].notes, "Current private note");
+  }
+  const saved = await route.PATCH(request("/api/history", {
+    admin: true, body: { player_tag: "#PLAYER", notes: "Checked edit", expected_updated_at: revision },
+  }));
+  assert.equal(saved.status, 200);
+  const { review } = await saved.json();
+  assert.equal(review.updated_at, "2026-09-16T00:00:00.000001+00:00");
+  assert.equal(review.notes, "Checked edit");
+  assert.equal(review.status, "follow_up");
+  assert.equal(review.follow_up_at, "2026-10-01T00:00:00.000Z");
+  assert.equal(f.tables.member_history[0].notes, "Legacy private note");
+  const absent = fixture({ member_reviews: [] });
+  const inserted = await absent.load("src/app/api/history/route.ts").PATCH(request("/api/history", {
+    admin: true, body: { player_tag: "#PLAYER", notes: "First note", expected_updated_at: null },
+  }));
+  assert.equal(inserted.status, 200);
+  assert.equal((await inserted.json()).review.notes, "First note");
+});
+
+test("history note writes enforce session and origin before inspecting revisions or private storage", async () => {
+  const f = fixture();
+  const route = f.load("src/app/api/history/route.ts");
+  const body = { player_tag: "#PLAYER", notes: "Unauthorized", expected_updated_at: null };
+  for (const [options, status] of [[{ body }, 401], [{ body, admin: true, origin: "https://attacker.example" }, 403]]) {
+    const response = await route.PATCH(request("/api/history", options));
+    assert.equal(response.status, status);
+    assert.equal(response.headers.get("cache-control"), "no-store");
+    assert.equal(response.headers.get("vary"), "Cookie");
+  }
+  assert.deepEqual(f.calls, []);
+  assert.equal(f.tables.member_reviews[0].notes, "Current private note");
+});
+
+test("review saves compare full microsecond revisions and stale drafts cannot overwrite newer notes", async () => {
+  const f=fixture();f.tables.member_reviews[0].updated_at='2026-09-16T00:00:00.123457+00:00';
+  const route=f.load('src/app/api/member-reviews/route.ts');
+  const stale=await route.PATCH(request('/api/member-reviews',{admin:true,body:{player_tag:'#PLAYER',notes:'Old draft',expected_updated_at:'2026-09-16T00:00:00.123456+00:00'}}));
+  assert.equal(stale.status,409);assert.deepEqual(await stale.json(),{error:'Review changed. Reload before saving.'});
+  assert.equal(f.tables.member_reviews[0].notes,'Current private note');
+  const saved=await route.PATCH(request('/api/member-reviews',{admin:true,body:{player_tag:'#PLAYER',notes:'My checked edit',expected_updated_at:'2026-09-16T00:00:00.123457+00:00'}}));
+  assert.equal(saved.status,200);const {review}=await saved.json();assert.equal(review.updated_at,'2026-09-16T00:00:00.000001+00:00');
+  assert.equal(review.notes,'My checked edit');assert.equal(review.status,'follow_up');assert.equal(review.follow_up_at,'2026-10-01T00:00:00.000Z');
+});
+
+test("an absent review revision permits insert only and a concurrent first note is preserved", async () => {
+  const f=fixture({member_reviews:[]});const route=f.load('src/app/api/member-reviews/route.ts');
+  const body={player_tag:'#PLAYER',notes:'First note',expected_updated_at:null};
+  const first=await route.PATCH(request('/api/member-reviews',{admin:true,body}));assert.equal(first.status,200);assert.equal((await first.json()).review.status,'pending');
+  const second=await route.PATCH(request('/api/member-reviews',{admin:true,body:{...body,notes:'Stale empty draft'}}));assert.equal(second.status,409);
+  assert.equal(f.tables.member_reviews[0].notes,'First note');assert.equal(f.tables.member_reviews.length,1);
+  const race=fixture({member_reviews:[]},({tables})=>tables.member_reviews.push({player_tag:'#PLAYER',notes:'Concurrent first note',status:'reviewed',follow_up_at:null,updated_at:'2026-09-16T00:00:00.111111Z'}));
+  const conflict=await race.load('src/app/api/member-reviews/route.ts').PATCH(request('/api/member-reviews',{admin:true,body}));
+  assert.equal(conflict.status,409);assert.equal(race.tables.member_reviews[0].notes,'Concurrent first note');
+});
+
+test("older clients without a revision still use a conditional baseline and cannot overwrite an in-flight admin update", async () => {
+  const f=fixture({},({tables})=>Object.assign(tables.member_reviews[0],{notes:'Other administrator',updated_at:'2026-09-16T00:00:00.654321Z'}));
+  const response=await f.load('src/app/api/member-reviews/route.ts').PATCH(request('/api/member-reviews',{admin:true,body:{player_tag:'#PLAYER',notes:'Legacy draft'}}));
+  assert.equal(response.status,409);assert.equal(f.tables.member_reviews[0].notes,'Other administrator');
+});
+
+test("private review DTOs exclude future fields and preserve original timestamp precision", async () => {
+  const f=fixture();Object.assign(f.tables.member_reviews[0],{updated_at:'2026-09-16T00:00:00.123456+00:00',private_future:'UNRELATED_PRIVATE_VALUE'});
+  const route=f.load('src/app/api/member-reviews/route.ts');
+  const response=await route.GET(request('/api/member-reviews?player_tag=%23PLAYER',{admin:true}));const body=await response.json();
+  assert.equal(body.review.updated_at,'2026-09-16T00:00:00.123456+00:00');assert.doesNotMatch(JSON.stringify(body),/private_future|UNRELATED_PRIVATE_VALUE/);
+  const saved=await route.PATCH(request('/api/member-reviews',{admin:true,body:{player_tag:'#PLAYER',notes:'updated',expected_updated_at:body.review.updated_at}}));
+  assert.equal(saved.status,200);assert.doesNotMatch(JSON.stringify(await saved.json()),/private_future|UNRELATED_PRIVATE_VALUE/);
+});
+
 test("review validation rejects unsupported status, missing date, invalid notes, and unknown players", async () => {
   const f = fixture();
   const route = f.load("src/app/api/member-reviews/route.ts");
@@ -133,6 +231,7 @@ test("review validation rejects unsupported status, missing date, invalid notes,
     { player_tag: "#PLAYER", status: "pending", follow_up_at: "2026-10-01T00:00:00Z" },
     { player_tag: "#PLAYER", follow_up_at: null }, { player_tag: "#PLAYER", notes: "x".repeat(1001) },
     { player_tag: "#PLAYER", notes: false }, { player_tag: "#PLAYER", notes: "ok", admin: true },
+    ...[1,{},'', 'invalid', '2026-02-30T00:00:00Z', '2026-09-16T00:00:00'].map(expected_updated_at=>({player_tag:'#PLAYER',notes:'ok',expected_updated_at})),
   ]) {
     const response = await route.PATCH(request("/api/member-reviews", { admin: true, body }));
     assert.equal(response.status, 400, JSON.stringify(body));

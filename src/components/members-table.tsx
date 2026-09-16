@@ -417,7 +417,7 @@ export const MembersTable = memo(function MembersTable({
                           copyToClipboard(member.player_tag);
                         }}
                         className="rounded p-1 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
-                        aria-label={`Copy tag ${member.player_tag}`}
+                        aria-label={t("Copy tag {tag}", { tag: member.player_tag })}
                       >
                         {copiedTag === member.player_tag ? <Check className="h-3.5 w-3.5 text-green-500" /> : <Copy className="h-3.5 w-3.5" />}
                       </button>
@@ -428,7 +428,7 @@ export const MembersTable = memo(function MembersTable({
                   href={`/members/${encodeURIComponent(member.player_tag)}`}
                   onClick={(event) => event.stopPropagation()}
                   className="rounded p-2 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
-                  aria-label={`Open ${member.player_name} profile`}
+                  aria-label={t("Open {name} profile", { name: member.player_name })}
                 >
                   <ExternalLink className="h-4 w-4" />
                 </Link>
@@ -548,7 +548,7 @@ export const MembersTable = memo(function MembersTable({
                                 copyToClipboard(member.player_tag);
                               }}
                               className="rounded p-1 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
-                              aria-label={`Copy tag ${member.player_tag}`}
+                              aria-label={t("Copy tag {tag}", { tag: member.player_tag })}
                             >
                               {copiedTag === member.player_tag ? <Check className="h-3.5 w-3.5 text-green-500" /> : <Copy className="h-3.5 w-3.5" />}
                             </button>
@@ -556,7 +556,7 @@ export const MembersTable = memo(function MembersTable({
                               href={`/members/${encodeURIComponent(member.player_tag)}`}
                               onClick={(event) => event.stopPropagation()}
                               className="rounded p-1 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
-                              aria-label={`Open ${member.player_name} profile`}
+                              aria-label={t("Open {name} profile", { name: member.player_name })}
                             >
                               <ExternalLink className="h-3.5 w-3.5" />
                             </Link>

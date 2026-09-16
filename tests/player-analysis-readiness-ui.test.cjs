@@ -107,6 +107,14 @@ test("analysis keeps teammate counts separate from participations and preserves 
   assert.equal(elements(tree).filter(node => node.type === "Link").length, 2);
 });
 
+test("analysis rounds recorded duration across minute boundaries without displaying sixty seconds", async () => {
+  const page = harness("src/app/analysis/page.tsx", analysis({summary:stats({durationObservations:10,recordedDurationSeconds:1199,averageDurationSeconds:119.9})}), {name:"AnalysisContent"});
+  const tree = await page.render();
+  assert.match(textContent(tree), /Recorded match duration19 min 59 sec/);
+  assert.match(textContent(tree), /Average recorded duration.*2 min 0 sec/);
+  assert.doesNotMatch(textContent(tree), /1 min 60 sec/);
+});
+
 test("readiness filters are current snapshots, pagination preserves filters and deduplicates player-brawler rows", async () => {
   const page = harness("src/app/readiness/page.tsx", params => params.has("offset") ? readiness({ rows: [row(), row(16000001)], nextOffset: null, total: 2 }) : readiness({ nextOffset: 24, total: 2 }));
   let tree = await page.render();
@@ -132,6 +140,19 @@ test("readiness discards an in-flight old page when a filter changes", async () 
   control(tree, "readiness-power").props.onChange({ target: { value: "11" } }); tree = await page.render();
   next.resolve(readiness({ rows: [row(999)], nextOffset: null })); await pending; tree = await page.render();
   assert.match(textContent(tree), /Brawler 16000011/); assert.doesNotMatch(textContent(tree), /Brawler 999/);
+});
+
+test("readiness keeps a failed page retryable but clears its obsolete error after a new first-page response", async () => {
+  let reads=0;
+  const page = harness("src/app/readiness/page.tsx", params => {
+    if(params.has("offset"))return Promise.reject(new Error("Page unavailable"));
+    return ++reads===1?readiness({nextOffset:24,total:2}):readiness({rows:[row(16000001)],nextOffset:null});
+  });
+  let tree=await page.render();await action(tree,"Load more results")();tree=await page.render();
+  assert.match(textContent(tree),/More readiness results could not be loaded/);
+  assert.ok(action(tree,"Load more results"),"The failed boundary is still retryable");
+  page.window.dispatchEvent({type:"club-data-updated",detail:{datasets:["roster"]}});tree=await page.render();
+  assert.match(textContent(tree),/Brawler 16000001/);assert.doesNotMatch(textContent(tree),/More readiness results could not be loaded/);
 });
 
 test("reported equipment distinguishes missing, explicit empty, numeric IDs and partial Buffies", () => {

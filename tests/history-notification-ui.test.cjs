@@ -26,7 +26,7 @@ test("mobile history preserves unknown versus zero membership counters in Englis
     });
     let member = { ...historyMember("#A", null), times_left: 0 };
     const render = () => renderer.render(() => HistoryMemberCard({ member, isAdmin: false, onReview() {} }));
-    let tree = await render(); tree.props.onToggle({ currentTarget: { open: true } }); tree = await render();
+    let tree = await render(); elements(tree).find(element => element.type === "details").props.onToggle({ currentTarget: { open: true } }); tree = await render();
     assert.equal(textContent(elements(tree).filter(element => element.type === "dd")[2]), t("Unknown"));
     assert.equal(textContent(elements(tree).filter(element => element.type === "dd")[3]), "0");
     member = { ...member, times_joined: 0, times_left: null }; tree = await render();
@@ -43,8 +43,10 @@ function historyHarness() {
     "@/components/time-range-picker": { TimeRangePicker: "TimeRangePicker" },
     "@/components/history-member-card": { HistoryMemberCard: "HistoryMemberCard" },
     "@/hooks/use-admin-session": { useAdminSession: () => ({ isAdmin: true }) },
-    "@/lib/client-data-cache": { invalidateJsonCache() {}, fetchJsonCached: async () => ({ history: [historyMember("#A", "Saved A"), historyMember("#B", "Saved B")] }) },
-  }, { window: windowMock, fetch: (url, options) => new Promise(resolve => requests.push({ url, options, resolve })) }).default;
+    "@/lib/client-data-cache": { invalidateJsonCache() {} },
+  }, { window: windowMock, CustomEvent: class { constructor(type) { this.type = type; } }, fetch: (url, options) => options.method === "PATCH"
+    ? new Promise(resolve => requests.push({ url, options, resolve }))
+    : Promise.resolve(Response.json({ history: [historyMember("#A", "Saved A"), historyMember("#B", "Saved B")] })) }).default;
   return { requests, render: () => renderer.render(Page) };
 }
 
@@ -55,11 +57,11 @@ test("a delayed note save neither erases another member's draft nor submits dupl
   assert.equal(page.requests.length, 1, "Repeated Enter/click actions share the pending save");
   tree = await page.render(); ariaAction(tree, "Cancel")(); tree = await page.render();
   editNote(tree, "Saved B"); tree = await page.render(); editor(tree).props.onChange({ target: { value: "Unsaved B" } }); tree = await page.render();
-  page.requests[0].resolve(Response.json({ success: true })); await pending; tree = await page.render();
+  page.requests[0].resolve(Response.json({ success: true, review: { notes: "Submitted A", updated_at: "2026-09-16T12:00:00.123456Z" } })); await pending; tree = await page.render();
   assert.equal(editor(tree).props.value, "Unsaved B"); assert.match(textContent(tree), /Submitted A/);
   const saveB = ariaAction(tree, "Save note")();
-  assert.deepEqual(JSON.parse(page.requests[1].options.body), { player_tag: "#B", notes: "Unsaved B" });
-  page.requests[1].resolve(Response.json({ success: true })); await saveB; tree = await page.render();
+  assert.deepEqual(JSON.parse(page.requests[1].options.body), { player_tag: "#B", notes: "Unsaved B", expected_updated_at: null });
+  page.requests[1].resolve(Response.json({ success: true, review: { notes: "Unsaved B", updated_at: "2026-09-16T12:01:00.123456Z" } })); await saveB; tree = await page.render();
   assert.equal(editor(tree), undefined); assert.match(textContent(tree), /Unsaved B/);
 });
 
@@ -70,7 +72,7 @@ test("typing more in the same note while its earlier version saves keeps the new
   // Resolve before another render too: the updater must use the latest draft,
   // rather than a ref that is only refreshed during rendering.
   editor(tree).props.onChange({ target: { value: "Further unsaved typing" } });
-  page.requests[0].resolve(Response.json({ success: true })); await pending; tree = await page.render();
+  page.requests[0].resolve(Response.json({ success: true, review: { notes: "First version", updated_at: "2026-09-16T12:00:00.123456Z" } })); await pending; tree = await page.render();
   assert.equal(editor(tree).props.value, "Further unsaved typing");
 });
 

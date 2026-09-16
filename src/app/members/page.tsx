@@ -583,7 +583,7 @@ export default function MembersPage() {
                 >
                   <Columns3 className="h-4 w-4" />
                   <T text=" Columns " /></Button>
-                {isAdmin && <Button asChild variant="outline" size="sm"><Link href="/reviews"><T text="Member reviews" /></Link></Button>}
+                {isAdmin && <Button asChild variant="outline" size="sm"><Link href="/reviews"><T text="Member notes" /></Link></Button>}
                 {isAdmin && (
                   <Button
                     variant="outline"
@@ -901,7 +901,7 @@ export default function MembersPage() {
                   </div>
                 </div>
 
-                <div className="grid gap-2 sm:grid-cols-2">{isAdmin && <MemberReviewButton member={selectedMember} initialRange={timeRange} />}
+                <div className="grid gap-2 sm:grid-cols-2"><MemberReviewButton member={selectedMember} initialRange={timeRange} />
                   <Button
                     variant="outline"
                     onClick={() => copyText(selectedMember.player_tag, "tag")}

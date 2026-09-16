@@ -14,6 +14,20 @@ export class ReviewInputError extends Error {
   constructor(message: string, public readonly status = 400) { super(message); }
 }
 
+function reviewSnapshot(row: MemberReview): MemberReview {
+  // Keep the database revision verbatim: Date/toISOString would discard its
+  // microseconds and could incorrectly accept or reject a concurrent edit.
+  return { player_tag: row.player_tag, status: row.status, follow_up_at: row.follow_up_at,
+    notes: row.notes, updated_at: row.updated_at };
+}
+
+function validRevision(value: unknown): value is string {
+  if (typeof value !== "string" || !/^\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}:\d{2}(?:\.\d{1,6})?(?:Z|[+-]\d{2}:\d{2})$/.test(value)
+    || !Number.isFinite(Date.parse(value))) return false;
+  const day = Date.parse(`${value.slice(0, 10)}T00:00:00Z`);
+  return Number.isFinite(day) && new Date(day).toISOString().slice(0, 10) === value.slice(0, 10);
+}
+
 export function normalizeReviewTag(value: unknown): string {
   if (typeof value !== "string") throw new ReviewInputError("player_tag is required");
   const tag = value.trim().toUpperCase();
@@ -29,7 +43,7 @@ export async function loadMemberReviews(playerTag?: string): Promise<MemberRevie
     if (playerTag) query = query.eq("player_tag", playerTag);
     const { data, error } = await query;
     if (error) throw error;
-    rows.push(...((data || []) as MemberReview[]));
+    rows.push(...((data || []) as MemberReview[]).map(reviewSnapshot));
     if (!data || data.length < 1000) return rows;
   }
 }
@@ -37,8 +51,12 @@ export async function loadMemberReviews(playerTag?: string): Promise<MemberRevie
 export async function saveMemberReview(body: unknown): Promise<MemberReview> {
   if (!body || typeof body !== "object" || Array.isArray(body)) throw new ReviewInputError("Invalid review payload");
   const input = body as Record<string, unknown>;
-  if (Object.keys(input).some(key => !["player_tag", "status", "follow_up_at", "notes"].includes(key))) {
+  if (Object.keys(input).some(key => !["player_tag", "status", "follow_up_at", "notes", "expected_updated_at"].includes(key))) {
     throw new ReviewInputError("Unknown review field");
+  }
+  const expectedProvided = Object.hasOwn(input, "expected_updated_at");
+  if (expectedProvided && input.expected_updated_at !== null && !validRevision(input.expected_updated_at)) {
+    throw new ReviewInputError("Invalid review revision");
   }
   const playerTag = normalizeReviewTag(input.player_tag);
   const update: Record<string, unknown> = { player_tag: playerTag };
@@ -72,10 +90,22 @@ export async function saveMemberReview(body: unknown): Promise<MemberReview> {
     .select("player_tag").eq("player_tag", playerTag).maybeSingle();
   if (memberError) throw memberError;
   if (!member) throw new ReviewInputError("Member not found", 404);
-  // A single-row partial upsert updates only the supplied fields. Notes-only
-  // edits must preserve an existing status and follow-up date.
-  const { data, error } = await supabaseAdmin.from("member_reviews")
-    .upsert(update, { onConflict: "player_tag" }).select(REVIEW_COLUMNS).single();
+  let expected = input.expected_updated_at as string | null;
+  if (!expectedProvided) {
+    // Older clients can still save, but a competing write after this baseline
+    // read must not be overwritten by an unconditional upsert.
+    const current = await supabaseAdmin.from("member_reviews").select("updated_at").eq("player_tag", playerTag).maybeSingle();
+    if (current.error) throw current.error;
+    if (current.data && !validRevision(current.data.updated_at)) throw new Error("Invalid stored review revision");
+    expected = current.data?.updated_at ?? null;
+  }
+  // Null means the administrator saw no saved review. A duplicate insert and
+  // a zero-row conditional update both mean that their baseline has changed.
+  // Partial updates preserve the status/follow-up when editing only notes.
+  const query = expected === null ? supabaseAdmin.from("member_reviews").insert(update)
+    : supabaseAdmin.from("member_reviews").update(update).eq("player_tag", playerTag).eq("updated_at", expected);
+  const { data, error } = await query.select(REVIEW_COLUMNS).maybeSingle();
+  if (error?.code === "23505" || (!error && !data)) throw new ReviewInputError("Review changed. Reload before saving.", 409);
   if (error) throw error;
-  return data as MemberReview;
+  return reviewSnapshot(data as MemberReview);
 }

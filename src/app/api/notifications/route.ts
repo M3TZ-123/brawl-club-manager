@@ -144,7 +144,7 @@ export async function GET(request: NextRequest) {
 
     if (notificationsRes.error) {
       if (isMissingNotificationsTable(notificationsRes.error)) {
-        return notificationResponse({ notifications: [], unreadCount: 0, nextOffset: null, nextCursor: null, tableMissing: true });
+        return notificationResponse({ error: "Notifications are temporarily unavailable. Please try again." }, { status: 503 });
       }
       throw notificationsRes.error;
     }
@@ -161,7 +161,7 @@ export async function GET(request: NextRequest) {
     });
   } catch (error) {
     if (isMissingNotificationsTable(error)) {
-      return notificationResponse({ notifications: [], unreadCount: 0, nextOffset: null, nextCursor: null, tableMissing: true });
+      return notificationResponse({ error: "Notifications are temporarily unavailable. Please try again." }, { status: 503 });
     }
     console.error("Error fetching notifications:", error);
     return notificationResponse(
@@ -187,7 +187,7 @@ export async function PATCH(request: NextRequest) {
         .eq("is_read", false);
       if (error) {
         if (isMissingNotificationsTable(error)) {
-          return notificationResponse({ success: true, unreadCount: 0, tableMissing: true });
+          return notificationResponse({ error: "Notifications are temporarily unavailable. Please try again." }, { status: 503 });
         }
         throw error;
       }
@@ -210,7 +210,7 @@ export async function PATCH(request: NextRequest) {
         .in("id", ids);
       if (error) {
         if (isMissingNotificationsTable(error)) {
-          return notificationResponse({ success: true, unreadCount: 0, tableMissing: true });
+          return notificationResponse({ error: "Notifications are temporarily unavailable. Please try again." }, { status: 503 });
         }
         throw error;
       }
@@ -224,7 +224,7 @@ export async function PATCH(request: NextRequest) {
     return notificationResponse({ success: true, unreadCount: await getUnreadCount() });
   } catch (error) {
     if (isMissingNotificationsTable(error)) {
-      return notificationResponse({ success: true, unreadCount: 0, tableMissing: true });
+      return notificationResponse({ error: "Notifications are temporarily unavailable. Please try again." }, { status: 503 });
     }
     console.error("Error updating notifications:", error);
     return notificationResponse(
@@ -248,14 +248,14 @@ export async function DELETE(request: NextRequest) {
 
     if (error) {
       if (isMissingNotificationsTable(error)) {
-        return notificationResponse({ success: true, unreadCount: 0, tableMissing: true });
+        return notificationResponse({ error: "Notifications are temporarily unavailable. Please try again." }, { status: 503 });
       }
       throw error;
     }
     return notificationResponse({ success: true, unreadCount: await getUnreadCount() });
   } catch (error) {
     if (isMissingNotificationsTable(error)) {
-      return notificationResponse({ success: true, unreadCount: 0, tableMissing: true });
+      return notificationResponse({ error: "Notifications are temporarily unavailable. Please try again." }, { status: 503 });
     }
     console.error("Error deleting notifications:", error);
     return notificationResponse(

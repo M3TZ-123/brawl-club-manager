@@ -28,7 +28,10 @@ function AnalysisContent() {
   for (const [key, value] of Object.entries({ context, mode, map, brawler })) if (value) params.set(key, value);
   const { data, loading, error, reload } = useFeatureResource<AnalysisResponse>(`/api/analysis?${params}`, "roster,battles");
   const rate = (value: number | null) => value == null ? t("Unknown") : `${number(Math.round(value * 10) / 10)}%`;
-  const duration = (seconds: number) => t("{minutes} min {seconds} sec", { minutes: number(Math.floor(seconds / 60)), seconds: number(Math.round(seconds % 60)) });
+  const duration = (seconds: number) => {
+    const rounded = Math.round(seconds);
+    return t("{minutes} min {seconds} sec", { minutes: number(Math.floor(rounded / 60)), seconds: number(rounded % 60) });
+  };
   const filters = [
     { id: "analysis-context", label: "Battle type / event", value: context, set: setContext, options: battleContextOptions.map(item => ({ ...item, count: data?.facets.contexts.find(facet => facet.key === item.key)?.count })) },
     { id: "analysis-mode", label: "Mode", value: mode, set: setMode, options: (data?.facets.modes || []).map(item => ({ ...item })) },

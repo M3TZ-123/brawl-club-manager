@@ -20,7 +20,7 @@ export default function ReadinessPage() {
   const [brawler, setBrawler] = useState("");
   const [minPower, setMinPower] = useState("");
   const [paging, setPaging] = useState(false);
-  const [pageError, setPageError] = useState(false);
+  const [pageError, setPageError] = useState<ReadinessResponse | null>(null);
   const pagingBusy = useRef(false);
   const params = new URLSearchParams({ limit: "24" });
   if (brawler) params.set("brawler", brawler);
@@ -34,23 +34,23 @@ export default function ReadinessPage() {
   const loadMore = async () => {
     if (!data || data.nextOffset == null || pagingBusy.current) return;
     const original = data;
-    pagingBusy.current = true; setPaging(true); setPageError(false);
+    pagingBusy.current = true; setPaging(true); setPageError(null);
     const next = new URLSearchParams(params); next.set("offset", String(data.nextOffset));
     try {
       const page = await fetchJsonCached<ReadinessResponse>(`/api/readiness?${next}`);
       if (dataRef.current !== original) return;
       resource.updateData(current => ({ ...page, rows: [...new Map([...current.rows, ...page.rows].map(row => [`${row.player.tag}:${row.brawler.id}`, row])).values()] }));
-    } catch { if (dataRef.current === original) setPageError(true); }
+    } catch { if (dataRef.current === original) setPageError(original); }
     finally { pagingBusy.current = false; setPaging(false); }
   };
   return <LayoutWrapper><div className="space-y-5">
     <header className="flex flex-wrap items-start justify-between gap-3"><div><h1 className="text-2xl font-bold">{t("Brawler readiness")}</h1><p className="mt-1 text-sm text-muted-foreground">{t("Find club players with the brawlers and power levels you need.")}</p></div><Button variant="outline" onClick={resource.reload} disabled={resource.loading}>{t("Refresh")}</Button></header>
-    <form onSubmit={event => { event.preventDefault(); setAppliedSearch(search.trim()); setPageError(false); }} className="flex flex-wrap items-end gap-2"><div className="min-w-0 flex-1"><label htmlFor="readiness-search" className="mb-1 block text-sm">{t("Search player or brawler")}</label><Input id="readiness-search" value={search} onChange={event => setSearch(event.target.value)} /></div><Button type="submit" variant="outline">{t("Search")}</Button></form>
+    <form onSubmit={event => { event.preventDefault(); setAppliedSearch(search.trim()); setPageError(null); }} className="flex flex-wrap items-end gap-2"><div className="min-w-0 flex-1"><label htmlFor="readiness-search" className="mb-1 block text-sm">{t("Search player or brawler")}</label><Input id="readiness-search" value={search} onChange={event => setSearch(event.target.value)} /></div><Button type="submit" variant="outline">{t("Search")}</Button></form>
     <div className="grid grid-cols-2 gap-3">
-      <div className="min-w-0"><label htmlFor="readiness-brawler" className="mb-1 block text-sm">{t("Brawler")}</label><select id="readiness-brawler" value={brawler} onChange={event => { setBrawler(event.target.value); setPageError(false); }} className="h-10 w-full min-w-0 rounded-md border bg-background px-2 text-sm"><option value="">{t("All brawlers")}</option>{brawler && !data?.brawlers.some(item => String(item.id) === brawler) && <option value={brawler}>{brawler}</option>}{data?.brawlers.map(item => <option key={item.id} value={item.id}>{item.name} ({number(item.playersObserved)})</option>)}</select></div>
-      <div><label htmlFor="readiness-power" className="mb-1 block text-sm">{t("Minimum power")}</label><select id="readiness-power" value={minPower} onChange={event => { setMinPower(event.target.value); setPageError(false); }} className="h-10 w-full rounded-md border bg-background px-2 text-sm"><option value="">{t("Any reported power")}</option>{[9, 10, 11].map(power => <option key={power} value={power}>{t("Power {level}+", { level: number(power) })}</option>)}</select></div>
+      <div className="min-w-0"><label htmlFor="readiness-brawler" className="mb-1 block text-sm">{t("Brawler")}</label><select id="readiness-brawler" value={brawler} onChange={event => { setBrawler(event.target.value); setPageError(null); }} className="h-10 w-full min-w-0 rounded-md border bg-background px-2 text-sm"><option value="">{t("All brawlers")}</option>{brawler && !data?.brawlers.some(item => String(item.id) === brawler) && <option value={brawler}>{brawler}</option>}{data?.brawlers.map(item => <option key={item.id} value={item.id}>{item.name} ({number(item.playersObserved)})</option>)}</select></div>
+      <div><label htmlFor="readiness-power" className="mb-1 block text-sm">{t("Minimum power")}</label><select id="readiness-power" value={minPower} onChange={event => { setMinPower(event.target.value); setPageError(null); }} className="h-10 w-full rounded-md border bg-background px-2 text-sm"><option value="">{t("Any reported power")}</option>{[9, 10, 11].map(power => <option key={power} value={power}>{t("Power {level}+", { level: number(power) })}</option>)}</select></div>
     </div>
-    {(appliedSearch || brawler || minPower) && <Button variant="ghost" size="sm" onClick={() => { setSearch(""); setAppliedSearch(""); setBrawler(""); setMinPower(""); setPageError(false); }}>{t("Clear filters")}</Button>}
+    {(appliedSearch || brawler || minPower) && <Button variant="ghost" size="sm" onClick={() => { setSearch(""); setAppliedSearch(""); setBrawler(""); setMinPower(""); setPageError(null); }}>{t("Clear filters")}</Button>}
     <p className="text-xs text-muted-foreground">{t("Latest saved profiles, not a historical period. Power and equipment are facts, not a readiness score.")}</p>
     {resource.loading && !data && <p role="status" className="py-8 text-center text-muted-foreground">{t("Loading brawler readiness…")}</p>}
     {resource.error && <div role="alert" className="rounded-lg border p-4 text-sm">{t("Brawler readiness could not be loaded.")} <Button variant="outline" size="sm" onClick={resource.reload}>{t("Retry")}</Button></div>}
@@ -63,7 +63,7 @@ export default function ReadinessPage() {
         <p className="text-xs text-muted-foreground">{t("Last observed")}: <LocalDate value={row.observedAt} time /></p>
         <details className="border-t pt-3"><summary className="cursor-pointer text-sm font-medium">{t("Reported equipment and progress")}</summary><div className="mt-3 space-y-4"><dl className="grid grid-cols-3 gap-2 text-xs">{([["Prestige", row.prestigeLevel], ["Current win streak", row.currentWinStreak], ["Best win streak", row.maxWinStreak]] as const).map(([label, value]) => <div key={label}><dt className="text-muted-foreground">{t(label)}</dt><dd className="mt-1">{unknownNumber(value)}</dd></div>)}</dl><ReportedEquipmentDetails {...row} /></div></details>
       </CardContent></Card>)}</div>
-      {pageError && <p role="alert" className="text-sm text-destructive">{t("More readiness results could not be loaded. Try again.")}</p>}
+      {pageError === data && <p role="alert" className="text-sm text-destructive">{t("More readiness results could not be loaded. Try again.")}</p>}
       {data.nextOffset != null && <Button variant="outline" onClick={loadMore} disabled={paging}>{paging ? t("Loading…") : t("Load more results")}</Button>}
     </>}
   </div></LayoutWrapper>;

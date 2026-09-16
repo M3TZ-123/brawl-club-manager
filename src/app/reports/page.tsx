@@ -11,6 +11,7 @@ import { LayoutWrapper } from "@/components/layout-wrapper";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { fetchJsonCached, invalidateJsonCache } from "@/lib/client-data-cache";
+import { clubEventLabel } from "@/lib/club-event-display";
 
 import { Download, RefreshCw, TrendingUp, TrendingDown, Users, Trophy } from "lucide-react";
 
@@ -395,7 +396,7 @@ export default function ReportsPage() {
               {/* Recent Events */}
               <Card>
                 <CardHeader>
-                  <CardTitle><T text="Members Joined & Left" /></CardTitle>
+                  <CardTitle><T text="Club changes" /></CardTitle>
                   <CardDescription><T text="Roster changes in this period" /></CardDescription>
                 </CardHeader>
                 <CardContent>
@@ -403,20 +404,21 @@ export default function ReportsPage() {
                     {report.recentEvents.map((event, index) => (
                       <div
                         key={index}
-                        className="flex items-center justify-between p-3 rounded-lg bg-muted/50"
+                        className="flex flex-col gap-2 p-3 rounded-lg bg-muted/50 sm:flex-row sm:items-center sm:justify-between"
                       >
-                        <div className="flex items-center gap-3">
+                        <div className="flex min-w-0 items-center gap-3">
                           <span
+                            aria-hidden="true"
                             className={
-                              event.event_type === "join" ? "text-green-500" : "text-red-500"
+                              event.event_type === "join" ? "text-green-500" : event.event_type === "leave" ? "text-red-500" : "text-muted-foreground"
                             }
                           >
-                            {event.event_type === "join" ? "➡️" : "⬅️"}
+                            {event.event_type === "join" ? "+" : event.event_type === "leave" ? "−" : "•"}
                           </span>
-                          <span className="font-medium">{event.player_name}</span>
+                          <span className="truncate font-medium">{event.player_name}</span>
                         </div>
-                        <div className="text-sm text-muted-foreground">
-                          {event.event_type === "join" ? <T text="Joined" /> : <T text="Left" />} •{" "}
+                        <div className="shrink-0 text-sm text-muted-foreground">
+                          <T text={clubEventLabel(event.event_type)} /> •{" "}
                           {formatDate(event.event_time)}
                         </div>
                       </div>

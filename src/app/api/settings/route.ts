@@ -30,7 +30,7 @@ function sanitizeSettingValue(key: string, value: unknown): string | null {
   }
 
   if (key === "club_tag") {
-    return String(value).trim().toUpperCase();
+    return "#" + String(value).trim().replace(/^%23/i, "#").replace(/^#/, "").toUpperCase();
   }
 
   if (key === "club_name") {
@@ -52,7 +52,7 @@ function sanitizeSettingValue(key: string, value: unknown): string | null {
   }
 
   if (key === "required_trophies") {
-    if (value === "") return null;
+    if (value === "") return "";
     const parsed = Number.parseInt(String(value), 10);
     return Number.isFinite(parsed) && parsed >= 0 ? String(parsed) : null;
   }
@@ -107,12 +107,22 @@ export async function POST(request: NextRequest) {
     const authResponse = rejectUnauthorizedAdminMutation(request);
     if (authResponse) return authResponse;
 
-    const body = await request.json().catch(() => ({}));
+    const body = await request.json().catch(() => null);
     if (!body || typeof body !== "object" || Array.isArray(body)) {
       return NextResponse.json(
         { error: "Invalid settings payload" },
         { status: 400 }
       );
+    }
+
+    if (Object.hasOwn(body, "club_tag") && (typeof body.club_tag !== "string" || !/^#?[A-Z0-9]{1,20}$/.test(body.club_tag.trim().replace(/^%23/i, "#").toUpperCase()))) {
+      return NextResponse.json({ error: "Enter a valid club tag." }, { status: 400 });
+    }
+    if (body.discord_webhook != null && String(body.discord_webhook).trim()) {
+      try {
+        const url = new URL(String(body.discord_webhook).trim());
+        if (url.protocol !== "https:" || url.hostname !== "discord.com" || !/^\/api\/webhooks\/[^/]+\/[^/]+$/.test(url.pathname) || url.username || url.password) throw new Error("invalid");
+      } catch { return NextResponse.json({ error: "Enter a valid Discord webhook URL." }, { status: 400 }); }
     }
 
     const upserts = Object.entries(body)
@@ -137,9 +147,10 @@ export async function POST(request: NextRequest) {
         .eq("key", "club_tag")
         .maybeSingle();
       if (error) throw error;
-      const normalizeTag = (tag: string) => tag.trim().replace(/^#/, "").toUpperCase();
+      const normalizeTag = (tag: string) => tag.trim().replace(/^%23/i, "#").replace(/^#/, "").toUpperCase();
       requiresSync = normalizeTag(newClubTag) !== normalizeTag(currentClub?.value || process.env.CLUB_TAG || "");
       if (requiresSync) {
+        for (const key of ["club_name", "required_trophies"]) if (!upserts.some(row => row.key === key)) upserts.push({ key, value: "" });
         // A successful sync belongs to the configured club, not its replacement.
         for (const key of ["last_sync_time", "last_full_sync_time", "last_roster_sync_time", "last_battle_sync_time", "last_ranked_sync_time", "last_ranked_attempt_time"]) upserts.push({ key, value: "" });
       }

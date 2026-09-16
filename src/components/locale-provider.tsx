@@ -1,22 +1,24 @@
 "use client";
 
-import { createContext, useContext, useEffect, useMemo, type ReactNode } from "react";
+import { useEffect, useMemo, type ReactNode } from "react";
 import { useAppStore } from "@/lib/store";
 import { intlLocale, translate, type Locale } from "@/lib/i18n/messages";
 
-const LocaleContext = createContext<Locale>("en");
+const selectLocale = (state: { locale: Locale }): Locale => state.locale === "ar" ? "ar" : "en";
 
 export function LocaleProvider({ children }: { children: ReactNode }) {
-  const locale = useAppStore((state) => state.locale || "en");
+  const locale = useAppStore(selectLocale);
   useEffect(() => {
     document.documentElement.lang = locale;
     document.documentElement.dir = locale === "ar" ? "rtl" : "ltr";
   }, [locale]);
-  return <LocaleContext.Provider value={locale}>{children}</LocaleContext.Provider>;
+  return children;
 }
 
 export function useI18n() {
-  const locale = useContext(LocaleContext);
+  // Each consumer needs Zustand's server snapshot until its own hydration
+  // finishes. A parent context can update before a delayed Suspense subtree.
+  const locale = useAppStore(selectLocale);
   return useMemo(() => ({
     locale,
     direction: locale === "ar" ? "rtl" as const : "ltr" as const,

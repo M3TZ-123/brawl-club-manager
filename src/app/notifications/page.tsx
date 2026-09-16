@@ -368,10 +368,8 @@ export default function NotificationsPage() {
                 return (
                   <Card
                     key={notif.id}
-                    onClick={() => isAdmin && !notif.is_read && markAsRead(notif.id)}
                     className={cn(
                       "border-l-4 transition-all",
-                      isAdmin && "cursor-pointer",
                       style.bg,
                       notif.is_read
                         ? "opacity-60 hover:opacity-80"
@@ -399,6 +397,9 @@ export default function NotificationsPage() {
                           <p className="text-xs text-muted-foreground/60 mt-2">
                             <LocalDate value={notif.created_at} time />
                           </p>
+                          {isAdmin && !notif.is_read && <Button variant="ghost" size="sm" className="mt-2" onClick={() => markAsRead(notif.id)}>
+                            <T text="Mark as read" />
+                          </Button>}
                         </div>
                       </div>
                     </CardContent>

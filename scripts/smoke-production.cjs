@@ -12,6 +12,7 @@ async function main() {
   assert.ok(["fresh","stale","never"].includes(health.freshness), "Freshness metadata is available");
   assert.ok(Number.isFinite(health.expectedIntervalMinutes), "Expected sync interval is available");
   assert.ok(!JSON.stringify(history).includes('"notes":'), "Public history excludes private notes");
+  assert.ok(!JSON.stringify(history).includes('"review_updated_at":'), "Public history excludes private review revisions");
   const [analysis, readiness] = await Promise.all([get('/api/analysis?range=7d'),get('/api/readiness?limit=1')]);
   assert.ok(Number.isSafeInteger(analysis.summary.observations), 'Club analysis is available');
   assert.equal(analysis.coverage.completeHistory,false,'Analysis declares observed coverage');
@@ -20,12 +21,15 @@ async function main() {
     const progress=await get(`/api/members/${encodeURIComponent(readiness.rows[0].player.tag)}/progress?collectionLimit=1&rankLimit=1`);
     assert.ok(progress.collection.items.length<=1 && progress.rankedHistory.items.length<=1,'Player progress is paginated');
   }
-  for (const route of ["/","/members","/history","/reviews","/analysis","/readiness","/game","/recruitment"]) {
+  const routes = ["/","/members","/activity","/battle-feed","/history","/reviews","/analysis","/readiness","/game","/reports","/notifications","/recruitment","/settings","/admin"];
+  if (readiness.rows[0]) routes.push(`/members/${encodeURIComponent(readiness.rows[0].player.tag)}`);
+  for (const route of routes) {
     const response = await fetch(new URL(route, base), { signal: AbortSignal.timeout(30_000) });
     assert.equal(response.status, 200, route);
   }
   const denied = await fetch(new URL("/api/member-reviews", base), {signal:AbortSignal.timeout(30_000)});
   assert.equal(denied.status,401,"Review API requires an administrator");
+  assert.equal(denied.headers.get('cache-control'),'no-store','Private reviews reject shared caching');
   const candidateDenied=await fetch(new URL('/api/recruitment',base),{signal:AbortSignal.timeout(30000)});
   assert.equal(candidateDenied.status,401,'Recruitment is admin-only');
   assert.equal(candidateDenied.headers.get('cache-control'),'no-store','Recruitment rejects shared caching');

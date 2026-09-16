@@ -207,19 +207,21 @@ test("member detail and CSV use the selected period and only explicitly enabled 
   assert.equal(lines[2].split(",")[1], "'=Formula fixture", "CSV formula protection must survive new export fields");
 });
 
-test("visitor member details hide admin review and sync controls; admins retain them", async () => {
+test("visitor member details expose the notes entry point while sync controls stay admin-only", async () => {
   const publicPage = pageHarness();
   let tree = await publicPage.render();
   find(tree, "MembersTable").props.onMemberSelect(fixtures[0]); tree = await publicPage.render();
-  assert.equal(elements(tree).some(element => element.type === "MemberReviewButton"), false);
-  assert.doesNotMatch(textContent(tree), /Sync Now|Member reviews/);
+  assert.equal(elements(tree).some(element => element.type === "MemberReviewButton"), true);
+  assert.doesNotMatch(textContent(tree), /Sync Now/);
+  assert.equal(elements(tree).some(element => element.type === "Link" && element.props.href === "/reviews"), false);
   const adminPage = pageHarness({ isAdmin: true });
   tree = await adminPage.render();
   find(tree, "TimeRangePicker").props.onChange("30d"); tree = await adminPage.render();
   find(tree, "MembersTable").props.onMemberSelect(fixtures[0]); tree = await adminPage.render();
   assert.equal(find(tree, "MemberReviewButton").props.initialRange, "30d");
   assert.match(textContent(tree), /Sync Now/);
-  assert.match(textContent(tree), /Member reviews/);
+  assert.match(textContent(tree), /Member notes/);
+  assert.doesNotMatch(textContent(tree), /Member reviews/);
 });
 
 function reviewHarness({ initialRange, failure, failedSaves = 0, sync = {}, reviewMember = fixtures[0], memberHistory = { first_seen: "2025-01-01", times_joined: 1, times_left: 0 } } = {}) {
@@ -268,14 +270,24 @@ test("review analysis uses the chosen period without reloading or losing the pri
   assert.equal(saved.player_tag, fixtures[0].player_tag);
 });
 
-test("each failed review dependency keeps the editing form and Save action unavailable", async () => {
-  for (const failure of ["review", "member", "sync"]) {
+test("a failed private review read keeps the editing form and Save action unavailable", async () => {
+  for (const failure of ["review"]) {
     const review = reviewHarness({ failure });
     const tree = await review.render();
     assert.match(textContent(tree), /Review unavailable/, failure);
     assert.equal(elements(tree).some(element => element.type === "textarea"), false, failure);
     assert.equal(elements(tree).some(element => element.props?.onClick && textContent(element) === "Save review"), false, failure);
     assert.equal(review.requests.some(request => request.method === "PATCH"), false);
+  }
+});
+
+test("unavailable supporting activity never hides an existing private note", async () => {
+  for (const failure of ["member", "sync"]) {
+    const review = reviewHarness({ failure });
+    const tree = await review.render();
+    assert.equal(find(tree, "textarea").props.value, "Saved note");
+    assert.match(textContent(tree), /Activity details are unavailable/);
+    assert.equal(typeof action(tree, "Save review"), "function");
   }
 });
 
@@ -331,13 +343,13 @@ test("reopening a review button initializes analysis from the caller's current s
   let tree = await render();
   assert.equal(elements(tree).some(element => element.type?.name === "MemberReviewSheet"), false);
   initialRange = "30d"; tree = await render();
-  action(tree, "Review member")(); tree = await render();
+  action(tree, "Member notes")(); tree = await render();
   let sheet = elements(tree).find(element => element.type?.name === "MemberReviewSheet");
   assert.equal(sheet.props.initialRange, "30d");
   sheet.props.onOpenChange(false); tree = await render();
   assert.equal(elements(tree).some(element => element.type?.name === "MemberReviewSheet"), false);
   initialRange = "90d"; tree = await render();
-  action(tree, "Review member")(); tree = await render();
+  action(tree, "Member notes")(); tree = await render();
   sheet = elements(tree).find(element => element.type?.name === "MemberReviewSheet");
   assert.equal(sheet.props.initialRange, "90d");
 });
@@ -364,4 +376,23 @@ test("desktop and mobile render the same selected metric and never duplicate its
   assert.doesNotMatch(textContent(tree), /Progress · 1 month/);
   assert.match(textContent(tree), /1 month-10/, "Explicit comparison remains visible after hiding the selected progress column");
   assert.equal(elements(tree).filter(element => element.type?.name === "SortableHead" && element.props.sortKey === "trophies_30d").length, 1);
+});
+
+test("desktop and mobile member action names follow the selected language without altering player tags", async () => {
+  const { translate } = loadTypeScript("src/lib/i18n/messages.ts");
+  for (const locale of ["en", "ar"]) {
+    const renderer = hookRenderer();
+    const { MembersTable } = loadTypeScript("src/components/members-table.tsx", {
+      ...components, react: renderer.react,
+      "@/components/locale-provider": { T: "T", useI18n: () => ({ ...i18n, t: (key, values) => translate(key, locale, values) }) },
+    });
+    const member = { ...fixtures[0], player_name: "لاعب Alpha", player_tag: "#PYLQ" };
+    const tree = await renderer.render(() => MembersTable({ members: [member] }));
+    const labels = elements(tree).map(element => element.props?.["aria-label"]).filter(Boolean);
+    const copyLabel = locale === "ar" ? "نسخ الوسم #PYLQ" : "Copy tag #PYLQ";
+    const profileLabel = locale === "ar" ? "فتح ملف لاعب Alpha" : "Open لاعب Alpha profile";
+    assert.equal(labels.filter(label => label === copyLabel).length, 2, "Both mobile and desktop copy controls are localized");
+    assert.equal(labels.filter(label => label === profileLabel).length, 2, "Both profile links are localized");
+    assert.equal(elements(tree).filter(element => element.type === "Link" && element.props.href === "/members/%23PYLQ").length, 2);
+  }
 });

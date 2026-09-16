@@ -91,7 +91,7 @@ test("history defaults to seven days and late responses cannot replace the selec
   const renderer = hookRenderer(), requests = [], initial = pending(), newest = pending();
   const component = loadTypeScript("src/app/history/page.tsx", {
     ...mocks, react: renderer.react,
-    "@/lib/client-data-cache": { fetchJsonCached: url => { requests.push(url); return url.includes("range=90d") ? newest.promise : initial.promise; } },
+    "@/lib/client-fetch": { fetchJsonWithTimeout: url => { requests.push(url); return url.includes("range=90d") ? newest.promise : initial.promise; } },
   }, { window: windowMock, console: quietConsole }).default;
   let tree = await renderer.render(component);
   assert.equal(requests[0], "/api/history?range=7d");
@@ -112,7 +112,7 @@ test("history load failures show a retry rather than an empty history or zero me
   const renderer = hookRenderer();
   const component = loadTypeScript("src/app/history/page.tsx", {
     ...mocks, react: renderer.react,
-    "@/lib/client-data-cache": { fetchJsonCached: async () => { throw Error("offline"); } },
+    "@/lib/client-fetch": { fetchJsonWithTimeout: async () => { throw Error("offline"); } },
   }, { window: windowMock, console: quietConsole }).default;
   const tree = await renderer.render(component);
   assert.match(textContent(tree), /Could not load member history/);
@@ -225,14 +225,17 @@ test("reports request the selected period and disable export when the report cou
 
 test("review queue stays admin gated and empty search results do not imply that reviews are complete", async () => {
   const renderer = hookRenderer();
-  const component = loadTypeScript("src/app/reviews/page.tsx", { ...mocks, react: renderer.react }, {
+  const component = loadTypeScript("src/app/reviews/page.tsx", { ...mocks, react: { ...renderer.react, Suspense: "Suspense" },
+    "next/navigation": { useSearchParams: () => new URLSearchParams() },
+    "@/hooks/use-admin-session": { useAdminSession: () => ({ isAdmin: true, isLoading: false }) },
+  }, {
     window: windowMock, fetch: async url => Response.json(url === "/api/members"
       ? { members: [{ player_tag: "#ABC", player_name: "Needs review", activity_status: "inactive" }] }
-      : { reviews: [] }),
+      : url.startsWith("/api/history") ? { history: [] } : { reviews: [] }),
   }).default;
   const shell = component();
   assert.equal(shell.props.children.type, "AdminGate");
-  const queue = shell.props.children.props.children.type;
+  const queue = elements(shell).find(element => element.type?.name === "ReviewQueue").type;
   let tree = await renderer.render(queue);
   assert.match(textContent(tree), /Needs review/);
   elements(tree).find(element => element.type === "Input").props.onChange({ target: { value: "missing member" } });

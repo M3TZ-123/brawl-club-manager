@@ -3,8 +3,8 @@
 import { fetchJsonWithTimeout } from "@/lib/client-fetch";
 import { invalidateJsonCache } from "@/lib/client-data-cache";
 
-export type AdminSession = { configured: boolean; isAdmin: boolean; isLoading: boolean };
-const initial: AdminSession = { configured: false, isAdmin: false, isLoading: true };
+export type AdminSession = { configured: boolean; isAdmin: boolean; isLoading: boolean; checkError: boolean };
+const initial: AdminSession = { configured: false, isAdmin: false, isLoading: true, checkError: false };
 let snapshot = initial;
 let generation = 0, checkedAt = 0;
 let pending: { promise: Promise<void>; controller: AbortController } | null = null;
@@ -25,7 +25,7 @@ function reset() {
   generation++; checkedAt = 0;
   pending?.controller.abort(); pending = null;
   invalidateJsonCache("/api/", { cancelPending: true });
-  publish({ configured: snapshot.configured, isAdmin: false, isLoading: true });
+  publish({ configured: snapshot.configured, isAdmin: false, isLoading: true, checkError: false });
 }
 
 export function refreshAdminSession(force = false): Promise<void> {
@@ -33,19 +33,21 @@ export function refreshAdminSession(force = false): Promise<void> {
   if (pending) return pending.promise;
   if (!force && checkedAt && Date.now() - checkedAt < 30_000) return Promise.resolve();
   const version = generation, controller = new AbortController();
+  if (snapshot.checkError) publish({ ...snapshot, isLoading: true });
   const promise = fetchJsonWithTimeout<{ configured: boolean; isAdmin: boolean }>("/api/admin/session", { cache: "no-store", signal: controller.signal })
     .then(data => {
       if (version !== generation) return;
       const downgraded = snapshot.isAdmin && data.isAdmin !== true;
       if (downgraded) { generation++; invalidateJsonCache("/api/", { cancelPending: true }); }
       checkedAt = Date.now();
-      publish({ configured: data.configured === true, isAdmin: data.isAdmin === true, isLoading: false });
+      publish({ configured: data.configured === true, isAdmin: data.isAdmin === true, isLoading: false, checkError: false });
       if (downgraded) announce(false, true);
     }).catch(() => {
       if (version !== generation) return;
       const wasAdmin = snapshot.isAdmin;
       if (wasAdmin) { generation++; invalidateJsonCache("/api/", { cancelPending: true }); }
-      publish({ configured: snapshot.configured, isAdmin: false, isLoading: false });
+      checkedAt = 0;
+      publish({ configured: snapshot.configured, isAdmin: false, isLoading: false, checkError: true });
       if (wasAdmin) announce(false);
     }).finally(() => { if (pending?.controller === controller) pending = null; });
   pending = { promise, controller };
@@ -60,10 +62,10 @@ async function changeSession(method: "POST" | "DELETE", password?: string) {
   mutation = (async () => {
     try {
       await fetchJsonWithTimeout("/api/admin/session", { method, ...(method === "POST" ? { headers: { "Content-Type": "application/json" }, body: JSON.stringify({ password }) } : {}) });
-      if (version === generation) { checkedAt = Date.now(); publish({ configured: true, isAdmin: method === "POST", isLoading: false }); }
+      if (version === generation) { checkedAt = Date.now(); publish({ configured: true, isAdmin: method === "POST", isLoading: false, checkError: false }); }
     } catch (error) {
       failed = true;
-      if (version === generation) publish({ configured: snapshot.configured, isAdmin: false, isLoading: false });
+      if (version === generation) publish({ configured: snapshot.configured, isAdmin: false, isLoading: false, checkError: false });
       throw error;
     } finally {
       mutation = null;

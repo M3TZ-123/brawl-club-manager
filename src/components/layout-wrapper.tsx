@@ -51,7 +51,7 @@ const navigation = [
   { name: "Game", href: "/game", icon: Gamepad2 },
   { name: "Reports", href: "/reports", icon: FileText },
   { name: "History", href: "/history", icon: History },
-  { name: "Member reviews", href: "/reviews", icon: ShieldCheck, adminOnly: true },
+  { name: "Member notes", href: "/reviews", icon: ShieldCheck, adminOnly: true },
   { name: "Recruitment", href: "/recruitment", icon: UserSearch, adminOnly: true },
   { name: "Notifications", href: "/notifications", icon: Bell },
   { name: "Settings", href: "/settings", icon: Settings, adminOnly: true },

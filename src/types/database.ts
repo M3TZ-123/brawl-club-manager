@@ -154,6 +154,7 @@ export interface Database {
           role_at_leave: string | null;
           trophies_at_leave: number | null;
           notes: string | null;
+          review_updated_at?: string | null;
         };
         Insert: {
           player_tag: string;
