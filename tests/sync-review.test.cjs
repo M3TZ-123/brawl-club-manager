@@ -5,12 +5,14 @@ const quietConsole = { log() {}, warn() {}, error() {} };
 
 function serviceFixture(options = {}) {
   const calls = [];
+  const rankedRequests = [];
   const tags = options.tags || ["#PLAYER"];
   const db = {
     from: () => ({ select: () => ({ in: async () => ({data:[{key:"club_tag",value:"#CLUB"},{key:"api_key",value:"secret-test-only"}],error:null}) }) }),
     rpc: async (name,args) => {
       calls.push({name,args});
       if(name === "acquire_sync_run") return {data: options.acquisition || {acquired:true,run_id:"test-run",fence:4},error:null};
+      if(name === "begin_sync_ranked_attempt") return {data:true,error:null};
       if(name === "commit_sync_snapshot") return {data: options.commitError ? null : {success:true,synced:tags.length,events:0,timestamp:"2026-09-16T00:00:00Z",runId:"test-run",changes:{joins:[],leaves:[]},member:{player_tag:"#PLAYER"}},error:options.commitError || null};
       if(name === "fail_sync_run") return {data:null,error:null};
       throw new Error(`Unexpected RPC ${name}`);
@@ -19,27 +21,36 @@ function serviceFixture(options = {}) {
   const api = {
     getClub: async () => ({members:tags.map(tag=>({tag,name:tag,role:"member"})),requiredTrophies:100}),
     getPlayer: async tag => {if(options.failPlayer) throw new Error("Bearer secret-test-only upstream response"); return {tag,name:tag,trophies:100,highestTrophies:100,expLevel:10,brawlers:[{id:1,name:"SHELLY",power:1,trophies:100,rank:1}],soloVictories:1,duoVictories:2,"3vs3Victories":3};},
-    getPlayerRankedData: options.ranked || (async()=>({currentRank:"Unranked",highestRank:"Unranked",currentPoints:0,highestPoints:0})),
+    getPlayerRankedData: async (...args) => {
+      rankedRequests.push(calls.map(call => call.name));
+      return options.ranked ? options.ranked(...args) : {currentRank:"Unranked",highestRank:"Unranked",currentPoints:0,highestPoints:0,available:true};
+    },
     getPlayerBattleLog: async()=>({items:[]}), processBattleLog:()=>[], calculateWinRateFromBattleLog:()=>({winRate:null}),
   };
   const service = loadTypeScript("src/lib/sync-service.ts", {"@/lib/supabase-admin":{supabaseAdmin:db},"@/lib/brawl-api":api}, {console:quietConsole,setTimeout:fn=>{fn();return 0;}});
-  return {service,calls};
+  return {service,calls,rankedRequests};
 }
 
 test("successful full sync performs one fenced commit with complete fetched data",async()=>{
-  const {service,calls}=serviceFixture();
+  const {service,calls,rankedRequests}=serviceFixture();
   const result=await service.executeSync({source:"manual",idempotencyKey:"retry-123"});
   assert.equal(result.success,true);
-  assert.deepEqual(calls.map(c=>c.name),["acquire_sync_run","commit_sync_snapshot"]);
+  assert.deepEqual(calls.map(c=>c.name),["acquire_sync_run","begin_sync_ranked_attempt","commit_sync_snapshot"]);
   assert.equal(calls[0].args.p_scope,"full");
   assert.equal(calls[0].args.p_idempotency_key,"retry-123");
-  assert.equal(calls[1].args.p_fence,4);
-  assert.equal(calls[1].args.p_payload.members[0].trophies,100);
-  assert.equal(calls[1].args.p_payload.brawlers[0].brawler_id,1);
-  assert.ok(!JSON.stringify(calls[1]).includes("secret-test-only"));
+  assert.deepEqual(JSON.parse(JSON.stringify(calls[1].args)),{p_run_id:"test-run",p_fence:4});
+  assert.deepEqual(rankedRequests,[["acquire_sync_run","begin_sync_ranked_attempt"]]);
+  assert.equal(calls[2].args.p_run_id,"test-run");
+  assert.equal(calls[2].args.p_fence,4);
+  assert.equal(calls[2].args.p_payload.members[0].trophies,100);
+  assert.equal(calls[2].args.p_payload.brawlers[0].brawler_id,1);
+  assert.equal(calls[2].args.p_payload.ranked_attempted,true);
+  assert.equal(calls[2].args.p_payload.ranked_complete,true);
+  assert.ok(!JSON.stringify(calls).includes("secret-test-only"));
 });
 test("member refresh shares the club lease and preserves member response",async()=>{
   const {service,calls}=serviceFixture(); const result=await service.executeSync({source:"member",playerTag:"#PLAYER"});
+  assert.deepEqual(calls.map(c=>c.name),["acquire_sync_run","commit_sync_snapshot"]);
   assert.equal(calls[0].args.p_club_tag,"#CLUB"); assert.equal(calls[0].args.p_scope,"member");
   assert.equal(result.member.player_tag,"#PLAYER"); assert.equal(result.brawlers.length,1);
 });
@@ -62,19 +73,25 @@ test("public member results and audit snapshots exclude legacy tenant IDs and pr
   assert.deepEqual(JSON.parse(JSON.stringify(audit)),{first_seen:null,times_joined:2});
 });
 test("primary failure records a sanitized durable failure and never commits",async()=>{
-  const {service,calls}=serviceFixture({failPlayer:true,tags:Array.from({length:30},(_,i)=>`#P${i}`)});
+  const {service,calls,rankedRequests}=serviceFixture({failPlayer:true,tags:Array.from({length:30},(_,i)=>`#P${i}`)});
   await assert.rejects(service.executeSync({source:"manual"}),e=>e.code==="upstream_unavailable");
-  assert.deepEqual(calls.map(c=>c.name),["acquire_sync_run","fail_sync_run"]);
+  assert.deepEqual(calls.map(c=>c.name),["acquire_sync_run","begin_sync_ranked_attempt","fail_sync_run"]);
+  assert.deepEqual(JSON.parse(JSON.stringify(calls[1].args)),{p_run_id:"test-run",p_fence:4});
+  assert.ok(rankedRequests.length>0);
+  assert.deepEqual(rankedRequests[0],["acquire_sync_run","begin_sync_ranked_attempt"]);
   assert.ok(!JSON.stringify(calls.at(-1)).includes("secret-test-only"));
 });
 test("transaction errors keep typed failure and invoke durable failure recording",async()=>{
   const {service,calls}=serviceFixture({commitError:{message:"stale_sync_fence"}});
   await assert.rejects(service.executeSync({source:"manual"}),e=>e.code==="stale_sync_fence");
+  assert.deepEqual(calls.map(c=>c.name),["acquire_sync_run","begin_sync_ranked_attempt","commit_sync_snapshot","fail_sync_run"]);
   assert.equal(calls.at(-1).name,"fail_sync_run");
 });
 test("ambiguous commit transport failure preserves the retry key contract",async()=>{
   const {service,calls}=serviceFixture({commitError:{message:"fetch failed",code:""}});
   await assert.rejects(service.executeSync({source:"cron",idempotencyKey:"stable-request"}),e=>e.code==="database_unavailable"&&e.status===503);
+  assert.deepEqual(calls.map(c=>c.name),["acquire_sync_run","begin_sync_ranked_attempt","commit_sync_snapshot","fail_sync_run"]);
+  assert.equal(calls[0].args.p_idempotency_key,"stable-request");
   assert.equal(calls.at(-1).args.p_error_code,"database_unavailable");
 });
 test("ranked prefetch is bounded to four workers and finishes before slow primary batches",async()=>{

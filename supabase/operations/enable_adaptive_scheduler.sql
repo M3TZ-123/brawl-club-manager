@@ -1,4 +1,4 @@
--- Run after005/006 and deploying the adaptive application code. No credentials
+-- Run after migrations005 through008 and deploying the adaptive application code. No credentials
 -- are embedded in job text; the existing private scheduler token is read at run time.
 BEGIN;
 CREATE EXTENSION IF NOT EXISTS pg_cron WITH SCHEMA pg_catalog;

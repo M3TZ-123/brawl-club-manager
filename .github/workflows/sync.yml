@@ -1,7 +1,5 @@
-name: Auto Sync Club Data
+name: Manually Sync Club Data
 on:
-  schedule:
-    - cron: '17,47 * * * *'
   workflow_dispatch:
 permissions:
   contents: read
