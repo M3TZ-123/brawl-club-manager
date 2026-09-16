@@ -4,9 +4,21 @@ import { supabaseAdmin } from "@/lib/supabase-admin";
 import { officialGameRequest } from "@/lib/official-game-api";
 import { gameRankingKey, normalizeGameEvents, normalizeGameRankings, projectGameSnapshot, type GameSnapshot } from "@/lib/game-data";
 
+// Only the 17 allowlisted public cache keys can enter this map. The database lease
+// still coordinates different workers; readers in this worker share its result.
+const pending = new Map<string, Promise<GameSnapshot<unknown>>>();
+
 export async function loadGameData(kind: "events" | "players" | "clubs", region = "global") {
   const key = kind === "events" ? "events" : gameRankingKey(region, kind);
   if (!key) throw new Error("Invalid ranking selection");
+  const existing = pending.get(key);
+  if (existing) return existing;
+  const request = readGameData(kind, region, key).finally(() => pending.delete(key));
+  pending.set(key, request);
+  return request;
+}
+
+async function readGameData(kind: "events" | "players" | "clubs", region: string, key: string): Promise<GameSnapshot<unknown>> {
   const token = randomUUID();
   const { data: claim, error } = await supabaseAdmin.rpc("claim_game_cache", { p_key: key, p_token: token });
   if (error || !claim || typeof claim.acquired !== "boolean" || !claim.entry || typeof claim.entry !== "object") throw new Error("Game data temporarily unavailable");

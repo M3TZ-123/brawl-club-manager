@@ -44,8 +44,14 @@ export function PlayerProgress({ playerTag, range }: { playerTag: string; range:
   if (selectedChoice) { historyParams.set("brawlerId", String(selectedChoice.id)); historyParams.set("collectionSearch", String(selectedChoice.id)); }
   const history = useFeatureResource<PlayerProgressResponse>(selectedChoice ? `${endpoint}?${historyParams}` : null, "roster");
   const data = resource.data;
-  const selected = history.data?.collection.items.find(item => item.id === selectedChoice?.id)
-    || data?.collection.items.find(item => item.id === selectedChoice?.id) || selectedChoice;
+  const selected = [
+    history.data?.collection.items.find(item => item.id === selectedChoice?.id),
+    data?.collection.items.find(item => item.id === selectedChoice?.id),
+    selectedChoice,
+  ].reduce<Brawler | null>((latest, item) => {
+    if (!item) return latest;
+    return !latest || (Date.parse(item.lastCheckedAt) || 0) > (Date.parse(latest.lastCheckedAt) || 0) ? item : latest;
+  }, null);
   const unknownNumber = (value: number | null | undefined) => value == null ? t("Unknown") : number(value);
   const more = async (section: "collection" | "ranked") => {
     if (!data || pagingBusy.current) return;

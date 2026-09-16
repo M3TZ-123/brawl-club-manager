@@ -33,6 +33,8 @@ test('profile progress is prospective, bounded and atomic in local PostgreSQL', 
   const version = (await db.query("SELECT xmin::text version FROM members WHERE player_tag='#LEGACY'")).rows[0].version;
   const migration = fs.readFileSync(path.join(root, 'supabase/migrations/202609160020_player_progress.sql'), 'utf8');
   await db.query(migration); await db.query(migration);
+  const preservation = fs.readFileSync(path.join(root, 'supabase/migrations/202609160025_equipment_metadata_preservation.sql'), 'utf8');
+  await db.query(preservation); await db.query(preservation);
   const at = new Date(Date.now() - 30000).toISOString();
   const profile = { rankedSeasonId: 48, rankedRankName: 'DIAMOND I', rankedElo: 3417,
     highestSeasonRankedRankName: 'DIAMOND II', highestSeasonRankedElo: 3505, highestAllTimeRankedRankName: 'MASTERS', highestAllTimeRankedElo: 0 };
@@ -89,6 +91,33 @@ test('profile progress is prospective, bounded and atomic in local PostgreSQL', 
     await save(payload({ members: [member({ ...fields({ rankedSeasonId: 49 }) })] }));
     const h = await history(); assert.equal(h.length, 3); assert.equal(h[1].kind, 'change'); assert.equal(h[1].points, 3500);
     assert.equal(h[2].kind, 'season_reset'); assert.equal(h[2].season_best, null); assert.equal(h[2].all_time_best, 'Masters');
+  });
+  await t.test('partial equipment entries preserve known metadata for the same ID without inventing fresh verification', async () => {
+    await reset(); await save(payload()); const before = await one('player_brawler_details');
+    await db.query(preservation); assert.deepEqual(await one('player_brawler_details'), before, 'Applying the fix must not rewrite existing observations');
+    const partial = brawler({ gears: [{ id: 62000000 }], skin: { id: 29000001 }, gadgets: [{ id: 23000000, name: '' }], hyper_charges: [{ id: 76000000 }] });
+    partial.trophies = 751;
+    await save(payload({ brawlers: [partial] })); const after = await one('player_brawler_details');
+    assert.deepEqual(after.gears, before.gears); assert.deepEqual(after.skin, before.skin); assert.deepEqual(after.gadgets, before.gadgets); assert.deepEqual(after.hyper_charges, before.hyper_charges);
+    assert.equal(after.trophies, 751); assert.ok(after.observed_at > before.observed_at);
+    for (const field of ['gears', 'skin', 'gadgets', 'hyper_charges']) assert.equal(after.field_checked_at[field], before.field_checked_at[field]);
+    await save(payload({ brawlers: [partial] })); assert.equal((await one('player_brawler_details')).version, after.version, 'An unchanged merged observation must not rewrite the row');
+    await save(payload({ brawlers: [brawler({ gears: [{ id: 62000001 }], skin: { id: 29000002 }, gadgets: [], hyper_charges: [] })] }));
+    const replacement = await one('player_brawler_details');
+    assert.deepEqual(replacement.gears, [{ id: 62000001, name: null }]); assert.deepEqual(replacement.skin, { id: 29000002, name: null });
+    assert.deepEqual(replacement.gadgets, []); assert.deepEqual(replacement.hyper_charges, []);
+    await save(payload({ brawlers: [brawler({ gears: [{ id: 62000001, name: 'Updated', level: 0 }] })] }));
+    assert.deepEqual((await one('player_brawler_details')).gears, [{ id: 62000001, name: 'Updated', level: 0 }]);
+  });
+  await t.test('invalid equipment attributes preserve knowledge while an omitted prior ID stays removed', async () => {
+    await reset(); await save(payload({ brawlers: [brawler({ gears: [{ id: 62000000, name: 'SPEED', level: 3 }, { id: 62000001, name: 'DAMAGE', level: 2 }] })] }));
+    const original = await one('player_brawler_details');
+    await save(payload({ brawlers: [brawler({ gears: [{ id: 62000000, name: false }] })] }));
+    const reduced = await one('player_brawler_details'); assert.deepEqual(reduced.gears, [{ id: 62000000, name: 'SPEED', level: 3 }]);
+    assert.equal(reduced.field_checked_at.gears, original.field_checked_at.gears);
+    await save(payload({ brawlers: [brawler({ gears: [{ id: 62000000, name: '', level: -1 }], skin: { id: 29000001, name: false } })] }));
+    const invalid = await one('player_brawler_details'); assert.deepEqual(invalid.gears, reduced.gears); assert.deepEqual(invalid.skin, original.skin);
+    assert.equal(invalid.version, reduced.version); assert.equal(invalid.field_checked_at.gears, original.field_checked_at.gears);
   });
   await t.test('cached-only ranked values do not invent a new observed history baseline', async () => {
     await reset(); await db.query("INSERT INTO members(player_tag,player_name,rank_current,rank_highest) VALUES('#AA','Legacy','Gold I','Masters')");
@@ -159,6 +188,7 @@ test('profile progress is prospective, bounded and atomic in local PostgreSQL', 
           await assert.rejects(db.query(`DELETE FROM ${table}`), e => e.code === '42501');
         }
         await assert.rejects(db.query("SELECT sync_apply_player_progress(gen_random_uuid(),'{\"members\":[],\"brawlers\":[]}',now())"), e => e.code === '42501');
+        await assert.rejects(db.query("SELECT sync_merge_progress_equipment('[]','[]')"), e => e.code === '42501');
       } finally { await db.query('RESET ROLE'); }
     }
     const run = await acquire(); await db.query('SET ROLE service_role');

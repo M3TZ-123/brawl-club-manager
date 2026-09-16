@@ -51,6 +51,56 @@ test('cache contention and provider failure serve known data without duplicate c
   const success=cacheHarness();assert.equal((await success.service.loadGameData('events')).stale,false);assert.equal(success.count(),1);
 });
 
+function deferred() { let resolve,reject;const promise=new Promise((ok,fail)=>{resolve=ok;reject=fail;});return{promise,resolve,reject}; }
+test('concurrent cold-cache readers share a successful refresh instead of receiving an unavailable snapshot',async()=>{
+  const started=deferred(),release=deferred();let claims=0,finishes=0,upstream=0;
+  const service=loadTypeScript('src/lib/game-cache.ts',{
+    '@/lib/supabase-admin':{supabaseAdmin:{rpc:async(name)=>{
+      if(name==='claim_game_cache'){claims++;return{data:{acquired:claims===1,entry:{payload:null,lease_until:new Date(Date.now()+15000).toISOString()}}};}
+      finishes++;return{data:true};
+    }}},
+    '@/lib/official-game-api':{officialGameRequest:async()=>{upstream++;started.resolve();return release.promise;}}
+  });
+  const first=service.loadGameData('events'),second=service.loadGameData('events');
+  await started.promise;release.resolve([]);
+  const results=await Promise.all([first,second]);
+  for(const result of results){assert.deepEqual(plain(result.data),[]);assert.equal(result.stale,false);assert.equal(result.refreshing,false);}
+  assert.equal(claims,1);assert.equal(upstream,1);assert.equal(finishes,1);
+});
+test('refresh sharing is restricted to the exact finite cache key and ends after completion',async()=>{
+  const release=deferred(),allStarted=deferred(),paths=[];let claims=0;
+  const service=loadTypeScript('src/lib/game-cache.ts',{
+    '@/lib/supabase-admin':{supabaseAdmin:{rpc:async(name)=>{if(name==='claim_game_cache'){claims++;return{data:{acquired:true,entry:{payload:null}}};}return{data:true};}}},
+    '@/lib/official-game-api':{officialGameRequest:async(path)=>{paths.push(path);if(paths.length===3)allStarted.resolve();await release.promise;return path==='/events/rotation'?[]:{items:[]};}}
+  });
+  const requests=[service.loadGameData('events'),service.loadGameData('players','TN'),service.loadGameData('clubs','TN')];
+  await allStarted.promise;release.resolve();await Promise.all(requests);
+  assert.deepEqual(paths,['/events/rotation','/rankings/TN/players?limit=50','/rankings/TN/clubs?limit=50']);assert.equal(claims,3);
+  await service.loadGameData('events');assert.equal(claims,4);assert.equal(paths.length,4);
+});
+test('failed shared refreshes release their entry so later requests can retry',async()=>{
+  const release=deferred(),started=deferred();let claims=0,upstream=0,finishes=0;
+  const service=loadTypeScript('src/lib/game-cache.ts',{
+    '@/lib/supabase-admin':{supabaseAdmin:{rpc:async(name)=>{if(name==='claim_game_cache'){claims++;return{data:{acquired:true,entry:{payload:null}}};}finishes++;return{data:true};}}},
+    '@/lib/official-game-api':{officialGameRequest:async()=>{upstream++;if(upstream===1){started.resolve();await release.promise;throw Error('provider secret must not escape');}return [];}}
+  });
+  const first=service.loadGameData('events'),second=service.loadGameData('events');
+  await started.promise;release.resolve();const results=await Promise.all([first,second]);
+  for(const result of results){assert.equal(result.data,null);assert.equal(result.stale,true);assert.doesNotMatch(JSON.stringify(result),/secret/);}
+  assert.equal(claims,1);assert.equal(upstream,1);assert.equal(finishes,1);
+  const retried=await service.loadGameData('events');assert.deepEqual(plain(retried.data),[]);assert.equal(retried.stale,false);assert.equal(claims,2);assert.equal(upstream,2);
+});
+test('a rejected shared database claim is not retained for later callers',async()=>{
+  let claims=0;
+  const service=loadTypeScript('src/lib/game-cache.ts',{
+    '@/lib/supabase-admin':{supabaseAdmin:{rpc:async(name)=>{if(name==='claim_game_cache'){claims++;if(claims===1)throw Error('unavailable');return{data:{acquired:true,entry:{payload:null}}};}return{data:true};}}},
+    '@/lib/official-game-api':{officialGameRequest:async()=>[]}
+  });
+  const results=await Promise.allSettled([service.loadGameData('events'),service.loadGameData('events')]);
+  assert.deepEqual(results.map(result=>result.status),['rejected','rejected']);assert.equal(claims,1);
+  assert.deepEqual(plain((await service.loadGameData('events')).data),[]);assert.equal(claims,2);
+});
+
 test('cached DTOs discard extra fields and invalid cache expiry cannot masquerade as fresh',async()=>{
   const cached=[{slotId:1,id:1,map:'Known map',mode:'gemGrab',startTime:'2026-09-16T00:00:00.000Z',endTime:'2026-09-17T00:00:00.000Z',secret:'PRIVATE'}];
   const result=await cacheHarness({acquired:false,payload:cached,expires:'invalid'}).service.loadGameData('events');

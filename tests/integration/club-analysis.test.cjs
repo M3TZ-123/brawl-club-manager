@@ -24,6 +24,7 @@ test("club analysis and readiness use real bounded PostgreSQL aggregates and pri
   assert.ok(files.some(name=>name.startsWith("202609160020_")),"Progress schema020 must exist before analysis021");
   for(const file of files)await db.query(fs.readFileSync(path.join(migrationDir,file),"utf8"));
   await db.query(fs.readFileSync(path.join(migrationDir,"202609160021_club_analysis.sql"),"utf8"));
+  await db.query(fs.readFileSync(path.join(migrationDir,"202609160026_analysis_team_reads.sql"),"utf8"));
   await db.query("INSERT INTO settings(key,value) VALUES('club_tag','#CLUB'),('scheduler_token','SECRET'),('api_key','SECRET') ON CONFLICT(key) DO UPDATE SET value=excluded.value");
   await db.query("INSERT INTO members(player_tag,player_name,trophies,owner_user_id) VALUES('#A','علي',1000,'00000000-0000-0000-0000-000000000001'),('#B','B',1000,NULL),('#D','D',1000,NULL),('#EMPTY','Empty',1000,NULL),('#FORMER','Former',1000,NULL)");
   await db.query("INSERT INTO member_history(player_tag,player_name,is_current_member,notes) SELECT player_tag,player_name,player_tag<>'#FORMER','SECRET' FROM members;INSERT INTO member_history(player_tag,player_name,is_current_member)VALUES('#MISSING','Missing',true)");

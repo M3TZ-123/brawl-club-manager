@@ -213,3 +213,36 @@ test("rank history keeps unknown seasons distinct and Arabic UI places the brawl
   const { translate } = loadTypeScript("src/lib/i18n/messages.ts");
   for (const key of ["Battle analysis", "Brawler readiness", "Player progress and collection", "Reported hypercharges", "No confirmed teammate pairs in these records."]) assert.notEqual(translate(key, "ar"), key);
 });
+
+test("returning to a paginated feature within the cache window keeps loaded rows until the source changes", async () => {
+  const renderer = hookRenderer(), window = target(), document = { ...target(), visibilityState: "visible" };
+  let reads = 0;
+  const { useFeatureResource } = loadTypeScript("src/components/use-feature-resource.ts", { react: renderer.react }, {
+    window, document, fetch: async () => Response.json({ items: [++reads], nextOffset: 24 }),
+  });
+  const render = () => renderer.render(() => useFeatureResource("/api/readiness?limit=24", "roster"));
+  let state = await render();
+  state.updateData(data => ({ ...data, items: [...data.items, 99], nextOffset: 48 })); state = await render();
+  window.dispatchEvent({ type: "focus" }); state = await render();
+  assert.equal(reads, 1, "The fresh first-page cache is reused");
+  assert.deepEqual(Array.from(state.data.items), [1, 99], "Refocusing must not discard appended rows");
+  assert.equal(state.data.nextOffset, 48);
+  window.dispatchEvent({ type: "club-data-updated", detail: { datasets: ["roster"] } }); state = await render();
+  assert.equal(reads, 2); assert.deepEqual(Array.from(state.data.items), [2], "A new server response still refreshes the roster");
+});
+
+test("an open brawler sheet uses a newer collection observation when its history refresh fails", async () => {
+  let updated = false;
+  const selected = () => ({ ...brawler(), highestTrophies: updated ? 200 : 100, lastCheckedAt: updated ? "2026-09-16T11:00:00Z" : "2026-09-16T10:00:00Z" });
+  const page = harness("src/components/player-progress.tsx", params => {
+    if (params.has("brawlerId") && updated) return Promise.reject(new Error("History refresh failed"));
+    return progress({ collection: { items: [selected()], total: 1, nextCursor: null, lastCheckedAt: "2026-09-16T11:00:00Z" } });
+  }, { name: "PlayerProgress", props: { playerTag: "#ONE", range: "7d" } });
+  let tree = await page.render();
+  elements(tree).find(node => node.type === "button" && textContent(node).startsWith("Brawler 16000000")).props.onClick(); tree = await page.render();
+  let sheet = elements(tree).find(node => node.type === "SheetContent"); assert.match(textContent(sheet), /Official highest trophies100/);
+  updated = true; page.window.dispatchEvent({ type: "club-data-updated", detail: { datasets: ["roster"] } }); tree = await page.render();
+  sheet = elements(tree).find(node => node.type === "SheetContent");
+  assert.match(textContent(sheet), /Brawler history could not be loaded/);
+  assert.match(textContent(sheet), /Official highest trophies200/, "Fresh known profile data must not be hidden by stale history data");
+});
