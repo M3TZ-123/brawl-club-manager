@@ -180,5 +180,6 @@ test("durable sync PostgreSQL integration", { skip: !connectionString }, async (
         await assert.rejects(client.query("SELECT acquire_sync_run('#CLUB','manual','full')"), /permission denied/); await client.query("ROLLBACK");
       } finally { client.release(); }
     });
+    await require("./helpers/adaptive-sync-checks.cjs").runAdaptiveSyncChecks(t, db);
   } finally { await db.end(); }
 });

@@ -1,0 +1,83 @@
+const test=require("node:test");
+const assert=require("node:assert/strict");
+const {loadTypeScript}=require("./helpers/load-typescript.cjs");
+const {readOnlyDatabase}=require("./helpers/read-only-database.cjs");
+const now="2026-09-16T12:00:00.000Z";
+class FixedDate extends Date {constructor(...args){super(...(args.length?args:[now]));}static now(){return Date.parse(now);}}
+const ago=minutes=>new Date(Date.parse(now)-minutes*60000).toISOString();
+function route(settings={},options={}){
+ const tables={sync_runs:options.runs||[],sync_leases:[],notification_outbox:[]};
+ return loadTypeScript("src/app/api/sync/status/route.ts",{
+  "next/server":{NextResponse:{json:(body,init)=>Response.json(body,init)}},
+  "@/lib/supabase-admin":{supabaseAdmin:readOnlyDatabase(tables)},
+  "@/lib/admin-auth":{verifyAdminSession:()=>!!options.admin},
+  "@/lib/sync-service":{normalizeSyncTag:tag=>tag,readSyncSettings:async()=>({club_tag:"#CLUB",api_key:"private-key",...settings})},
+ },{Date:FixedDate,process:{env:{}}});
+}
+const get=async(api)=>{const response=await api.GET(new Request("http://fixture/api/sync/status"));assert.equal(response.status,200);return response.json();};
+
+test("a fresh roster never promotes old full or missing gameplay data to fresh",async()=>{
+ const body=await get(route({last_sync_time:ago(60),last_full_sync_time:ago(60),last_roster_sync_time:ago(1)}));
+ assert.equal(body.lastSuccessAt,ago(60));assert.equal(body.lastFullSuccessAt,ago(60));
+ assert.equal(body.lastRosterSuccessAt,ago(1));assert.equal(body.rosterFreshness,"fresh");
+ assert.equal(body.freshness,"stale");assert.equal(body.fullFreshness,"stale");
+ assert.equal(body.lastBattleSuccessAt,null);assert.equal(body.battleFreshness,"never");
+ assert.equal(body.lastRankedSuccessAt,null);assert.equal(body.rankedFreshness,"never");
+ assert.deepEqual([body.rosterIntervalMinutes,body.expectedIntervalMinutes,body.rankedIntervalMinutes],[2,10,30]);
+});
+
+test("battle and ranked completion keep independent cadence and timestamps",async()=>{
+ const body=await get(route({last_sync_time:ago(1),last_full_sync_time:ago(1),last_roster_sync_time:ago(1),last_battle_sync_time:ago(40),last_ranked_sync_time:ago(40)}));
+ assert.equal(body.fullFreshness,"fresh");assert.equal(body.battleFreshness,"stale");assert.equal(body.rankedFreshness,"fresh");
+ assert.equal(body.lastBattleSuccessAt,ago(40));assert.equal(body.lastRankedSuccessAt,ago(40));
+ assert.deepEqual([body.rosterStaleAfterMinutes,body.staleAfterMinutes,body.battleStaleAfterMinutes,body.rankedStaleAfterMinutes],[5,25,25,65]);
+});
+
+test("legacy full marker is compatible but an explicitly reset marker stays empty",async()=>{
+ const legacy=await get(route({last_sync_time:ago(5)}));assert.equal(legacy.lastSuccessAt,ago(5));
+ assert.equal(legacy.battleFreshness,"never");assert.equal(legacy.rankedFreshness,"never");
+ const reset=await get(route({last_sync_time:ago(5),last_full_sync_time:""}));assert.equal(reset.lastSuccessAt,null);assert.equal(reset.freshness,"never");
+});
+
+test("latest member or roster attempts cannot supply club-wide gameplay completion",async()=>{
+ for(const scope of ["member","roster"]){const body=await get(route({last_sync_time:ago(90)}, {runs:[{id:"run-1",club_tag:"#CLUB",scope,source:"manual",started_at:ago(1),finished_at:now,status:"succeeded",counts:{members:1},result:{timestamp:now}}]}));
+ assert.equal(body.latestRun.scope,scope);assert.equal(body.lastAttemptAt,ago(1));assert.equal(body.lastSuccessAt,ago(90));assert.equal(body.battleFreshness,"never");}
+});
+
+test("public run warnings and counts allow only known safe fields",async()=>{
+ const api=route({}, {runs:[{id:"run-1",club_tag:"#CLUB",scope:"full",source:"cron",started_at:ago(1),status:"succeeded",counts:{members:30,battles:123,events:2,owner_user_id:"private-owner",notes:"private-notes"},result:{api_key:"private-key",member:{owner_user_id:"private-owner"},warnings:["battle_logs_incomplete","ranked_rate_limited","battle_logs_incomplete","private-error-body",{owner_user_id:"private-owner"}]}}]});
+ const response=await api.GET(new Request("http://fixture/api/sync/status"));const body=await response.json();
+ assert.deepEqual(body.latestRun.warnings,["battle_logs_incomplete","ranked_rate_limited"]);
+ assert.deepEqual(body.latestRun.counts,{members:30,battles:123,events:2});
+ assert.deepEqual(body.latestFullRun,body.latestRun);
+ assert.doesNotMatch(JSON.stringify(body),/private-|owner_user_id|api_key/);
+ assert.equal(Object.hasOwn(body,"recentRuns"),false);assert.equal(Object.hasOwn(body.latestRun,"result"),false);
+ assert.equal(response.headers.get("cache-control"),"no-store");assert.equal(response.headers.get("vary"),"Cookie");
+});
+
+test("invalid or future markers cannot claim freshness",async()=>{
+ const body=await get(route({last_full_sync_time:"not-a-date",last_roster_sync_time:"2099-01-01T00:00:00Z",last_battle_sync_time:"2099-01-01T00:00:00Z",sync_expected_interval_minutes:"invalid",sync_roster_interval_minutes:"0",sync_ranked_interval_minutes:"-1"}));
+ assert.equal(body.lastSuccessAt,null);assert.equal(body.fullFreshness,"stale");assert.equal(body.lastRosterSuccessAt,null);assert.equal(body.rosterFreshness,"stale");assert.equal(body.battleFreshness,"stale");
+ assert.deepEqual([body.rosterIntervalMinutes,body.expectedIntervalMinutes,body.rankedIntervalMinutes],[2,10,30]);
+});
+
+test("frequent roster successes cannot hide the separate full attempt or its safe partial warnings",async()=>{
+ const full={id:"partial-full",club_tag:"#CLUB",scope:"full",source:"cron",started_at:ago(10),finished_at:ago(9),status:"succeeded",counts:{members:30,owner_user_id:"private-owner"},result:{warnings:["battle_logs_incomplete","private-detail"],api_key:"private-key"}};
+ const runs=[full,...Array.from({length:25},(_,index)=>({id:`roster-${index}`,club_tag:"#CLUB",scope:"roster",source:"cron",started_at:ago((index+1)/10),status:"succeeded",result:{warnings:[]}})),{...full,id:"other-club",club_tag:"#OTHER",started_at:now}];
+ for(const admin of [false,true]){
+  const body=await get(route({last_full_sync_time:ago(9),last_battle_sync_time:ago(20),last_roster_sync_time:ago(.1)},{runs,admin}));
+  assert.equal(body.latestRun.scope,"roster");assert.deepEqual(body.latestRun.warnings,[]);
+  assert.equal(body.latestFullRun.id,"partial-full");assert.deepEqual(body.latestFullRun.warnings,["battle_logs_incomplete"]);
+  assert.equal(body.fullFreshness,"fresh");assert.equal(body.battleFreshness,"fresh");
+  assert.doesNotMatch(JSON.stringify(body),/private-|owner_user_id|api_key/);
+ }
+});
+
+test("an in-flight full retry retains the previous terminal outcome until it finishes",async()=>{
+ const previous={id:"previous-full",club_tag:"#CLUB",scope:"full",source:"cron",started_at:ago(10),finished_at:ago(9),status:"failed",error_code:"upstream_rate_limited"};
+ const retry={id:"retry",club_tag:"#CLUB",scope:"full",source:"cron",started_at:ago(1),status:"running",result:{warnings:[]}};
+ let body=await get(route({}, {runs:[previous,retry]}));
+ assert.equal(body.latestRun.id,"retry");assert.equal(body.latestFullRun.id,"previous-full");assert.equal(body.latestFullRun.status,"failed");
+ body=await get(route({}, {runs:[previous,{...retry,status:"succeeded",finished_at:now}]}));
+ assert.equal(body.latestFullRun.id,"retry");assert.equal(body.latestFullRun.status,"succeeded");assert.deepEqual(body.latestFullRun.warnings,[]);
+});

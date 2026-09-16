@@ -10,7 +10,7 @@ function fixture(initial = "2026-09-15T23:40:07.824Z") {
   const window = target(), document = {...target(),visibilityState:"visible"}, timers = new Map(), requests = [], writes = [], emitted = [];
   let response = status(timestamp), nextTimer = 0;
   const state = {lastSyncTime:initial,setLastSyncTime(value) {state.lastSyncTime = value;}};
-  window.setInterval = (callback,ms) => {assert.equal(ms,60000);timers.set(++nextTimer,callback);return nextTimer;};
+  window.setInterval = (callback,ms) => {assert.equal(ms,30000);timers.set(++nextTimer,callback);return nextTimer;};
   window.clearInterval = id => timers.delete(id);
   window.localStorage = {setItem: (key,value) => writes.push({key,value})};
   window.addEventListener("club-data-updated",event => emitted.push(event.detail));
@@ -33,7 +33,7 @@ test("sidebar and health consumers share one poll and replace even a newer persi
   assert.equal(notifications,3);
   assert.equal(f.emitted.length,1);
   assert.equal(f.emitted[0].source,"sync-status");
-  assert.equal(f.writes[0].value,timestamp);
+  assert.equal(JSON.parse(f.writes[0].value)[0],timestamp);
   f.timers.values().next().value(); await settle();
   assert.equal(f.requests.length,2);
   assert.equal(f.emitted.length,1,"An unchanged marker must not cause page reload loops");
@@ -79,6 +79,16 @@ test("failed reads preserve the last known success; an authoritative reset clear
   assert.equal(f.state.lastSyncTime,null);assert.equal(f.module.getSyncHealth().lastSuccessAt,null);stop();
 });
 
+test("the shared monitor retains a full partial outcome separately from the latest roster success",async()=>{
+  const f=fixture();
+  const latestFullRun={source:"cron",scope:"full",status:"succeeded",finishedAt:timestamp,warnings:["battle_logs_incomplete"]};
+  f.setResponse({...status(timestamp),latestRun:{source:"cron",scope:"roster",status:"succeeded",warnings:[]},latestFullRun});
+  const stop=f.module.subscribeSyncHealth(()=>{});await settle();
+  assert.equal(f.module.getSyncHealth().latestRun.scope,"roster");
+  assert.deepEqual(JSON.parse(JSON.stringify(f.module.getSyncHealth().latestFullRun)),latestFullRun);
+  assert.equal(f.requests.length,1);assert.equal(f.timers.size,1);stop();
+});
+
 test("persisted timestamps are neither saved nor restored, while locale and theme preferences survive",()=>{
   let options;
   const {useAppStore}=loadTypeScript("src/lib/store.ts",{"zustand/middleware":{persist:(initializer,configuration)=>{options=configuration;return initializer;}}});
@@ -95,4 +105,15 @@ test("an old settings response cannot overwrite a newer server status accepted w
   useAppStore.getState().setLastSyncTime(timestamp);
   pending.resolve(Response.json({club_tag:"#A",api_key_configured:"true",last_sync_time:"2026-09-15T23:40:07.824Z"}));
   await load;assert.equal(useAppStore.getState().lastSyncTime,timestamp);
+});
+
+
+test("roster-only completion refreshes member views while preserving the full-sync timestamp",async()=>{
+ const f=fixture();f.setResponse({...status(timestamp),lastRosterSuccessAt:timestamp,lastBattleSuccessAt:null,lastRankedSuccessAt:null,fullFreshness:"fresh",rosterFreshness:"fresh",battleFreshness:"never",rankedFreshness:"never"});
+ const stop=f.module.subscribeSyncHealth(()=>{});await settle();const events=f.emitted.length;
+ f.setResponse({...status(timestamp),lastRosterSuccessAt:"2026-09-16T00:04:54.119Z",lastBattleSuccessAt:null,lastRankedSuccessAt:null,fullFreshness:"fresh",rosterFreshness:"fresh",battleFreshness:"never",rankedFreshness:"never"});
+ await f.module.refreshSyncHealth();assert.equal(f.emitted.length,events+1);assert.equal(f.state.lastSyncTime,timestamp);
+ assert.equal(f.module.getSyncHealth().lastRosterSuccessAt,"2026-09-16T00:04:54.119Z");assert.equal(f.module.getSyncHealth().battleFreshness,"never");
+ assert.equal(JSON.parse(f.writes.at(-1).value)[1],"2026-09-16T00:04:54.119Z");
+ await f.module.refreshSyncHealth();assert.equal(f.emitted.length,events+1);stop();
 });

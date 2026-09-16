@@ -1,5 +1,6 @@
 import axios from "axios";
 import { encodeTag } from "./utils";
+import { callWithUpstreamRetry, getUpstreamCooldownMs, UpstreamRateLimitError, type UpstreamProvider } from "./upstream-rate-limit";
 
 // Use RoyaleAPI proxy to bypass IP restrictions
 // Docs: https://docs.royaleapi.com/proxy.html
@@ -172,93 +173,74 @@ function isRankBattleVictory(battle: BrawlStarsBattle): boolean {
 }
 
 export class BrawlApiError extends Error {
-  constructor(message: string, public readonly status?: number, public readonly reason?: string) {
+  constructor(
+    message: string,
+    public readonly status?: number,
+    public readonly reason?: string,
+    public readonly retryAfterMs?: number,
+    public readonly provider: UpstreamProvider = "brawl",
+  ) {
     super(message);
     this.name = "BrawlApiError";
   }
 }
 
-// Preserve the upstream status when translating Axios errors for callers.
-function handleApiError(error: unknown, endpoint: string): never {
+// Keep status/cooldown actionable without exposing upstream bodies or Axios
+// request objects (which contain the API key) to logs or public errors.
+function handleApiError(error: unknown): never {
+  if (error instanceof UpstreamRateLimitError) {
+    throw new BrawlApiError("API 429 Rate Limited: Please wait before trying again.", 429, "rateLimited", error.retryAfterMs, error.provider);
+  }
   if (axios.isAxiosError(error)) {
     const status = error.response?.status;
-    const responseData = error.response?.data;
-    const reason = responseData?.reason || responseData?.message || "Unknown";
-    
-    console.error(`API Error on ${endpoint}:`, {
-      status,
-      reason,
-      responseData,
-      url: error.config?.url,
-      headers: error.config?.headers ? { 
-        ...error.config.headers,
-        Authorization: error.config.headers.Authorization ? "[REDACTED]" : "Not set"
-      } : "No headers"
-    });
-    
     if (status === 403) {
-      throw new BrawlApiError(`API 403 Forbidden: ${reason}. This usually means the API key is invalid or not authorized for the RoyaleAPI proxy IP (45.79.218.79). Please generate a new key at https://developer.brawlstars.com with IP: 45.79.218.79`, status, reason);
+      throw new BrawlApiError("API 403 Forbidden: The API key may be invalid or not authorized for the RoyaleAPI proxy IP (45.79.218.79). Generate a key at https://developer.brawlstars.com with IP: 45.79.218.79", status, "accessDenied");
     }
     if (status === 404) {
-      throw new BrawlApiError(`API 404 Not Found: The requested resource was not found. Check if the tag is correct.`, status, reason);
+      throw new BrawlApiError("API 404 Not Found: The requested resource was not found. Check if the tag is correct.", status, "notFound");
     }
     if (status === 429) {
-      throw new BrawlApiError(`API 429 Rate Limited: Too many requests. Please wait before trying again.`, status, reason);
+      throw new BrawlApiError("API 429 Rate Limited: Please wait before trying again.", status, "rateLimited", getUpstreamCooldownMs("brawl"));
     }
-    throw new BrawlApiError(`Brawl Stars API request failed: ${status ? `${status} ${reason}` : error.message}`, status, reason);
+    throw new BrawlApiError("Brawl Stars API request failed. Please try again later.", status, status ? "upstreamUnavailable" : "networkError");
   }
-  throw error;
-}
-
-// Wrapper that auto-retries on 429 rate limit
-async function apiCallWithRetry<T>(fn: () => Promise<T>, label: string, maxRetries = 2): Promise<T> {
-  for (let attempt = 0; attempt <= maxRetries; attempt++) {
-    try {
-      return await fn();
-    } catch (error) {
-      if (axios.isAxiosError(error) && error.response?.status === 429 && attempt < maxRetries) {
-        const waitMs = 1000 * (attempt + 1); // 1s, then 2s
-        console.warn(`Rate limited on ${label}, retrying in ${waitMs}ms (attempt ${attempt + 1}/${maxRetries})`);
-        await new Promise((resolve) => setTimeout(resolve, waitMs));
-        continue;
-      }
-      throw error;
-    }
+  if (error instanceof Error && (error.name === "AbortError" || error.name === "TimeoutError")) {
+    throw error;
   }
-  throw new Error(`Unreachable`);
+  throw new BrawlApiError("Brawl Stars API request failed. Please try again later.", undefined, "upstreamUnavailable");
 }
 
 // API Functions
-export async function getClub(clubTag: string, apiKey?: string, signal?: AbortSignal): Promise<BrawlStarsClub> {
+export async function getClub(clubTag: string, apiKey?: string, signal?: AbortSignal, deadlineAt?: number): Promise<BrawlStarsClub> {
   try {
-    return await apiCallWithRetry(
-      () => brawlApi.get(`/clubs/${encodeTag(clubTag)}`, { ...getAuthConfig(apiKey), signal }).then(r => r.data),
-      `getClub(${clubTag})`
+    return await callWithUpstreamRetry(
+      (timeout) => brawlApi.get(`/clubs/${encodeTag(clubTag)}`, { ...getAuthConfig(apiKey), signal, timeout }).then(r => r.data),
+      { provider: "brawl", signal, deadlineAt },
     );
   } catch (error) {
-    handleApiError(error, `getClub(${clubTag})`);
+    handleApiError(error);
   }
 }
 
-export async function getPlayer(playerTag: string, apiKey?: string, signal?: AbortSignal): Promise<BrawlStarsPlayer> {
+export async function getPlayer(playerTag: string, apiKey?: string, signal?: AbortSignal, deadlineAt?: number): Promise<BrawlStarsPlayer> {
   try {
-    return await apiCallWithRetry(
-      () => brawlApi.get(`/players/${encodeTag(playerTag)}`, { ...getAuthConfig(apiKey), signal }).then(r => r.data),
-      `getPlayer(${playerTag})`
+    return await callWithUpstreamRetry(
+      (timeout) => brawlApi.get(`/players/${encodeTag(playerTag)}`, { ...getAuthConfig(apiKey), signal, timeout }).then(r => r.data),
+      { provider: "brawl", signal, deadlineAt },
     );
   } catch (error) {
-    handleApiError(error, `getPlayer(${playerTag})`);
+    handleApiError(error);
   }
 }
 
-export async function getPlayerBattleLog(playerTag: string, apiKey?: string, signal?: AbortSignal): Promise<BrawlStarsBattleLog> {
+export async function getPlayerBattleLog(playerTag: string, apiKey?: string, signal?: AbortSignal, deadlineAt?: number): Promise<BrawlStarsBattleLog> {
   try {
-    return await apiCallWithRetry(
-      () => brawlApi.get(`/players/${encodeTag(playerTag)}/battlelog`, { ...getAuthConfig(apiKey), signal }).then(r => r.data),
-      `getPlayerBattleLog(${playerTag})`
+    return await callWithUpstreamRetry(
+      (timeout) => brawlApi.get(`/players/${encodeTag(playerTag)}/battlelog`, { ...getAuthConfig(apiKey), signal, timeout }).then(r => r.data),
+      { provider: "brawl", signal, deadlineAt },
     );
   } catch (error) {
-    handleApiError(error, `getPlayerBattleLog(${playerTag})`);
+    handleApiError(error);
   }
 }
 
@@ -316,67 +298,45 @@ export function formatLeagueRankFromPoints(points: number): string {
 }
 
 // Fetch real ranked data from RNT API (with retry)
-export async function getPlayerRankedData(playerTag: string, options: { signal?: AbortSignal } = {}): Promise<{
+export async function getPlayerRankedData(playerTag: string, options: { signal?: AbortSignal; deadlineAt?: number } = {}): Promise<{
   currentRank: string;
   highestRank: string;
   currentPoints: number;
   highestPoints: number;
+  available?: boolean;
+  retryAfterMs?: number;
 }> {
-  const MAX_RETRIES = 1;
   const cleanTag = playerTag.replace('#', '');
-  const unavailable = { currentRank: "Unranked", highestRank: "Unranked", currentPoints: 0, highestPoints: 0 };
-
-  for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
-    if (options.signal?.aborted) return unavailable;
-    try {
-      const response = await axios.get(`${RNT_API_URL}/profile?tag=${cleanTag}`, {
-        timeout: 4000,
+  const unavailable = { currentRank: "Unranked", highestRank: "Unranked", currentPoints: 0, highestPoints: 0, available: false };
+  try {
+    const response = await callWithUpstreamRetry(
+      (timeout) => axios.get<RntPlayerResponse>(`${RNT_API_URL}/profile?tag=${encodeURIComponent(cleanTag)}`, {
+        timeout,
         proxy: false,
         signal: options.signal,
-      });
-      
-      if (!response.data?.ok || !response.data?.result?.stats) {
-        return {
-          currentRank: "Unranked",
-          highestRank: "Unranked",
-          currentPoints: 0,
-          highestPoints: 0,
-        };
-      }
-      
-      const stats = response.data.result.stats;
-      
-      // Find ranked stats by ID:
-      // 24: CurrentRankedPoints
-      // 25: HighestRankedPoints
-      const currentPoints = stats.find((s: { id: number }) => s.id === 24)?.value || 0;
-      const highestPoints = stats.find((s: { id: number }) => s.id === 25)?.value || 0;
-      
-      return {
-        currentRank: formatLeagueRankFromPoints(currentPoints),
-        highestRank: formatLeagueRankFromPoints(highestPoints),
-        currentPoints,
-        highestPoints,
-      };
-    } catch (error) {
-      if (options.signal?.aborted || axios.isCancel(error)) return unavailable;
-      if (attempt < MAX_RETRIES) {
-        // Wait briefly before retrying
-        await new Promise((resolve) => setTimeout(resolve, 300));
-        continue;
-      }
-      console.error(`Error fetching ranked data for ${playerTag} after ${MAX_RETRIES + 1} attempts:`, error);
-      return {
-        currentRank: "Unranked",
-        highestRank: "Unranked",
-        currentPoints: 0,
-        highestPoints: 0,
-      };
-    }
-  }
+      }),
+      { provider: "rnt", ...options, maxDurationMs: 8000, requestTimeoutMs: 4000, maxAttempts: 2, retryTransient: true },
+    );
+    const stats = response.data?.result?.stats;
+    if (!response.data?.ok || !Array.isArray(stats)) return unavailable;
 
-  // TypeScript fallback (unreachable)
-  return { currentRank: "Unranked", highestRank: "Unranked", currentPoints: 0, highestPoints: 0 };
+    // Missing/invalid fields are unavailable, not evidence that a rank reset.
+    // Explicit zero points is a successful Bronze I response.
+    const currentPoints = stats.find((stat) => stat?.id === 24)?.value;
+    const highestPoints = stats.find((stat) => stat?.id === 25)?.value;
+    if (typeof currentPoints !== "number" || !Number.isFinite(currentPoints) || currentPoints < 0 ||
+      typeof highestPoints !== "number" || !Number.isFinite(highestPoints) || highestPoints < 0) return unavailable;
+    return {
+      currentRank: formatLeagueRankFromPoints(currentPoints),
+      highestRank: formatLeagueRankFromPoints(highestPoints),
+      currentPoints,
+      highestPoints,
+      available: true,
+    };
+  } catch {
+    const retryAfterMs = getUpstreamCooldownMs("rnt");
+    return retryAfterMs > 0 ? { ...unavailable, retryAfterMs } : unavailable;
+  }
 }
 
 // Calculate win rate from battle log
@@ -389,8 +349,7 @@ export async function getPlayerWinRate(playerTag: string, apiKey?: string): Prom
   try {
     const battleLog = await getPlayerBattleLog(playerTag, apiKey);
     return calculateWinRateFromBattleLog(battleLog);
-  } catch (error) {
-    console.error(`Error fetching battle log for ${playerTag}:`, error);
+  } catch {
     return { winRate: null, totalBattles: 0, wins: 0 };
   }
 }
@@ -467,8 +426,7 @@ export async function getLastBattleTime(playerTag: string, apiKey?: string): Pro
     }
     
     return null;
-  } catch (error) {
-    console.error(`Error fetching last battle time for ${playerTag}:`, error);
+  } catch {
     return null;
   }
 }
@@ -554,8 +512,7 @@ export async function getPlayerBattleStats(playerTag: string, apiKey?: string): 
     stats.winRate = stats.battles > 0 ? Math.round((stats.wins / stats.battles) * 100) : 0;
     
     return stats;
-  } catch (error) {
-    console.error(`Error fetching battle stats for ${playerTag}:`, error);
+  } catch {
     return {
       battles: 0,
       wins: 0,

@@ -206,5 +206,36 @@ test("sync health displays backend attempt and outcome rather than inferring a n
   assert.match(textContent(tree), /failed/);
   assert.match(textContent(tree), /Every 45 minutes/);
   assert.doesNotMatch(textContent(tree), /Next auto sync|cron-job/);
-  assert.equal(elements(tree).filter(e => e.type === "LocalDate").length, 2);
+  const rows = elements(tree).filter(e => e.type?.name === "FreshnessRow");
+  assert.equal(rows.length, 4);
+  assert.equal(rows.find(e => e.props.label === "Full profiles").props.timestamp, "2026-01-01T00:00:00Z");
+  assert.equal(rows.find(e => e.props.label === "Complete battle logs").props.timestamp, undefined);
+});
+
+
+test("activity confidence ignores roster freshness and requires full profiles plus complete battle data",async()=>{
+ let health={freshness:"stale",fullFreshness:"stale",rosterFreshness:"fresh",battleFreshness:"never"};
+ const {DataConfidenceNotice}=loadTypeScript("src/components/sync-health.tsx",{...componentMocks,react:{useSyncExternalStore:(_subscribe,getSnapshot)=>getSnapshot()},"@/lib/client-sync-status":{subscribeSyncHealth(){},getServerSyncHealth:()=>null,getSyncHealth:()=>health}});
+ assert.match(textContent(DataConfidenceNotice()),/incomplete or stale/);
+ health={...health,freshness:"fresh",fullFreshness:"fresh",battleFreshness:"fresh",rankedFreshness:"stale"};
+ assert.equal(DataConfidenceNotice(),null);
+ health={...health,latestRun:{scope:"full",status:"succeeded",warnings:["battle_logs_incomplete"]}};
+ assert.match(textContent(DataConfidenceNotice()),/recent roster check does not confirm/);
+});
+
+test("a successful roster check preserves full warnings and reduced confidence until a complete full result",async()=>{
+ const renderer=hookRenderer();
+ let health={freshness:"fresh",fullFreshness:"fresh",rosterFreshness:"fresh",battleFreshness:"fresh",rankedFreshness:"fresh",running:false,expectedIntervalMinutes:10,
+  lastAttemptAt:"2026-09-16T12:00:00Z",lastOutcome:"succeeded",latestRun:{scope:"roster",status:"succeeded",warnings:[]},
+  latestFullRun:{scope:"full",status:"succeeded",finishedAt:"2026-09-16T11:50:00Z",warnings:["battle_logs_incomplete","ranked_rate_limited"]}};
+ const {SyncHealthCard,DataConfidenceNotice}=loadTypeScript("src/components/sync-health.tsx",{...componentMocks,react:{...renderer.react,useSyncExternalStore:(_subscribe,getSnapshot)=>getSnapshot()},"@/lib/client-sync-status":{subscribeSyncHealth(){},getServerSyncHealth:()=>null,getSyncHealth:()=>health}});
+ let tree=await renderer.render(()=>SyncHealthCard());
+ assert.match(textContent(tree),/Some battle logs could not be refreshed/);assert.match(textContent(tree),/ranked provider limited requests/);
+ assert.match(textContent(tree),/Last completed full attempt/);assert.match(textContent(tree),/Partial update/);
+ assert.match(textContent(DataConfidenceNotice()),/incomplete or stale/);
+ assert.ok(elements(tree).some(e=>e.type==="LocalDate"&&e.props.value==="2026-09-16T11:50:00Z"));
+ health={...health,latestFullRun:{...health.latestFullRun,status:"failed",warnings:[]}};
+ tree=await renderer.render(()=>SyncHealthCard());assert.match(textContent(tree),/latest full sync did not complete/);assert.match(textContent(DataConfidenceNotice()),/incomplete or stale/);
+ health={...health,latestFullRun:{...health.latestFullRun,status:"succeeded",warnings:[]}};
+ tree=await renderer.render(()=>SyncHealthCard());assert.doesNotMatch(textContent(tree),/Partial update|latest full sync did not complete/);assert.equal(DataConfidenceNotice(),null);
 });

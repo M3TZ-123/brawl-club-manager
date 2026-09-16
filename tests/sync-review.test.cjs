@@ -102,7 +102,12 @@ test("Discord429 is recorded as a retry without recording response bodies",async
 });
 
 function loadBrawlApi(axios) {
-  return loadTypeScript("src/lib/brawl-api.ts", { axios, "./utils": { encodeTag: encodeURIComponent } }, { console: quietConsole, setTimeout: (fn) => { fn(); return 0; } });
+  let now = Date.now();
+  class ClockDate extends Date { static now() { return now; } }
+  return loadTypeScript("src/lib/brawl-api.ts", { axios, "./utils": { encodeTag: encodeURIComponent } }, {
+    console: quietConsole, Date: ClockDate,
+    setTimeout: (fn, delay) => { now += delay; fn(); return 0; }, clearTimeout: () => {},
+  });
 }
 
 test("ranked cancellation ends retry work and skips subsequent requests", async () => {
