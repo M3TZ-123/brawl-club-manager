@@ -30,9 +30,9 @@ function fixture(options = {}) {
   const api = {
     async getClub(_tag,_key,_signal,deadlineAt) {calls.push({name:'club',deadlineAt});return {tag:'#CLUB',members:[{tag:'#PLAYER',name:'Player',role:'member',trophies:123,icon:{id:1}}],requiredTrophies:100};},
     async getPlayer() {calls.push({name:'player'});if(options.profileError)throw options.profileError;return {tag:'#PLAYER',name:'Player',trophies:123,highestTrophies:150,expLevel:10,brawlers:[],soloVictories:1,duoVictories:2,'3vs3Victories':3};},
-    async getPlayerBattleLog() {calls.push({name:'battles'});if(options.battleError)throw options.battleError;return {items:[]};},
+    async getPlayerBattleLog() {calls.push({name:'battles'});if(options.battleError)throw options.battleError;return options.log || {items:[]};},
     async getPlayerRankedData() {calls.push({name:'ranked'});return options.rank || {currentRank:'Gold I',highestRank:'Gold II',currentPoints:1500,highestPoints:1800,available:true};},
-    processBattleLog:()=>[],calculateWinRateFromBattleLog:()=>({winRate:null}),
+    processBattleLog:()=>{if(options.processError)throw options.processError;return [];},calculateWinRateFromBattleLog:()=>({winRate:null}),
   };
   const service=loadTypeScript('src/lib/sync-service.ts',{'@/lib/supabase-admin':{supabaseAdmin:db},'@/lib/brawl-api':api,'@/lib/upstream-rate-limit':{getUpstreamCooldownMs:()=>0}},{console:{error(){},warn(){},log(){}}});
   return {service,calls,now};
@@ -116,7 +116,23 @@ test('a partial battle update saves the shared cooldown and reports reduced comp
   assert.equal(deferred.args.p_provider,'brawl');assert.ok(Date.parse(deferred.args.p_until)>=f.now+119000);
   const commit=f.calls.find(call=>call.name==='commit_sync_snapshot');
   assert.equal(commit.args.p_payload.battle_logs_complete,false);assert.equal(commit.args.p_payload.ranked_complete,true);
+  assert.equal(commit.args.p_payload.battle_observations[0].success,false);
   assert.deepEqual([...result.warnings],['battle_logs_rate_limited']);
+});
+
+test('full sync submits coverage evidence only for valid successfully processed battle windows',async()=>{
+  const timestamp=new Date(Math.floor((Date.now()-60000)/1000)*1000).toISOString();
+  const log={items:[{battleTime:timestamp.replace(/[-:]/g,''),battle:{result:'victory'}}]};
+  const valid=fixture({log});await valid.service.executeSync({source:'cron'});
+  const payload=valid.calls.find(call=>call.name==='commit_sync_snapshot').args.p_payload;
+  assert.equal(payload.battle_observations[0].success,true);
+  assert.deepEqual([...payload.battle_observations[0].battle_times],[timestamp]);
+  for(const options of [{log:{items:[{battleTime:'bad',battle:{}}]}},{log,processError:new Error('Malformed teams')}]) {
+    const f=fixture(options);await f.service.executeSync({source:'cron'});
+    const p=f.calls.find(call=>call.name==='commit_sync_snapshot').args.p_payload;
+    assert.equal(p.battle_logs_complete,false);assert.equal(p.battle_observations[0].success,false);
+    assert.deepEqual([...p.battles],[]);assert.ok(p.warnings.includes('battle_logs_incomplete'));
+  }
 });
 
 test('a persisted game cooldown prevents all upstream requests',async()=>{

@@ -1,6 +1,7 @@
 import { supabaseAdmin } from "@/lib/supabase-admin";
 import { publicMemberSnapshot } from "@/lib/sync-public-snapshots";
 import { getUpstreamCooldownMs } from "@/lib/upstream-rate-limit";
+import { battleObservation, type BattleObservation } from "@/lib/battle-coverage";
 import { getClub, getPlayer, getPlayerBattleLog, getPlayerRankedData, processBattleLog, calculateWinRateFromBattleLog, type BrawlStarsBrawler } from "@/lib/brawl-api";
 
 export class SyncError extends Error {
@@ -163,23 +164,39 @@ export async function executeSync(options: {
     if (fetchRanks) ranked = prefetchSyncRanks(roster.map((member) => member.tag), signal, Math.min(deadlineAt, Date.now() + 8000));
     const members = [];
     const battles: ReturnType<typeof processBattleLog> = [];
+    const battleObservations: BattleObservation[] = [];
     const brawlers = [];
     let refreshedBrawlers: BrawlStarsBrawler[] | undefined;
     for (let offset = 0; offset < roster.length; offset += 4) {
       if (signal.aborted) throw new SyncError("upstream_timeout", "The upstream API exceeded the sync time budget.");
       if (offset > 0) await new Promise((resolve) => setTimeout(resolve, 300));
       const batch = await Promise.all(roster.slice(offset, offset + 4).map(async (member) => {
+        let logFetched = true;
         const [player, rank, log] = await Promise.all([
           getPlayer(member.tag, apiKey, signal, deadlineAt), ranked?.results.get(member.tag) ?? null,
           getPlayerBattleLog(member.tag, apiKey, signal, deadlineAt).catch(error => {
+            logFetched = false;
             battleLogsComplete = false;
             warnings.add(rememberRateLimit(error) ? "battle_logs_rate_limited" : "battle_logs_incomplete");
             return { items: [] };
           }),
         ]);
-        return { member, player, rank, log };
+        return { member, player, rank, log, logFetched };
       }));
-      for (const { member, player, rank, log } of batch) {
+      for (const { member, player, rank, log: fetchedLog, logFetched } of batch) {
+        let log = fetchedLog;
+        let observation = battleObservation(member.tag, logFetched ? log : null);
+        let processed: ReturnType<typeof processBattleLog> = [];
+        if (observation.success) {
+          try { processed = processBattleLog(member.tag, log); }
+          catch { observation = { player_tag: member.tag, success: false, battle_times: [] }; }
+        }
+        if (!observation.success) {
+          battleLogsComplete = false;
+          if (logFetched) warnings.add("battle_logs_incomplete");
+          log = { items: [] };
+        }
+        battleObservations.push(observation);
         if (fetchRanks && !rank?.available) {
           rankedComplete = false;
           warnings.add(rank?.retryAfterMs ? "ranked_rate_limited" : "ranked_unavailable");
@@ -190,7 +207,7 @@ export async function executeSync(options: {
           rank_current: rank?.available ? rank.currentRank : undefined, rank_highest: rank?.available ? rank.highestRank : undefined,
           rank_available: rank?.available === true, win_rate: calculateWinRateFromBattleLog(log).winRate,
           brawlers_count: player.brawlers.length, solo_victories: player.soloVictories, duo_victories: player.duoVictories, trio_victories: player["3vs3Victories"] });
-        const uniqueBattles = new Map(processBattleLog(member.tag, log).map((battle) => [battle.battle_time, battle]));
+        const uniqueBattles = new Map(processed.map((battle) => [battle.battle_time, battle]));
         battles.push(...uniqueBattles.values());
         brawlers.push(...player.brawlers.map((b) => ({ player_tag: member.tag, brawler_id: b.id, brawler_name: b.name,
           power_level: b.power, trophies: b.trophies, rank: b.rank, gadgets_count: b.gadgets?.length || 0,
@@ -202,7 +219,8 @@ export async function executeSync(options: {
     phase = "commit";
     const { data, error } = await supabaseAdmin.rpc("commit_sync_snapshot", { p_run_id: runId, p_fence: fence,
       p_payload: { members, battles, brawlers, initial_setup: options.initialSetup === true, required_trophies: club?.requiredTrophies ?? null,
-        battle_logs_complete: battleLogsComplete, ranked_complete: rankedComplete, ranked_attempted: fetchRanks, warnings: [...warnings] } });
+        battle_logs_complete: battleLogsComplete, battle_observations: battleObservations,
+        ranked_complete: rankedComplete, ranked_attempted: fetchRanks, warnings: [...warnings] } });
     if (error) {
       console.error("Full snapshot rejected", { runId, sqlstate: /^[0-9A-Z]{5}$/.test(error.code || "") ? error.code : "unavailable" });
       const code = ["stale_sync_fence", "club_configuration_changed", "member_not_found"].includes(error.message) ? error.message

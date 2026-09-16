@@ -2,9 +2,11 @@ import { NextRequest, NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabase-admin";
 import { verifyAdminSession } from "@/lib/admin-auth";
 import { normalizeSyncTag, readSyncSettings } from "@/lib/sync-service";
+import { summarizeBattleCoverage } from "@/lib/battle-coverage";
+import { readCapacityHealth } from "@/lib/capacity-health";
 export const dynamic = "force-dynamic";
 
-const warningCodes = new Set(["battle_logs_incomplete", "ranked_unavailable", "ranked_rate_limited", "battle_logs_rate_limited"]);
+const warningCodes = new Set(["battle_logs_incomplete", "ranked_unavailable", "ranked_rate_limited", "battle_logs_rate_limited", "battle_history_gap"]);
 const response = (body: unknown, status = 200) => NextResponse.json(body, { status, headers: { "Cache-Control": "no-store", "Vary": "Cookie" } });
 function interval(value: string | undefined, fallback: number) {
   const parsed = Number(value);
@@ -26,12 +28,22 @@ function publicCounts(counts: unknown) {
   if (!counts || typeof counts !== "object" || Array.isArray(counts)) return {};
   return Object.fromEntries(Object.entries(counts).filter(([key, value]) => ["members", "battles", "events"].includes(key) && typeof value === "number" && Number.isFinite(value) && value >= 0));
 }
+async function readBattleCoverage(clubTag: string, now: number) {
+  const members = await supabaseAdmin.from("member_history").select("player_tag").eq("is_current_member", true);
+  if (members.error) return summarizeBattleCoverage([], null, now);
+  const tags = [...new Set((members.data || []).map(row => row.player_tag).filter((tag): tag is string => typeof tag === "string"))];
+  if (!tags.length) return summarizeBattleCoverage(tags, [], now);
+  const coverage = await supabaseAdmin.rpc("sync_battle_coverage_summary", { p_club_tag: clubTag, p_player_tags: tags, p_now: new Date(now).toISOString() });
+  return summarizeBattleCoverage(tags, coverage.error ? null : coverage.data, now);
+}
 export async function GET(request: NextRequest) {
   try {
     const settings = await readSyncSettings();
     const rawTag = settings.club_tag || process.env.CLUB_TAG;
     const configured = Boolean(rawTag && (settings.api_key || process.env.BRAWL_API_KEY));
     const now = Date.now();
+    const admin = verifyAdminSession(request);
+    const capacity = admin ? await readCapacityHealth(now) : undefined;
     const expectedIntervalMinutes = interval(settings.sync_expected_interval_minutes, 10);
     const rosterIntervalMinutes = interval(settings.sync_roster_interval_minutes, 2);
     const rankedIntervalMinutes = interval(settings.sync_ranked_interval_minutes, 30);
@@ -46,16 +58,18 @@ export async function GET(request: NextRequest) {
       expectedIntervalMinutes, rosterIntervalMinutes, rankedIntervalMinutes,
       staleAfterMinutes: full.staleAfterMinutes, rosterStaleAfterMinutes: roster.staleAfterMinutes, battleStaleAfterMinutes: battle.staleAfterMinutes, rankedStaleAfterMinutes: ranked.staleAfterMinutes,
     };
-    if (!rawTag) return response({ ...freshness, lastAttemptAt: null, lastOutcome: null, running: false, leaseExpiresAt: null, latestRun: null, latestFullRun: null });
+    if (!rawTag) return response({ ...freshness, battleCoverage: summarizeBattleCoverage([], null, now),
+      lastAttemptAt: null, lastOutcome: null, running: false, leaseExpiresAt: null, latestRun: null, latestFullRun: null,
+      ...(admin ? { capacity } : {}) });
     const clubTag = normalizeSyncTag(rawTag);
-    const admin = verifyAdminSession(request);
     const runFields = "id,source,scope,started_at,finished_at,status,counts,error_code,result";
-    const [runs, lease, fullRuns] = await Promise.all([
+    const [runs, lease, fullRuns, battleCoverage] = await Promise.all([
       supabaseAdmin.from("sync_runs").select(runFields).eq("club_tag", clubTag).order("started_at", { ascending: false }).limit(admin ? 20 : 1),
       supabaseAdmin.from("sync_leases").select("run_id,expires_at").eq("club_tag", clubTag).maybeSingle(),
       // Frequent roster checks and an in-flight retry must not hide the last
       // completed full attempt's partial result or failure.
       supabaseAdmin.from("sync_runs").select(runFields).eq("club_tag", clubTag).eq("scope", "full").in("status", ["succeeded", "failed", "superseded"]).order("started_at", { ascending: false }).limit(1),
+      readBattleCoverage(clubTag, now).catch(() => summarizeBattleCoverage([], null, now)),
     ]);
     if (runs.error || lease.error || fullRuns.error) throw new Error("Status unavailable");
     const mapRun = (run: NonNullable<typeof runs.data>[number]) => ({ id: run.id, source: run.source, scope: run.scope, startedAt: run.started_at, finishedAt: run.finished_at,
@@ -73,8 +87,8 @@ export async function GET(request: NextRequest) {
       if (pending.error || failed.error) throw new Error("Outbox status unavailable");
       outbox = { pending: pending.count || 0, failed: failed.count || 0 };
     }
-    return response({ ...freshness, lastAttemptAt: latestRun?.startedAt || null, lastOutcome: latestRun?.status || null,
+    return response({ ...freshness, battleCoverage, lastAttemptAt: latestRun?.startedAt || null, lastOutcome: latestRun?.status || null,
       running: Boolean(lease.data?.run_id && new Date(lease.data.expires_at).getTime() > now), leaseExpiresAt: lease.data?.run_id ? lease.data.expires_at : null,
-      latestRun, latestFullRun, ...(admin ? { recentRuns: mapped, outbox } : {}) });
+      latestRun, latestFullRun, ...(admin ? { recentRuns: mapped, outbox, capacity } : {}) });
   } catch { return response({ error: "Sync health is unavailable." }, 503); }
 }

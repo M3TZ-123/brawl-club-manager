@@ -125,6 +125,20 @@ test("notification filters reach older unread records and paginate without gaps"
   assert.deepEqual([...first.notifications, ...second.notifications].map(row => row.id), Array.from({ length: 105 }, (_, index) => 105 - index));
 });
 
+test("capacity and possible battle gaps remain selectable through public notification pagination",async()=>{
+  const notifications=Array.from({length:105},(_,index)=>({id:200+index,created_at:"2026-09-16T12:00:00Z",type:"join",is_read:false}));
+  notifications.push({id:2,created_at:"2026-09-16T11:00:00Z",type:"capacity",is_read:false,title:"تنبيه سعة قاعدة البيانات",message:"يمكن للإدارة مراجعة تفاصيل السعة."},
+    {id:1,created_at:"2026-09-16T10:00:00Z",type:"battle_gap",is_read:false,title:"فجوة محتملة في سجل المعارك",message:"هذا احتمال ولا يعني غياب الأعضاء عن اللعب."});
+  const route=loadRoute("src/app/api/notifications/route.ts",readOnlyDatabase({notifications}));
+  const url="http://fixture/api/notifications?types=capacity,battle_gap&unreadOnly=true&limit=1";
+  const first=await (await route.GET(new Request(url))).json();assert.deepEqual(first.notifications.map(row=>row.type),["capacity"]);assert.equal(first.nextOffset,1);
+  const second=await (await route.GET(new Request(`${url}&offset=1`))).json();assert.deepEqual(second.notifications.map(row=>row.type),["battle_gap"]);assert.equal(second.nextOffset,null);
+  for(const type of ["capacity","battle_gap"]){
+    const result=await (await route.GET(new Request(`http://fixture/api/notifications?types=${type}`))).json();
+    assert.equal(result.notifications.length,1);assert.equal(result.notifications[0].type,type);
+  }
+});
+
 test("settings ignores client timestamps and resets completion only for a different club", async () => {
   const written = [];
   const database = { from(table) {
@@ -383,4 +397,24 @@ test("notification UI requests unread/category filters and follows nextOffset", 
   assert.equal(requests.at(-1).searchParams.get("offset"), "100");
   tree = await renderer.render(component);
   assert.equal(elements(tree).filter(element => element.type === "Card" && element.key === "1").length, 1);
+});
+
+test("new notification categories use translated labels, server filters and distinct alert icons",async()=>{
+  const renderer=hookRenderer(),requests=[];
+  const component=loadTypeScript("src/app/notifications/page.tsx",{
+    ...componentMocks,react:renderer.react,
+    "@/hooks/use-admin-session":{useAdminSession:()=>({isAdmin:false})},
+    "@/lib/client-data-cache":{fetchJsonCached:async url=>{
+      const query=new URL(url,"http://fixture");requests.push(query);
+      const type=query.searchParams.get("types")||"capacity";
+      return {notifications:[{id:1,type,created_at:"2026-09-16T12:00:00Z",title:type==="capacity"?"تنبيه سعة قاعدة البيانات":"فجوة محتملة في سجل المعارك",message:"رسالة عامة",is_read:false}],unreadCount:1,nextOffset:null};
+    }},
+  },{window:windowMock}).default;
+  let tree=await renderer.render(component);
+  for(const [label,type,icon] of [["Database capacity","capacity","Database"],["Battle history coverage","battle_gap","TriangleAlert"]]){
+    await action(tree,label)();tree=await renderer.render(component);
+    assert.equal(requests.at(-1).searchParams.get("types"),type);assert.ok(elements(tree).some(element=>element.type===icon));
+  }
+  const {translate}=loadTypeScript("src/lib/i18n/messages.ts");
+  assert.equal(translate("Database capacity","ar"),"سعة قاعدة البيانات");assert.equal(translate("Battle history coverage","ar"),"تغطية سجل المعارك");
 });

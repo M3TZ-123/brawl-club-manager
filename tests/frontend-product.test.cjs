@@ -209,7 +209,7 @@ test("sync health displays backend attempt and outcome rather than inferring a n
   const rows = elements(tree).filter(e => e.type?.name === "FreshnessRow");
   assert.equal(rows.length, 4);
   assert.equal(rows.find(e => e.props.label === "Full profiles").props.timestamp, "2026-01-01T00:00:00Z");
-  assert.equal(rows.find(e => e.props.label === "Complete battle logs").props.timestamp, undefined);
+  assert.equal(rows.find(e => e.props.label === "Battle log fetch").props.timestamp, undefined);
 });
 
 
@@ -238,4 +238,51 @@ test("a successful roster check preserves full warnings and reduced confidence u
  tree=await renderer.render(()=>SyncHealthCard());assert.match(textContent(tree),/latest full sync did not complete/);assert.match(textContent(DataConfidenceNotice()),/incomplete or stale/);
  health={...health,latestFullRun:{...health.latestFullRun,status:"succeeded",warnings:[]}};
  tree=await renderer.render(()=>SyncHealthCard());assert.doesNotMatch(textContent(tree),/Partial update|latest full sync did not complete/);assert.equal(DataConfidenceNotice(),null);
+});
+
+function syncHealthComponents(getHealth, globals={}) {
+ return loadTypeScript("src/components/sync-health.tsx",{...componentMocks,react:{useSyncExternalStore:(_subscribe,getSnapshot)=>getSnapshot()},"@/lib/client-sync-status":{subscribeSyncHealth(){},getServerSyncHealth:()=>null,getSyncHealth:getHealth}},globals);
+}
+function renderedSection(components,name) {
+ const element=elements(components.SyncHealthCard()).find(element=>element.type?.name===name);
+ return element ? element.type(element.props) : null;
+}
+const freshSources={freshness:"fresh",fullFreshness:"fresh",rosterFreshness:"fresh",battleFreshness:"fresh",rankedFreshness:"fresh",running:false,expectedIntervalMinutes:10,
+ latestRun:{scope:"roster",status:"succeeded",warnings:[]},latestFullRun:{scope:"full",status:"succeeded",warnings:[]}};
+
+test("possible historical gaps remain visible alongside fresh fetches and clear only with coverage state",()=>{
+ let health={...freshSources,battleCoverage:{status:"possible_gap",monitoredPlayers:29,currentPlayers:30,affectedPlayers:2,lastCheckedAt:"2026-09-16T12:00:00Z",lastGapAt:"2026-09-15T12:00:00Z",windowDays:28}};
+ const components=syncHealthComponents(()=>health);
+ assert.match(textContent(components.SyncHealthCard()),/Fetch statusFresh/);
+ assert.match(textContent(components.DataConfidenceNotice()),/possible gap remains/);
+ let section=renderedSection(components,"BattleCoverageSection");
+ assert.match(textContent(section),/Possible gaps for 2 players in the last 28 days/);
+ assert.match(textContent(section),/Monitoring 29 of 30 current players/);
+ assert.match(textContent(section),/does not prove that earlier history is complete/);
+ assert.doesNotMatch(textContent(section),/2 battles|confirmed loss|complete history/);
+ for(const scope of ["full","roster"]){health={...health,latestRun:{scope,status:"succeeded",warnings:[]}};assert.match(textContent(components.DataConfidenceNotice()),/possible gap remains/);}
+ health={...health,battleCoverage:{...health.battleCoverage,status:"observed",affectedPlayers:0,lastGapAt:null}};
+ section=renderedSection(components,"BattleCoverageSection");assert.match(textContent(section),/No gap observed in monitored data/);assert.match(textContent(section),/since monitoring began/);assert.equal(components.DataConfidenceNotice(),null);
+ health={...health,battleCoverage:null};section=renderedSection(components,"BattleCoverageSection");assert.match(textContent(section),/Coverage unknown/);assert.doesNotMatch(textContent(section),/No gap observed/);
+});
+
+test("capacity is admin-response-only and never shows a green current meter for stale or unknown samples",()=>{
+ const now="2026-09-16T12:00:00Z";
+ let health={...freshSources};const components=syncHealthComponents(()=>health);
+ assert.equal(renderedSection(components,"CapacitySection"),null);
+ const base={usedBytes:0,budgetBytes:500000000,percent:0,level:"ok",sampledAt:now,stale:false};
+ for(const [percent,level,label] of [[0,"ok","Within configured budget"],[70,"warning","Storage budget warning"],[90,"critical","Storage budget critical"],[120,"critical","Storage budget critical"]]){
+  health={...freshSources,capacity:{...base,usedBytes:percent*5000000,percent,level}};const section=renderedSection(components,"CapacitySection");
+  assert.match(textContent(section),new RegExp(label));assert.match(textContent(section),/not an authoritative provider quota/);
+  const meter=elements(section).find(element=>element.props?.role==="progressbar");assert.equal(meter.props["aria-valuenow"],Math.min(percent,100));
+  assert.equal(meter.props["aria-valuetext"],`${percent}% of configured budget`);
+ }
+ const unknown=[{...base,level:"unknown",usedBytes:null,percent:null},{...base,budgetBytes:null},{...base,sampledAt:null},{...base,percent:NaN},
+  {...base,stale:true},{...base,sampledAt:"2026-09-16T09:59:59Z",stale:true}];
+ for(const capacity of unknown){
+  health={...freshSources,capacity};const section=renderedSection(components,"CapacitySection");
+  assert.doesNotMatch(textContent(section),/Within configured budget/);assert.equal(elements(section).some(element=>element.props?.role==="progressbar"),false);
+  assert.equal(elements(section).some(element=>String(element.props?.className||"").includes("text-green")),false);
+ }
+ health={...freshSources,capacity:null};assert.equal(renderedSection(components,"CapacitySection"),null);
 });

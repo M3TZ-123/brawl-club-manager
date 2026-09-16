@@ -12,6 +12,8 @@ const ALLOWED_NOTIFICATION_TYPES = new Set([
   "name_change",
   "sync_error",
   "milestone",
+  "capacity",
+  "battle_gap",
 ]);
 
 function isMissingNotificationsTable(error: unknown): boolean {

@@ -16,8 +16,10 @@ import {
   ChevronDown,
   ChevronUp,
   Clock3,
+  Database,
   Loader2,
   Pencil,
+  TriangleAlert,
   UserMinus,
   UserPlus,
 } from "lucide-react";
@@ -63,7 +65,7 @@ export default function NotificationsPage() {
   const [nextOffset, setNextOffset] = useState<number | null>(null);
   const loadSequence = useRef(0);
   const [filter, setFilter] = useState<"all" | "unread">("all");
-  const [category, setCategory] = useState<"all" | "join" | "leave" | "inactive" | "promotion" | "name_change">("all");
+  const [category, setCategory] = useState<"all" | "join" | "leave" | "inactive" | "promotion" | "name_change" | "capacity" | "battle_gap">("all");
 
   const loadNotifications = useCallback(async (force = false, offset = 0) => {
     const sequence = ++loadSequence.current;
@@ -177,6 +179,10 @@ export default function NotificationsPage() {
         return { icon: ChevronDown, color: "text-orange-500", bg: "border-l-orange-500" };
       case "name_change":
         return { icon: Pencil, color: "text-cyan-500", bg: "border-l-cyan-500" };
+      case "capacity":
+        return { icon: Database, color: "text-amber-500", bg: "border-l-amber-500" };
+      case "battle_gap":
+        return { icon: TriangleAlert, color: "text-amber-500", bg: "border-l-amber-500" };
       default:
         return { icon: Bell, color: "text-blue-500", bg: "border-l-blue-500" };
     }
@@ -299,6 +305,8 @@ export default function NotificationsPage() {
         <Button size="sm" variant={category === "inactive" ? "default" : "outline"} onClick={() => setCategory("inactive")}><T text="Inactive" /></Button>
         <Button size="sm" variant={category === "promotion" ? "default" : "outline"} onClick={() => setCategory("promotion")}><T text="Promotions" /></Button>
         <Button size="sm" variant={category === "name_change" ? "default" : "outline"} onClick={() => setCategory("name_change")}><T text="Name Changes" /></Button>
+        <Button size="sm" variant={category === "capacity" ? "default" : "outline"} onClick={() => setCategory("capacity")}><T text="Database capacity" /></Button>
+        <Button size="sm" variant={category === "battle_gap" ? "default" : "outline"} onClick={() => setCategory("battle_gap")}><T text="Battle history coverage" /></Button>
       </div>
 
       {/* Notification list */}

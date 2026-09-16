@@ -25,10 +25,12 @@ import {
   ChevronDown,
   ChevronUp,
   Clock3,
+  Database,
   Pencil,
   UserMinus,
   UserPlus,
   ShieldCheck,
+  TriangleAlert,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -352,6 +354,10 @@ function SimpleHeader() {
         return { icon: ChevronDown, label: "Demoted", color: "text-orange-500" };
       case "name_change":
         return { icon: Pencil, label: "Name changed", color: "text-cyan-500" };
+      case "capacity":
+        return { icon: Database, label: "Database capacity", color: "text-amber-500" };
+      case "battle_gap":
+        return { icon: TriangleAlert, label: "Battle history coverage", color: "text-amber-500" };
       default:
         return { icon: Bell, label: type, color: "text-blue-500" };
     }

@@ -13,6 +13,25 @@ export interface SyncRunSummary {
   warnings?: string[];
 }
 
+export interface BattleCoverage {
+  status: "unknown" | "observed" | "possible_gap";
+  monitoredPlayers: number;
+  currentPlayers: number;
+  affectedPlayers: number;
+  lastCheckedAt: string | null;
+  lastGapAt: string | null;
+  windowDays: number;
+}
+
+export interface SyncCapacity {
+  usedBytes: number | null;
+  budgetBytes: number | null;
+  percent: number | null;
+  level: "ok" | "warning" | "critical" | "unknown";
+  sampledAt: string | null;
+  stale: boolean;
+}
+
 export interface SyncHealth {
   lastSuccessAt: string | null;
   lastFullSuccessAt?: string | null;
@@ -32,6 +51,8 @@ export interface SyncHealth {
   running: boolean;
   latestRun?: SyncRunSummary | null;
   latestFullRun?: SyncRunSummary | null;
+  battleCoverage?: BattleCoverage | null;
+  capacity?: SyncCapacity | null;
 }
 
 const SYNC_SIGNAL_KEY = "brawl-club-manager-sync-updated";
@@ -77,7 +98,8 @@ export function refreshSyncHealth(afterPending = false): Promise<void> {
         fullFreshness: data.fullFreshness ?? data.freshness, rosterFreshness: data.rosterFreshness ?? "never",
         battleFreshness: data.battleFreshness ?? "never", rankedFreshness: data.rankedFreshness ?? "never",
         rosterIntervalMinutes: data.rosterIntervalMinutes, rankedIntervalMinutes: data.rankedIntervalMinutes,
-        running: data.running, latestRun: data.latestRun, latestFullRun: data.latestFullRun };
+        running: data.running, latestRun: data.latestRun, latestFullRun: data.latestFullRun,
+        battleCoverage: data.battleCoverage ?? null, ...(data.capacity ? { capacity: data.capacity } : {}) };
       useAppStore.getState().setLastSyncTime(lastSuccessAt);
       if (changed) {
         invalidateJsonCache();
@@ -106,7 +128,17 @@ export function subscribeSyncHealth(listener: () => void) {
       broadcastSyncChange();
       void refreshSyncHealth(true);
     };
-    const authChanged = () => { void refreshSyncHealth(true); };
+    const authChanged = () => {
+      invalidateJsonCache("/api/sync/status");
+      // Remove admin-only data before awaiting the new session's response.
+      // refreshQueued also prevents an earlier admin request restoring it.
+      if (health?.capacity) {
+        health = { ...health };
+        delete health.capacity;
+        listeners.forEach(listener => listener());
+      }
+      void refreshSyncHealth(true);
+    };
     const storageChanged = (event: StorageEvent) => {
       if (event.key === SYNC_SIGNAL_KEY) void refreshSyncHealth(true);
     };

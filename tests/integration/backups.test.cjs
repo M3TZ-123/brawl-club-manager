@@ -33,7 +33,16 @@ test("encrypted backup restores actual schema, rows and private permissions into
     INSERT INTO public.activity_log(player_tag,trophies,trophy_change,recorded_at)
       SELECT '#PLAYER',30000+(i%100),i%20,'2026-09-15T00:00:00Z'::timestamptz+i*interval '1 second' FROM generate_series(1,${process.env.BACKUP_LARGE_TEST === "1" ? 307000 : 1501}) i;
   `);
-  for (const filename of ["202609160001_sync_durability.sql", "202609160002_admin_privacy.sql", "202609160003_backups.sql"]) await client.query(await fs.readFile(path.join(root, "supabase/migrations", filename), "utf8"));
+  for (const filename of (await fs.readdir(path.join(root, "supabase/migrations"))).filter(name => /^20260916\d{4}_.*\.sql$/.test(name)).sort()) await client.query(await fs.readFile(path.join(root, "supabase/migrations", filename), "utf8"));
+  await client.query(`
+    INSERT INTO public.sync_runs(id,club_tag,source,scope,fence,status,finished_at)
+      VALUES('00000000-0000-4000-8000-000000000009','#CLUB','cron','full',1,'succeeded',now());
+    INSERT INTO public.sync_battle_coverage(club_tag,player_tag,baseline_started_at,last_observed_at,recent_battle_times,last_attempt_at,last_observation_status,last_run_id)
+      VALUES('#CLUB','#PLAYER',now()-interval '1 day',now(),ARRAY[now()-interval '1 hour'],now(),'possible_gap','00000000-0000-4000-8000-000000000009');
+    INSERT INTO public.sync_battle_gaps(club_tag,player_tag,run_id,detected_at,gap_start_at,gap_end_at,previous_observed_at,window_size,scope)
+      VALUES('#CLUB','#PLAYER','00000000-0000-4000-8000-000000000009',now(),now()-interval '3 hours',now()-interval '2 hours',now()-interval '4 hours',25,'full');
+    SELECT public.sample_database_capacity();
+  `);
   const directory = await fs.mkdtemp(path.join(os.tmpdir(), "brawl-encrypted-backup-test-"));
   t.after(() => fs.rm(directory, { recursive: true, force: true }));
   const output = path.join(directory, "test.brawlbackup");
@@ -70,6 +79,7 @@ test("encrypted backup restores actual schema, rows and private permissions into
     manifest = (await client.query("SELECT manifest FROM public.backup_snapshots WHERE id=$1", [snapshotId])).rows[0].manifest;
     assert.equal(manifest.tables.find(table => table.name === "activity_log").row_count, process.env.BACKUP_LARGE_TEST === "1" ? 307000 : 1501);
     assert.equal(manifest.tables.find(table => table.name === "backup_chunks").row_count, 0);
+    for (const name of ["sync_battle_coverage", "sync_battle_gaps", "capacity_samples"]) assert.equal(manifest.tables.find(table => table.name === name).row_count, 1);
     assert.ok(manifest.tables.find(table => table.name === "profiles").columns.some(column => column.name === "owner_user_id"));
     assert.ok((await client.query("SELECT max(octet_length(payload)) AS size FROM public.backup_chunks")).rows[0].size < 1024 * 1024);
     assert.ok(manifest.tables.find(table => table.name === "member_reviews").chunks.length > 1, "Large Arabic record must split safely");
@@ -117,6 +127,8 @@ test("encrypted backup restores actual schema, rows and private permissions into
     await client.query("DROP FUNCTION public.existing_user_work()");
     const result = await restoreBackup(backup, connectionString);
     assert.equal(result.verified, true);
+    for (const name of ["sync_battle_coverage", "sync_battle_gaps", "capacity_samples"]) assert.equal((await client.query(`SELECT count(*)::int AS n FROM public.${name}`)).rows[0].n, 1);
+    assert.equal((await client.query("SELECT possible_gap FROM public.sync_battle_coverage_summary('#CLUB',ARRAY['#PLAYER'])")).rows[0].possible_gap, true);
     assert.equal((await client.query("SELECT owner_user_id,normalized_owner FROM public.profiles")).rows[0].owner_user_id, "owner-A");
     assert.equal((await client.query("SELECT normalized_owner FROM public.profiles")).rows[0].normalized_owner, "OWNER-A");
     assert.equal((await client.query("SELECT id::text FROM public.user_clubs")).rows[0].id, "9007199254740993");
@@ -133,11 +145,17 @@ test("encrypted backup restores actual schema, rows and private permissions into
         assert.equal((await client.query("SELECT player_tag FROM public.member_history")).rowCount, 1);
         await assert.rejects(client.query("SELECT notes FROM public.member_history"), error => error.code === "42501");
         await assert.rejects(client.query("SELECT * FROM public.member_reviews"), error => error.code === "42501");
+        for (const name of ["sync_battle_coverage", "sync_battle_gaps", "capacity_samples"]) await assert.rejects(client.query(`SELECT * FROM public.${name}`), error => error.code === "42501");
+        await assert.rejects(client.query("SELECT public.sample_database_capacity()"), error => error.code === "42501");
         await assert.rejects(client.query("SELECT public.create_backup_snapshot($1)", [randomUUID()]), error => error.code === "42501");
       } finally { await client.query("RESET ROLE"); }
     }
     await client.query("SET ROLE service_role");
-    try { assert.equal((await client.query("SELECT * FROM public.consume_admin_login_attempt(repeat('a',64))")).rows[0].allowed, true); }
+    try {
+      assert.equal((await client.query("SELECT * FROM public.consume_admin_login_attempt(repeat('a',64))")).rows[0].allowed, true);
+      assert.equal((await client.query("SELECT * FROM public.capacity_samples")).rowCount, 1);
+      await assert.rejects(client.query("SELECT public.sample_database_capacity()"), error => error.code === "42501");
+    }
     finally { await client.query("RESET ROLE"); }
   });
 });

@@ -6,10 +6,13 @@ const now="2026-09-16T12:00:00.000Z";
 class FixedDate extends Date {constructor(...args){super(...(args.length?args:[now]));}static now(){return Date.parse(now);}}
 const ago=minutes=>new Date(Date.parse(now)-minutes*60000).toISOString();
 function route(settings={},options={}){
- const tables={sync_runs:options.runs||[],sync_leases:[],notification_outbox:[]};
+ const tables={sync_runs:options.runs||[],sync_leases:[],notification_outbox:[],member_history:options.members||[]};
+ const database=readOnlyDatabase(tables);
+ database.rpc=async(name,args)=>{assert.equal(name,"sync_battle_coverage_summary");assert.equal(args.p_club_tag,"#CLUB");options.onCoverage?.(args);return {data:options.coverage||[],error:options.coverageError||null};};
  return loadTypeScript("src/app/api/sync/status/route.ts",{
   "next/server":{NextResponse:{json:(body,init)=>Response.json(body,init)}},
-  "@/lib/supabase-admin":{supabaseAdmin:readOnlyDatabase(tables)},
+  "@/lib/supabase-admin":{supabaseAdmin:database},
+  "@/lib/capacity-health":{readCapacityHealth:async()=>{options.onCapacity?.();return {usedBytes:125000000,budgetBytes:500000000,percent:25,level:"ok",sampledAt:ago(30),stale:false};}},
   "@/lib/admin-auth":{verifyAdminSession:()=>!!options.admin},
   "@/lib/sync-service":{normalizeSyncTag:tag=>tag,readSyncSettings:async()=>({club_tag:"#CLUB",api_key:"private-key",...settings})},
  },{Date:FixedDate,process:{env:{}}});
@@ -80,4 +83,29 @@ test("an in-flight full retry retains the previous terminal outcome until it fin
  assert.equal(body.latestRun.id,"retry");assert.equal(body.latestFullRun.id,"previous-full");assert.equal(body.latestFullRun.status,"failed");
  body=await get(route({}, {runs:[previous,{...retry,status:"succeeded",finished_at:now}]}));
  assert.equal(body.latestFullRun.id,"retry");assert.equal(body.latestFullRun.status,"succeeded");assert.deepEqual(body.latestFullRun.warnings,[]);
+});
+
+test("coverage remains uncertain after fresh full and roster successes without exposing private rows",async()=>{
+ const members=[{player_tag:"#A",is_current_member:true},{player_tag:"#B",is_current_member:true},{player_tag:"#LEFT",is_current_member:false}];
+ const coverage=[{player_tag:"#A",baseline_started_at:ago(100),last_observed_at:ago(1),possible_gap:true,last_gap_detected_at:ago(50),gap_start_at:ago(70),gap_end_at:ago(60),private_note:"secret-row"},{player_tag:"#B",baseline_started_at:ago(90),last_observed_at:ago(2),possible_gap:false}];
+ const body=await get(route({last_full_sync_time:ago(1),last_roster_sync_time:ago(.1),last_battle_sync_time:ago(1)}, {members,coverage,onCoverage:args=>assert.deepEqual(Array.from(args.p_player_tags),["#A","#B"])}));
+ assert.equal(body.fullFreshness,"fresh");assert.equal(body.battleFreshness,"fresh");
+ assert.deepEqual(body.battleCoverage,{status:"possible_gap",monitoredPlayers:2,currentPlayers:2,affectedPlayers:1,lastCheckedAt:ago(2),lastGapAt:ago(50),windowDays:28});
+ assert.doesNotMatch(JSON.stringify(body),/#A|#B|#LEFT|secret-row|gap_start_at/);
+});
+
+test("coverage read failure is unknown and does not fail the rest of sync health",async()=>{
+ const body=await get(route({last_full_sync_time:ago(1)}, {members:[{player_tag:"#A",is_current_member:true}],coverageError:{message:"private-database-error"}}));
+ assert.equal(body.battleCoverage.status,"unknown");assert.equal(body.battleCoverage.currentPlayers,1);assert.equal(body.battleCoverage.monitoredPlayers,0);
+ assert.equal(body.fullFreshness,"fresh");assert.doesNotMatch(JSON.stringify(body),/private-database-error/);
+});
+
+test("capacity is read and returned only for an authenticated admin, including unconfigured clubs",async()=>{
+ for(const configured of [true,false]){
+  const settings=configured?{}:{club_tag:"",api_key:""};let reads=0;
+  const publicBody=await get(route(settings,{onCapacity:()=>reads++}));
+  assert.equal(reads,0);assert.equal(Object.hasOwn(publicBody,"capacity"),false);
+  const adminBody=await get(route(settings,{admin:true,onCapacity:()=>reads++}));
+  assert.equal(reads,1);assert.equal(adminBody.capacity.usedBytes,125000000);assert.equal(adminBody.capacity.percent,25);
+ }
 });

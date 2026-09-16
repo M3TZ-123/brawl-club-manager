@@ -370,6 +370,7 @@ async function runAdaptiveSyncChecks(t, db) {
       assert.ok(await attemptMarker()); assert.deepEqual(await markers(), {});
     } finally { await client.query("ROLLBACK"); client.release(); }
   });
+  await require("./battle-coverage-checks.cjs").runBattleCoverageChecks(t, db);
 }
 
 module.exports = { runAdaptiveSyncChecks };

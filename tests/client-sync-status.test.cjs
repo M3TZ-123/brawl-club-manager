@@ -7,7 +7,7 @@ const settle = () => new Promise(resolve => setImmediate(resolve));
 function deferred() { let resolve; const promise = new Promise(done => {resolve = done;}); return {promise,resolve}; }
 function target() { const events = new Map(); return {events,addEventListener(type,listener) {if (!events.has(type)) events.set(type,new Set()); events.get(type).add(listener);},removeEventListener(type,listener) {events.get(type)?.delete(listener);},dispatchEvent(event) {for (const listener of [...(events.get(event.type)||[])]) listener(event);}}; }
 function fixture(initial = "2026-09-15T23:40:07.824Z") {
-  const window = target(), document = {...target(),visibilityState:"visible"}, timers = new Map(), requests = [], writes = [], emitted = [];
+  const window = target(), document = {...target(),visibilityState:"visible"}, timers = new Map(), requests = [], writes = [], emitted = [], invalidations = [];
   let response = status(timestamp), nextTimer = 0;
   const state = {lastSyncTime:initial,setLastSyncTime(value) {state.lastSyncTime = value;}};
   window.setInterval = (callback,ms) => {assert.equal(ms,30000);timers.set(++nextTimer,callback);return nextTimer;};
@@ -16,9 +16,9 @@ function fixture(initial = "2026-09-15T23:40:07.824Z") {
   window.addEventListener("club-data-updated",event => emitted.push(event.detail));
   const syncStatusModule = loadTypeScript("src/lib/client-sync-status.ts", {
     "@/lib/store": {useAppStore:{getState:()=>state}},
-    "@/lib/client-data-cache": {invalidateJsonCache() {},fetchJsonCached: async (url,options) => {requests.push({url,options}); if(response instanceof Error) throw response; return response;}},
+    "@/lib/client-data-cache": {invalidateJsonCache(prefix) {invalidations.push(prefix);},fetchJsonCached: async (url,options) => {requests.push({url,options}); if(response instanceof Error) throw response; return response;}},
   }, {window,document,CustomEvent:class {constructor(type,options={}) {this.type=type;this.detail=options.detail;}}});
-  return {module:syncStatusModule,state,window,document,timers,requests,writes,emitted,setResponse(value) {response=value;}};
+  return {module:syncStatusModule,state,window,document,timers,requests,writes,emitted,invalidations,setResponse(value) {response=value;}};
 }
 
 test("sidebar and health consumers share one poll and replace even a newer persisted timestamp with the server value", async () => {
@@ -116,4 +116,44 @@ test("roster-only completion refreshes member views while preserving the full-sy
  assert.equal(f.module.getSyncHealth().lastRosterSuccessAt,"2026-09-16T00:04:54.119Z");assert.equal(f.module.getSyncHealth().battleFreshness,"never");
  assert.equal(JSON.parse(f.writes.at(-1).value)[1],"2026-09-16T00:04:54.119Z");
  await f.module.refreshSyncHealth();assert.equal(f.emitted.length,events+1);stop();
+});
+
+const coverage = {status:"possible_gap",monitoredPlayers:30,currentPlayers:30,affectedPlayers:2,lastCheckedAt:timestamp,lastGapAt:timestamp,windowDays:28};
+const capacity = {usedBytes:350000000,budgetBytes:500000000,percent:70,level:"warning",sampledAt:timestamp,stale:false};
+
+test("successful roster and full refreshes preserve the server's continuing coverage alert",async()=>{
+ const f=fixture();f.setResponse({...status(timestamp),battleCoverage:coverage});
+ const stop=f.module.subscribeSyncHealth(()=>{});await settle();
+ for(const scope of ["roster","full"]){
+  f.setResponse({...status("2026-09-16T00:20:00Z"),battleCoverage:coverage,latestRun:{scope,status:"succeeded",warnings:[]},latestFullRun:{scope:"full",status:"succeeded",warnings:[]}});
+  await f.module.refreshSyncHealth();assert.deepEqual(JSON.parse(JSON.stringify(f.module.getSyncHealth().battleCoverage)),coverage);
+ }
+ stop();
+});
+
+test("role changes remove capacity immediately, while only a new admin response can restore it",async()=>{
+ const f=fixture();f.setResponse({...status(timestamp),battleCoverage:coverage,capacity});
+ let notifications=0;const stop=f.module.subscribeSyncHealth(()=>notifications++);await settle();
+ assert.equal(f.module.getSyncHealth().capacity.usedBytes,350000000);
+ const publicRead=deferred();f.setResponse(publicRead.promise);const before=notifications;
+ f.window.dispatchEvent({type:"admin-session-changed"});
+ assert.equal(Object.hasOwn(f.module.getSyncHealth(),"capacity"),false);assert.equal(notifications,before+1);
+ assert.ok(f.invalidations.includes("/api/sync/status"));
+ publicRead.resolve({...status(timestamp),battleCoverage:coverage});await settle();
+ assert.equal(Object.hasOwn(f.module.getSyncHealth(),"capacity"),false);assert.equal(f.module.getSyncHealth().battleCoverage.status,"possible_gap");
+ f.setResponse({...status(timestamp),capacity});f.window.dispatchEvent({type:"admin-session-changed"});
+ assert.equal(Object.hasOwn(f.module.getSyncHealth(),"capacity"),false);await settle();assert.equal(f.module.getSyncHealth().capacity.level,"warning");
+ // Expiry discovered by the next status poll must also discard optional admin data.
+ f.setResponse(status(timestamp));await f.module.refreshSyncHealth();assert.equal(Object.hasOwn(f.module.getSyncHealth(),"capacity"),false);
+ assert.doesNotMatch(JSON.stringify(f.writes),/usedBytes|budgetBytes|350000000/);stop();
+});
+
+test("an older admin request cannot restore capacity after logout while the public read is pending",async()=>{
+ const f=fixture();f.setResponse({...status(timestamp),capacity});const stop=f.module.subscribeSyncHealth(()=>{});await settle();
+ const oldRead=deferred();f.setResponse(oldRead.promise);void f.module.refreshSyncHealth();
+ const publicRead=deferred();f.setResponse(publicRead.promise);f.window.dispatchEvent({type:"admin-session-changed"});
+ assert.equal(Object.hasOwn(f.module.getSyncHealth(),"capacity"),false);
+ oldRead.resolve({...status(timestamp),capacity});await settle();
+ assert.equal(Object.hasOwn(f.module.getSyncHealth(),"capacity"),false);assert.equal(f.requests.length,3);
+ publicRead.resolve(status(timestamp));await settle();assert.equal(Object.hasOwn(f.module.getSyncHealth(),"capacity"),false);stop();
 });
