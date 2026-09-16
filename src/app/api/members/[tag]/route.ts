@@ -65,6 +65,7 @@ export async function GET(
       dailyStats,
       playerTrackingRes,
       snapshotRowsRes,
+      brawlerDetailsRes,
     ] = await Promise.all([
       supabaseAdmin
         .from("members")
@@ -102,6 +103,9 @@ export async function GET(
         .eq("player_tag", playerTag)
         .order("recorded_at", { ascending: false })
         .limit(500),
+      supabaseAdmin.from("player_brawler_details")
+        .select("brawler_id,brawler_name,power_level,trophies,rank,highest_trophies")
+        .eq("player_tag", playerTag).order("brawler_id").limit(500),
     ]);
 
     const { data: member, error } = memberRes;
@@ -118,6 +122,7 @@ export async function GET(
     if (memberHistoryRes.error) throw memberHistoryRes.error;
     if (playerTrackingRes.error) throw playerTrackingRes.error;
     if (snapshotRowsRes.error) throw snapshotRowsRes.error;
+    if (brawlerDetailsRes.error) throw brawlerDetailsRes.error;
 
     const firstActivityRows = firstActivityRowsRes.data;
     const recentMatches = recentMatchesRes.data || [];
@@ -168,7 +173,7 @@ export async function GET(
       id: number;
       name: string;
       trophies: number;
-      highestTrophies: number;
+      highestTrophies: number | null;
       power: number;
       rank: number;
       icon_url: string;
@@ -204,7 +209,7 @@ export async function GET(
       power_level: number;
       trophies: number;
       rank: number;
-      max_trophies: number;
+      highest_trophies: number | null;
     }>();
 
     for (const row of snapshotRows || []) {
@@ -216,11 +221,16 @@ export async function GET(
           power_level: row.power_level,
           trophies: row.trophies,
           rank: row.rank,
-          max_trophies: row.trophies,
+          highest_trophies: null,
         });
-      } else if (row.trophies > existing.max_trophies) {
-        existing.max_trophies = row.trophies;
       }
+    }
+
+    // Latest profile details are authoritative; older daily rows are a legacy
+    // fallback and cannot establish an official personal best.
+    if (brawlerDetailsRes.data?.length || member.brawlers_count === 0) {
+      latestByBrawler.clear();
+      for (const row of brawlerDetailsRes.data) latestByBrawler.set(row.brawler_id, row);
     }
 
     const latestBrawlers = Array.from(latestByBrawler.values());
@@ -249,7 +259,7 @@ export async function GET(
           id: brawler.brawler_id,
           name: brawler.brawler_name,
           trophies: brawler.trophies,
-          highestTrophies: brawler.max_trophies,
+          highestTrophies: brawler.highest_trophies,
           power: brawler.power_level,
           rank: brawler.rank,
           icon_url: `https://cdn.brawlify.com/brawlers/borders/${brawler.brawler_id}.png`,

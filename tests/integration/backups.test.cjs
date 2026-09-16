@@ -50,6 +50,15 @@ test("encrypted backup restores actual schema, rows and private permissions into
     INSERT INTO public.sync_battle_gaps(club_tag,player_tag,run_id,detected_at,gap_start_at,gap_end_at,previous_observed_at,window_size,scope)
       VALUES('#CLUB','#PLAYER','00000000-0000-4000-8000-000000000009',now(),now()-interval '3 hours',now()-interval '2 hours',now()-interval '4 hours',25,'full');
     SELECT public.sample_database_capacity();
+    INSERT INTO public.player_profile_details(player_tag,exp_points,fame,fame_tier_name,total_prestige_level,observed_at)
+      VALUES('#PLAYER',12345,99,'Lunar I',3,now());
+    INSERT INTO public.player_brawler_details(player_tag,brawler_id,brawler_name,power_level,trophies,highest_trophies,hyper_charges,buffies,observed_at)
+      VALUES('#PLAYER',16000000,'SHELLY',11,100,120,'[{"id":23000000,"name":"Fixture"}]','{"gadget":false}',now());
+    INSERT INTO public.player_ranked_history(player_tag,run_id,observed_at,kind,season_id,current_rank,points)
+      VALUES('#PLAYER','00000000-0000-4000-8000-000000000009',now(),'initial',48,'Diamond I',3417);
+    INSERT INTO public.game_api_cache(cache_key,payload,fetched_at,expires_at) VALUES('events','[{"map":"خريطة محفوظة"}]',now(),now()+interval '5 minutes');
+    INSERT INTO public.recruitment_candidates(player_tag,notes,status) VALUES('#PYLQ','ملاحظة ترشيح خاصة','shortlisted');
+    UPDATE public.battle_history SET duration_seconds=123 WHERE player_tag='#PLAYER';
   `);
   const directory = await fs.mkdtemp(path.join(os.tmpdir(), "brawl-encrypted-backup-test-"));
   t.after(() => fs.rm(directory, { recursive: true, force: true }));
@@ -145,6 +154,12 @@ test("encrypted backup restores actual schema, rows and private permissions into
     const restoredFacets=(await client.query("SELECT public.battle_feed_facets(ARRAY['#PLAYER'],now()-interval '1 day',now()) x")).rows[0].x;
     assert.equal(restoredFacets.total,1);assert.deepEqual(restoredFacets.contexts,[{key:"ranked",count:1}]);
     for (const name of ["sync_battle_coverage", "sync_battle_gaps", "capacity_samples", "sync_ranked_fallback_attempts", "club_sync_signals"]) assert.equal((await client.query(`SELECT count(*)::int AS n FROM public.${name}`)).rows[0].n, 1);
+    assert.equal((await client.query("SELECT fame FROM public.player_profile_details WHERE player_tag='#PLAYER'")).rows[0].fame,99);
+    assert.equal((await client.query("SELECT highest_trophies FROM public.player_brawler_details WHERE player_tag='#PLAYER'")).rows[0].highest_trophies,120);
+    assert.equal((await client.query("SELECT points FROM public.player_ranked_history WHERE player_tag='#PLAYER'")).rows[0].points,3417);
+    assert.deepEqual((await client.query("SELECT payload FROM public.game_api_cache WHERE cache_key='events'")).rows[0].payload,[{map:'خريطة محفوظة'}]);
+    assert.equal((await client.query("SELECT notes FROM public.recruitment_candidates WHERE player_tag='#PYLQ'")).rows[0].notes,'ملاحظة ترشيح خاصة');
+    assert.equal((await client.query("SELECT duration_seconds FROM public.battle_history WHERE player_tag='#PLAYER'")).rows[0].duration_seconds,123);
     const restoredRank=(await client.query("SELECT rank_current,rank_highest,ranked_points,ranked_all_time_best_points,ranked_season_best_points,ranked_source FROM public.members WHERE player_tag='#PLAYER'")).rows[0];
     assert.deepEqual(restoredRank,{rank_current:'Diamond I',rank_highest:'Mythic I',ranked_points:3417,ranked_all_time_best_points:4678,ranked_season_best_points:3505,ranked_source:'profile'});
     assert.equal((await client.query("SELECT version::text FROM public.club_sync_signals WHERE id=1")).rows[0].version,'00000000-0000-4000-8000-000000000009');
@@ -176,7 +191,7 @@ test("encrypted backup restores actual schema, rows and private permissions into
         assert.equal((await client.query("SELECT player_tag FROM public.member_history")).rowCount, 1);
         await assert.rejects(client.query("SELECT notes FROM public.member_history"), error => error.code === "42501");
         await assert.rejects(client.query("SELECT * FROM public.member_reviews"), error => error.code === "42501");
-        for (const name of ["sync_battle_coverage", "sync_battle_gaps", "capacity_samples", "sync_ranked_fallback_attempts"]) await assert.rejects(client.query(`SELECT * FROM public.${name}`), error => error.code === "42501");
+        for (const name of ["sync_battle_coverage", "sync_battle_gaps", "capacity_samples", "sync_ranked_fallback_attempts", "player_profile_details", "player_brawler_details", "player_ranked_history", "game_api_cache", "recruitment_candidates"]) await assert.rejects(client.query(`SELECT * FROM public.${name}`), error => error.code === "42501");
         assert.deepEqual(Object.keys((await client.query("SELECT * FROM public.club_sync_signals")).rows[0]).sort(),['completed_at','datasets','id','version']);
         await assert.rejects(client.query('UPDATE public.club_sync_signals SET version=NULL,completed_at=NULL'),error=>error.code==='42501');
         for(const rpc of ['report_dashboard_read','report_leaderboard_read']) await assert.rejects(client.query(`SELECT public.${rpc}(7,now())`),error=>error.code==='42501');

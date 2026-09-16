@@ -2,6 +2,7 @@ import axios from "axios";
 import { encodeTag } from "./utils";
 import { normalizeBattleMode } from "./battle-catalog";
 import { callWithUpstreamRetry, getUpstreamCooldownMs, UpstreamRateLimitError, type UpstreamProvider } from "./upstream-rate-limit";
+import { optionalProgressInteger, type ReportedEquipment, type ReportedBuffies } from "./player-progress";
 
 // Use RoyaleAPI proxy to bypass IP restrictions
 // Docs: https://docs.royaleapi.com/proxy.html
@@ -85,6 +86,9 @@ export interface BrawlStarsPlayer {
   highestAllTimeRankedRank?: number;
   highestAllTimeRankedRankName?: string;
   highestAllTimeRankedElo?: number;
+  totalPrestigeLevel?: number;
+  fame?: number;
+  fameTierName?: string;
 }
 
 export interface BrawlStarsBrawler {
@@ -97,6 +101,12 @@ export interface BrawlStarsBrawler {
   gears: { id: number; name: string; level: number }[];
   starPowers: { id: number; name: string }[];
   gadgets: { id: number; name: string }[];
+  prestigeLevel?: number;
+  currentWinStreak?: number;
+  maxWinStreak?: number;
+  skin?: ReportedEquipment;
+  hyperCharges?: ReportedEquipment[];
+  buffies?: ReportedBuffies;
 }
 
 export interface BrawlStarsBattleLog {
@@ -572,6 +582,7 @@ export function parseBattleTimeToDate(bt: string): Date {
 
 // Process battle log for storage
 export interface ProcessedBattle {
+  duration_seconds: number | null;
   player_tag: string;
   battle_time: string;
   mode: string;
@@ -675,6 +686,7 @@ export function processBattleLog(playerTag: string, battleLog: BrawlStarsBattleL
     }
 
     battles.push({
+      duration_seconds: optionalProgressInteger(battleData.duration) ?? null,
       player_tag: playerTag,
       battle_time: battleTime.toISOString(),
       mode: getBattleMode(battle),

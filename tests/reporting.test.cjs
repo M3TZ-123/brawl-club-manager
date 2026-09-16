@@ -27,6 +27,7 @@ function fixture(threshold = "48") {
     ],
     activity_log: [{ player_tag: "#C", recorded_at: ago(1), trophy_change: 0, trophies: 3000, activity_type: "minimal" }],
     player_tracking: [],
+    player_brawler_details: [],
     battle_history: [
       { player_tag: "#A", battle_time: ago(1), mode: "brawlBall", trophy_change: 8 },
       { player_tag: "#B", battle_time: ago(30), mode: "brawlBall", trophy_change: 8 },
@@ -154,4 +155,18 @@ test("member detail and roster agree when corrupt tracking dates coexist with re
   assert.equal(detail.member.activity_status, "active");
   assert.equal(detail.member.activity_status, member.activity_status);
   assert.equal(detail.lastBattleTime, null);
+});
+
+test("member brawler personal best comes from the official profile; old snapshots remain history only", async () => {
+  const tables = fixture(); tables.members[0].brawlers_count = 1;
+  tables.brawler_snapshots = [{ player_tag: "#A", brawler_id: 1, brawler_name: "SHELLY", power_level: 10, trophies: 900, rank: 20, recorded_at: ago(24) }];
+  const get = async () => {
+    const response = await load("src/app/api/members/[tag]/route.ts", tables).GET(new Request("http://fixture/api/members/%23A"), { params: Promise.resolve({ tag: "#A" }) });
+    assert.equal(response.status, 200); return response.json();
+  };
+  assert.equal((await get()).topBrawlers[0].highestTrophies, null, "An observed daily maximum is not an official personal best");
+  tables.player_brawler_details = [{ player_tag: "#A", brawler_id: 1, brawler_name: "SHELLY", power_level: 11, trophies: 750, rank: 25, highest_trophies: 1000 }];
+  const official = await get(); assert.equal(official.topBrawlers[0].highestTrophies, 1000); assert.equal(official.topBrawlers[0].trophies, 750); assert.equal(official.powerDistribution.maxedCount, 1);
+  tables.player_brawler_details = []; tables.members[0].brawlers_count = 0;
+  const empty = await get(); assert.deepEqual(empty.topBrawlers, []); assert.equal(empty.powerDistribution, null);
 });

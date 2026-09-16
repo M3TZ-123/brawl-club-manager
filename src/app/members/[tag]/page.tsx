@@ -11,6 +11,7 @@ import { TIME_RANGES, type TimeRangeKey, type TrophyPeriodMetric } from "@/lib/t
 import { DataConfidenceNotice } from "@/components/sync-health";
 import { MemberReviewButton } from "@/components/member-review";
 import { MembershipTimeline } from "@/components/membership-timeline";
+import { PlayerProgress } from "@/components/player-progress";
 import { LayoutWrapper } from "@/components/layout-wrapper";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -124,7 +125,7 @@ interface TopBrawler {
   id: number;
   name: string;
   trophies: number;
-  highestTrophies: number;
+  highestTrophies: number | null;
   power: number;
   rank: number;
   icon_url: string;
@@ -414,6 +415,8 @@ export default function MemberDetailPage({ params }: PageProps) {
               observations={trophyObservations} observationIntervalMs={observationIntervalMs} period={period}
               stats={enhancedStats ? { battles: enhancedStats.totalBattles, wins: enhancedStats.totalWins, losses: enhancedStats.totalLosses, winRate: enhancedStats.winRate, activeDays: enhancedStats.activeDays } : battleStats} />
 
+            <PlayerProgress playerTag={member.player_tag} range={selectedRange} />
+
             <details className="rounded-lg border p-4">
               <summary className="cursor-pointer font-semibold"><T text="Lifetime victories and current brawlers" /></summary>
               <div className="mt-4 space-y-4">
@@ -479,7 +482,7 @@ export default function MemberDetailPage({ params }: PageProps) {
                         </div>
                         <div className="text-sm space-y-1">
                           <div className="flex justify-between"><span className="text-muted-foreground"><T text="Trophies" /></span><span className="font-medium">{formatNumber(brawler.trophies)}</span></div>
-                          <div className="flex justify-between"><span className="text-muted-foreground"><T text="Highest" /></span><span className="font-medium">{formatNumber(brawler.highestTrophies)}</span></div>
+                          <div className="flex justify-between gap-2"><span className="text-muted-foreground"><T text="Highest" /></span><span className="font-medium">{brawler.highestTrophies == null ? t("Unknown") : formatNumber(brawler.highestTrophies)}</span></div>
                           <div className="flex justify-between"><span className="text-muted-foreground"><T text="Power" /></span><span className="font-medium">{brawler.power}</span></div>
                         </div>
                       </div>

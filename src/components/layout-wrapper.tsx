@@ -32,6 +32,10 @@ import {
   UserPlus,
   ShieldCheck,
   TriangleAlert,
+  BarChart3,
+  Gamepad2,
+  Crosshair,
+  UserSearch,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -41,9 +45,13 @@ const navigation = [
   { name: "Members", href: "/members", icon: Users },
   { name: "Leaderboard", href: "/activity", icon: Trophy },
   { name: "Battle Feed", href: "/battle-feed", icon: Swords },
+  { name: "Analysis", href: "/analysis", icon: BarChart3 },
+  { name: "Brawler readiness", href: "/readiness", icon: Crosshair },
+  { name: "Game", href: "/game", icon: Gamepad2 },
   { name: "Reports", href: "/reports", icon: FileText },
   { name: "History", href: "/history", icon: History },
   { name: "Member reviews", href: "/reviews", icon: ShieldCheck, adminOnly: true },
+  { name: "Recruitment", href: "/recruitment", icon: UserSearch, adminOnly: true },
   { name: "Notifications", href: "/notifications", icon: Bell },
   { name: "Settings", href: "/settings", icon: Settings, adminOnly: true },
   { name: "Admin", href: "/admin", icon: ShieldCheck, adminOnly: true },

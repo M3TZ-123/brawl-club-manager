@@ -25,7 +25,7 @@ function fixture() {
       trophies_24h:index === 0 ? 0 : null,trophies_3d:index === 0 ? -3 : 3,trophies_7d:7,trophies_30d:index === 29 ? null : 300,trophies_90d:null })),
     club_events:[0,2,6,29,89,90,-1].map((offset,id) => ({ id,event_type:"join",player_name:"Joined",event_time:`${date(offset)}T01:00:00.000Z` })),
     notifications:[{ id:1,type:"name_change",created_at:`${date(29)}T01:00:00.000Z` }],
-    battle_history:[],player_tracking:[],settings:[],activity_log:[],brawler_snapshots:[],
+    battle_history:[],player_tracking:[],settings:[],activity_log:[],brawler_snapshots:[],player_brawler_details:[],
   };
 }
 

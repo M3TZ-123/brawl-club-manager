@@ -7,7 +7,7 @@ type RankedProvenance = Record<string, { source: "profile" | "rnt"; checked_at: 
 type PublicSnapshot = Record<string, string | number | boolean | null | RankedProvenance>;
 const rankedFields = new Set(["rank_current", "rank_highest", "ranked_points", "ranked_all_time_best_points", "ranked_season_id", "ranked_season_best", "ranked_season_best_points"]);
 
-function publicRankedProvenance(value: unknown): RankedProvenance {
+export function publicRankedProvenance(value: unknown): RankedProvenance {
   if (!value || typeof value !== "object" || Array.isArray(value)) return {};
   const result: RankedProvenance = {};
   for (const [key, raw] of Object.entries(value)) {

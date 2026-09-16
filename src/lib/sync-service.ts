@@ -3,6 +3,7 @@ import { publicMemberSnapshot } from "@/lib/sync-public-snapshots";
 import { getUpstreamCooldownMs } from "@/lib/upstream-rate-limit";
 import { battleObservation, type BattleObservation } from "@/lib/battle-coverage";
 import { readProfileRankedData, rankedCoreComplete, mergeRankedFallback, rankedSnapshot } from "@/lib/ranked-data";
+import { normalizeProfileProgress, normalizeBrawlerProgress } from "@/lib/player-progress";
 import { getClub, getPlayer, getPlayerBattleLog, getPlayerRankedData, processBattleLog, calculateWinRateFromBattleLog, type BrawlStarsBrawler, type BrawlStarsPlayer } from "@/lib/brawl-api";
 
 export type SyncFailureDiagnostics = {
@@ -269,14 +270,18 @@ export async function executeSync(options: {
         }
         battleObservations.push(observation);
         members.push({ player_tag: member.tag, player_name: playerTag ? player.name : member.name, role: member.role,
+          profile_progress: normalizeProfileProgress(player),
           icon_id: player.icon?.id ?? null, trophies: player.trophies, highest_trophies: player.highestTrophies, exp_level: player.expLevel,
           ...rankedSnapshot(rank, fallback ? new Date().toISOString() : checkedAt), win_rate: calculateWinRateFromBattleLog(log).winRate,
           brawlers_count: player.brawlers.length, solo_victories: player.soloVictories, duo_victories: player.duoVictories, trio_victories: player["3vs3Victories"] });
         const uniqueBattles = new Map(processed.map((battle) => [battle.battle_time, battle]));
         battles.push(...uniqueBattles.values());
-        brawlers.push(...player.brawlers.map((b) => ({ player_tag: member.tag, brawler_id: b.id, brawler_name: b.name,
-          power_level: b.power, trophies: b.trophies, rank: b.rank, gadgets_count: b.gadgets?.length || 0,
-          star_powers_count: b.starPowers?.length || 0, gears_count: b.gears?.length || 0 })));
+        brawlers.push(...player.brawlers.map((b) => {
+          const progress = normalizeBrawlerProgress(b);
+          return { player_tag: member.tag, brawler_id: b.id, brawler_name: b.name, progress,
+            power_level: b.power, trophies: b.trophies, rank: b.rank, gadgets_count: progress.gadgets?.length,
+            star_powers_count: progress.star_powers?.length, gears_count: progress.gears?.length };
+        }));
         if (playerTag) refreshedBrawlers = player.brawlers;
     }
     await persistCooldowns();

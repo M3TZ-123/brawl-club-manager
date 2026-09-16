@@ -9,6 +9,9 @@ export type Json =
 export interface Database {
   public: {
     Tables: {
+      player_profile_details: { Row: PlayerProfileDetails; Insert: never; Update: never };
+      player_brawler_details: { Row: PlayerBrawlerDetails; Insert: never; Update: never };
+      player_ranked_history: { Row: PlayerRankedHistory; Insert: never; Update: never };
       members: {
         Row: {
           player_tag: string;
@@ -195,6 +198,7 @@ export interface Database {
       };
       battle_history: {
         Row: {
+          duration_seconds: number | null;
           trophy_change_reported: boolean | null;
           battle_type: string | null;
           event_id: number | null;
@@ -221,6 +225,7 @@ export interface Database {
           battle_type?: string | null;
           event_id?: number | null;
           event_mode_id?: number | null;
+          duration_seconds?: number | null;
           battle_mode?: string | null;
           event_mode?: string | null;
           placement_rank?: number | null;
@@ -243,6 +248,7 @@ export interface Database {
           battle_type?: string | null;
           event_id?: number | null;
           event_mode_id?: number | null;
+          duration_seconds?: number | null;
           battle_mode?: string | null;
           event_mode?: string | null;
           placement_rank?: number | null;
@@ -442,3 +448,19 @@ export type PlayerTracking = Database["public"]["Tables"]["player_tracking"]["Ro
 export type DailyStats = Database["public"]["Tables"]["daily_stats"]["Row"];
 export type BrawlerSnapshot = Database["public"]["Tables"]["brawler_snapshots"]["Row"];
 export type Notification = Database["public"]["Tables"]["notifications"]["Row"];
+
+export interface PlayerProfileDetails {
+  player_tag: string; exp_points: number | null; total_prestige_level: number | null;
+  fame: number | null; fame_tier_name: string | null; observed_at: string; field_checked_at: Json;
+}
+export interface PlayerBrawlerDetails {
+  player_tag: string; brawler_id: number; brawler_name: string; power_level: number; trophies: number; rank: number | null;
+  highest_trophies: number | null; prestige_level: number | null; current_win_streak: number | null; max_win_streak: number | null;
+  skin: Json | null; gadgets: Json | null; star_powers: Json | null; gears: Json | null; hyper_charges: Json | null; buffies: Json | null;
+  observed_at: string; field_checked_at: Json;
+}
+export interface PlayerRankedHistory {
+  id: number; player_tag: string; run_id: string; observed_at: string; kind: "initial" | "change" | "season_reset";
+  season_id: number | null; current_rank: string | null; points: number | null; season_best: string | null; season_best_points: number | null;
+  all_time_best: string | null; all_time_best_points: number | null; source: string | null; provenance: Json;
+}

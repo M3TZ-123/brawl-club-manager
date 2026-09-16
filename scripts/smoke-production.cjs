@@ -12,12 +12,23 @@ async function main() {
   assert.ok(["fresh","stale","never"].includes(health.freshness), "Freshness metadata is available");
   assert.ok(Number.isFinite(health.expectedIntervalMinutes), "Expected sync interval is available");
   assert.ok(!JSON.stringify(history).includes('"notes":'), "Public history excludes private notes");
-  for (const route of ["/","/members","/history","/reviews"]) {
+  const [analysis, readiness] = await Promise.all([get('/api/analysis?range=7d'),get('/api/readiness?limit=1')]);
+  assert.ok(Number.isSafeInteger(analysis.summary.observations), 'Club analysis is available');
+  assert.equal(analysis.coverage.completeHistory,false,'Analysis declares observed coverage');
+  assert.ok(Array.isArray(readiness.rows) && readiness.rows.length<=1,'Readiness honors page bounds');
+  if (readiness.rows[0]) {
+    const progress=await get(`/api/members/${encodeURIComponent(readiness.rows[0].player.tag)}/progress?collectionLimit=1&rankLimit=1`);
+    assert.ok(progress.collection.items.length<=1 && progress.rankedHistory.items.length<=1,'Player progress is paginated');
+  }
+  for (const route of ["/","/members","/history","/reviews","/analysis","/readiness","/game","/recruitment"]) {
     const response = await fetch(new URL(route, base), { signal: AbortSignal.timeout(30_000) });
     assert.equal(response.status, 200, route);
   }
   const denied = await fetch(new URL("/api/member-reviews", base), {signal:AbortSignal.timeout(30_000)});
   assert.equal(denied.status,401,"Review API requires an administrator");
-  console.log("Production smoke checks passed: pages, public data, freshness and private review boundaries.");
+  const candidateDenied=await fetch(new URL('/api/recruitment',base),{signal:AbortSignal.timeout(30000)});
+  assert.equal(candidateDenied.status,401,'Recruitment is admin-only');
+  assert.equal(candidateDenied.headers.get('cache-control'),'no-store','Recruitment rejects shared caching');
+  console.log("Production smoke checks passed: pages, analysis, readiness, progress, freshness and private access boundaries.");
 }
 main().catch(error => { console.error(error.message); process.exitCode = 1; });
