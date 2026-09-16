@@ -3,7 +3,7 @@ import { publicMemberSnapshot } from "@/lib/sync-public-snapshots";
 import { getUpstreamCooldownMs } from "@/lib/upstream-rate-limit";
 import { battleObservation, type BattleObservation } from "@/lib/battle-coverage";
 import { readProfileRankedData, rankedCoreComplete, mergeRankedFallback, rankedSnapshot } from "@/lib/ranked-data";
-import { getClub, getPlayer, getPlayerBattleLog, getPlayerRankedData, processBattleLog, calculateWinRateFromBattleLog, type BrawlStarsBrawler } from "@/lib/brawl-api";
+import { getClub, getPlayer, getPlayerBattleLog, getPlayerRankedData, processBattleLog, calculateWinRateFromBattleLog, type BrawlStarsBrawler, type BrawlStarsPlayer } from "@/lib/brawl-api";
 
 export type SyncFailureDiagnostics = {
   phase: "fetch" | "commit";
@@ -50,8 +50,10 @@ function publicSyncResult(result: SyncResult): SyncResult {
   return { ...result, ...(result.member ? { member: publicMemberSnapshot(result.member) || {} } : {}) };
 }
 
-// Ranks are fetched independently of mandatory Brawl batches, with four workers.
-export function prefetchSyncRanks(playerTags: string[], parentSignal: AbortSignal, deadlineAt = Date.now() + 8000) {
+// A worker reserves only the player it is about to request. Reserving the whole
+// queue would throttle players whose requests never fit into the time budget.
+export function prefetchSyncRanks(playerTags: string[], parentSignal: AbortSignal, deadlineAt = Date.now() + 8000,
+  beforeRequest?: (tag: string, signal: AbortSignal) => Promise<boolean>) {
   type RankedData = Awaited<ReturnType<typeof getPlayerRankedData>>;
   const unavailable: RankedData = { currentRank: "Unranked", highestRank: "Unranked", currentPoints: 0, highestPoints: 0, available: false };
   const controller = new AbortController();
@@ -64,13 +66,27 @@ export function prefetchSyncRanks(playerTags: string[], parentSignal: AbortSigna
     while (next < tags.length) {
       const tag = tags[next++];
       let result = unavailable;
-      if (!signal.aborted) {
-        try { result = await getPlayerRankedData(tag, { signal, deadlineAt }); } catch { /* Preserve cached ranks. */ }
+      if (!signal.aborted && Date.now() < deadlineAt) {
+        try {
+          const allowed = beforeRequest ? await beforeRequest(tag, signal) : true;
+          if (allowed && !signal.aborted && Date.now() < deadlineAt) result = await getPlayerRankedData(tag, { signal, deadlineAt });
+        } catch { /* Preserve cached ranks. */ }
       }
       resolveByTag.get(tag)!(result);
     }
   })).then(() => undefined);
   return { results, finished, cancel: () => controller.abort() };
+}
+
+function validatePlayerSnapshot(player: BrawlStarsPlayer): BrawlStarsPlayer {
+  const counters = player && [player.trophies, player.highestTrophies, player.expLevel,
+    player.soloVictories, player.duoVictories, player["3vs3Victories"]];
+  if (!player || typeof player.name !== "string" || !Array.isArray(player.brawlers)
+    || !counters.every(value => Number.isSafeInteger(value) && value >= 0 && value <= 2147483647)) {
+    throw new SyncError("invalid_upstream_profile", "The game API returned an incomplete player profile. No snapshot was committed.", 502, undefined,
+      { phase: "fetch", provider: "brawl" });
+  }
+  return player;
 }
 
 function intervalMinutes(value: string | undefined, fallback: number, minimum: number) {
@@ -183,7 +199,7 @@ export async function executeSync(options: {
       const batch = await Promise.all(roster.slice(offset, offset + 4).map(async (member) => {
         let logFetched = true;
         const [player, log] = await Promise.all([
-          getPlayer(member.tag, apiKey, signal, deadlineAt),
+          getPlayer(member.tag, apiKey, signal, deadlineAt).then(validatePlayerSnapshot),
           getPlayerBattleLog(member.tag, apiKey, signal, deadlineAt).catch(error => {
             logFetched = false;
             battleLogsComplete = false;
@@ -200,17 +216,36 @@ export async function executeSync(options: {
     const profileRanks = new Map(fetchedMembers.map(item => [item.member.tag, readProfileRankedData(item.player)]));
     const missingTags = fetchedMembers.filter(item => !rankedCoreComplete(profileRanks.get(item.member.tag)!)).map(item => item.member.tag);
     if (missingTags.length && !rankCooling) {
-      const attempt = await supabaseAdmin.rpc("begin_sync_ranked_fallback", { p_run_id: runId, p_fence: fence, p_player_tags: missingTags });
-      if (attempt.error || !Array.isArray(attempt.data)) warnings.add("ranked_unavailable");
-      else {
-        const requested = new Set(missingTags);
-        const eligible = attempt.data.filter((tag): tag is string => typeof tag === "string" && requested.has(tag));
-        if (eligible.length) {
-          fallbackAttempted = true;
-          ranked = prefetchSyncRanks(eligible, signal, Math.min(deadlineAt, Date.now() + 8000));
-          await ranked.finished;
+      const rankedDeadlineAt = Math.min(deadlineAt, Date.now() + 8000);
+      const rankedSignal = AbortSignal.any([signal, AbortSignal.timeout(Math.max(0, rankedDeadlineAt - Date.now()))]);
+      let orderedTags: string[] = [];
+      try {
+        const previous = await supabaseAdmin.from("sync_ranked_fallback_attempts").select("player_tag,attempted_at")
+          .eq("club_tag", clubTag).in("player_tag", missingTags).abortSignal(rankedSignal);
+        if (previous.error || !Array.isArray(previous.data)) throw new Error("Ranked queue unavailable");
+        const attemptedAt = new Map(previous.data.map(row => [row.player_tag, Date.parse(row.attempted_at)]));
+        // Never-attempted players come first, then the oldest attempts. Without
+        // this ordering a slow provider can cycle through just the first few.
+        const age = (tag: string) => { const at = attemptedAt.get(tag); return typeof at === "number" && Number.isFinite(at) ? at : 0; };
+        orderedTags = [...missingTags].sort((a, b) => age(a) - age(b) || a.localeCompare(b));
+      } catch { warnings.add("ranked_unavailable"); }
+      let gateFailed = false;
+      ranked = prefetchSyncRanks(orderedTags, rankedSignal, rankedDeadlineAt, async (tag, requestSignal) => {
+        if (gateFailed) return false;
+        if (getUpstreamCooldownMs("rnt") > 0) { warnings.add("ranked_rate_limited"); return false; }
+        try {
+          const attempt = await supabaseAdmin.rpc("begin_sync_ranked_fallback", { p_run_id: runId, p_fence: fence, p_player_tags: [tag] }).abortSignal(requestSignal);
+          if (attempt.error || !Array.isArray(attempt.data)) {
+            gateFailed = true; warnings.add("ranked_unavailable"); return false;
+          }
+          const allowed = attempt.data.includes(tag);
+          if (allowed) fallbackAttempted = true;
+          return allowed;
+        } catch {
+          gateFailed = true; warnings.add("ranked_unavailable"); return false;
         }
-      }
+      });
+      await ranked.finished;
     }
     for (const { member, player, log: fetchedLog, logFetched, checkedAt } of fetchedMembers) {
         const fallback = await ranked?.results.get(member.tag);

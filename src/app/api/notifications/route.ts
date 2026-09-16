@@ -32,6 +32,29 @@ function parseBoundedInt(value: string | null, fallback: number, min: number, ma
   return Math.min(Math.max(parsed, min), max);
 }
 
+type NotificationCursor = { at: string | null; id: number };
+function validCursorTimestamp(value: unknown): value is string {
+  if (typeof value !== "string" || !/^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d(?:\.\d{1,6})?(?:Z|[+-]\d\d:\d\d)$/.test(value)
+    || !Number.isFinite(Date.parse(value))) return false;
+  const datePart = value.slice(0, 10);
+  const date = new Date(`${datePart}T00:00:00Z`);
+  // Date.parse normalizes impossible dates such as February 30; PostgreSQL
+  // rejects them. Validate before a malformed cursor reaches PostgREST.
+  if (!Number.isFinite(date.getTime()) || date.getUTCFullYear() < 1 || date.toISOString().slice(0, 10) !== datePart) return false;
+  const offset = /[+-](\d\d):(\d\d)$/.exec(value);
+  return Number(value.slice(11, 13)) <= 23 && (!offset || Number(offset[1]) <= 15 && Number(offset[2]) <= 59);
+}
+function parseCursor(value: string): NotificationCursor {
+  if (value.length > 512 || !/^[A-Za-z0-9_-]+$/.test(value)) throw new Error("Invalid notification cursor");
+  const cursor = JSON.parse(Buffer.from(value, "base64url").toString("utf8")) as NotificationCursor;
+  if (!cursor || (cursor.at !== null && !validCursorTimestamp(cursor.at))
+    || !Number.isSafeInteger(cursor.id) || cursor.id <= 0 || cursor.id > 2_147_483_647) {
+    throw new Error("Invalid notification cursor");
+  }
+  // Preserve PostgreSQL's fractional precision for equal-timestamp ID ties.
+  return { at: cursor.at, id: cursor.id };
+}
+
 function notificationResponse(body: unknown, init?: ResponseInit) {
   const headers = new Headers(init?.headers);
   headers.set("Cache-Control", "no-store");
@@ -59,6 +82,11 @@ export async function GET(request: NextRequest) {
     const unreadOnly = searchParams.get("unreadOnly") === "true";
     const limit = parseBoundedInt(searchParams.get("limit"), 50, 1, 100);
     const offset = parseBoundedInt(searchParams.get("offset"), 0, 0, Number.MAX_SAFE_INTEGER);
+    let cursor: NotificationCursor | null = null;
+    if (searchParams.has("cursor")) {
+      try { cursor = parseCursor(searchParams.get("cursor")!); }
+      catch { return notificationResponse({ error: "Invalid notification cursor" }, { status: 400 }); }
+    }
     const range = searchParams.get("range");
     const now = Date.now();
     const typesParam = searchParams.get("types");
@@ -77,15 +105,24 @@ export async function GET(request: NextRequest) {
         notifications: [],
         unreadCount: await getUnreadCount(),
         nextOffset: null,
+        nextCursor: null,
       });
     }
 
     let query = supabaseAdmin
       .from("notifications")
       .select("id, type, title, message, player_tag, player_name, is_read, created_at")
-      .order("created_at", { ascending: false })
+      .order("created_at", { ascending: false, nullsFirst: true })
       .order("id", { ascending: false })
-      .range(offset, offset + limit);
+      .range(cursor ? 0 : offset, (cursor ? 0 : offset) + limit);
+
+    if (cursor) {
+      // created_at is nullable in legacy rows. Preserve their existing nulls-
+      // first order, then advance into dated rows without losing either group.
+      query = query.or(cursor.at === null
+        ? `created_at.not.is.null,and(created_at.is.null,id.lt.${cursor.id})`
+        : `created_at.lt.${cursor.at},and(created_at.eq.${cursor.at},id.lt.${cursor.id})`);
+    }
 
     if (unreadOnly) {
       query = query.eq("is_read", false);
@@ -107,20 +144,24 @@ export async function GET(request: NextRequest) {
 
     if (notificationsRes.error) {
       if (isMissingNotificationsTable(notificationsRes.error)) {
-        return notificationResponse({ notifications: [], unreadCount: 0, tableMissing: true });
+        return notificationResponse({ notifications: [], unreadCount: 0, nextOffset: null, nextCursor: null, tableMissing: true });
       }
       throw notificationsRes.error;
     }
 
     const rows = notificationsRes.data || [];
+    const page = rows.slice(0, limit);
+    const tail = page.at(-1);
     return notificationResponse({
-      notifications: rows.slice(0, limit),
+      notifications: page,
       unreadCount: unreadCountRes,
-      nextOffset: rows.length > limit ? offset + limit : null,
+      nextOffset: !cursor && rows.length > limit ? offset + limit : null,
+      nextCursor: rows.length > limit && tail
+        ? Buffer.from(JSON.stringify({ at: tail.created_at ?? null, id: tail.id })).toString("base64url") : null,
     });
   } catch (error) {
     if (isMissingNotificationsTable(error)) {
-      return notificationResponse({ notifications: [], unreadCount: 0, tableMissing: true });
+      return notificationResponse({ notifications: [], unreadCount: 0, nextOffset: null, nextCursor: null, tableMissing: true });
     }
     console.error("Error fetching notifications:", error);
     return notificationResponse(

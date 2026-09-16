@@ -43,6 +43,8 @@ type NotificationMutationResponse = {
   error?: string;
 };
 
+type NotificationPageBoundary = { cursor: string } | { offset: number };
+
 function getDateHeading(date: Date, locale: string) {
   const today = new Date();
   const yesterday = new Date();
@@ -65,7 +67,8 @@ export default function NotificationsPage() {
   const [unreadCount, setUnreadCount] = useState(0);
   const [loading, setLoading] = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);
-  const [nextOffset, setNextOffset] = useState<number | null>(null);
+  const [nextPage, setNextPage] = useState<NotificationPageBoundary | null>(null);
+  const failedPage = useRef<NotificationPageBoundary | null>(null);
   const loadSequence = useRef(0);
   const [selectedRange, setSelectedRange] = useState<TimeRangeKey>("7d");
   const [loadError, setLoadError] = useState(false);
@@ -73,13 +76,16 @@ export default function NotificationsPage() {
   const [filter, setFilter] = useState<"all" | "unread">("all");
   const [category, setCategory] = useState<"all" | "join" | "leave" | "inactive" | "promotion" | "name_change" | "capacity" | "battle_gap">("all");
 
-  const loadNotifications = useCallback(async (force = false, offset = 0) => {
+  const loadNotifications = useCallback(async (force = false, page: NotificationPageBoundary | null = null) => {
     const sequence = ++loadSequence.current;
+    failedPage.current = page;
     setLoadError(false);
     try {
-      if (offset === 0) setLoading(true);
+      if (page === null) setLoading(true);
       else setLoadingMore(true);
-      const params = new URLSearchParams({ limit: "100", offset: String(offset), range: selectedRange });
+      const params = new URLSearchParams({ limit: "100", range: selectedRange });
+      if (page && "cursor" in page) params.set("cursor", page.cursor);
+      else params.set("offset", String(page?.offset ?? 0));
       if (filter === "unread") params.set("unreadOnly", "true");
       if (category !== "all") {
         params.set("types", category === "promotion" ? "promotion,demotion" : category);
@@ -88,22 +94,25 @@ export default function NotificationsPage() {
         notifications?: Notification[];
         unreadCount?: number;
         nextOffset?: number | null;
+        nextCursor?: string | null;
       }>(`/api/notifications?${params}`, {
         staleMs: 30_000,
         force,
       });
       if (sequence !== loadSequence.current) return;
-      setNotifications((previous) => offset === 0
+      setNotifications((previous) => page === null
         ? data.notifications || []
         : Array.from(new Map(
           [...previous, ...(data.notifications || [])].map((notification) => [notification.id, notification])
         ).values()));
       setUnreadCount(data.unreadCount || 0);
-      setNextOffset(data.nextOffset ?? null);
+      setNextPage(data.nextCursor !== undefined
+        ? (data.nextCursor ? { cursor: data.nextCursor } : null)
+        : (data.nextOffset != null ? { offset: data.nextOffset } : null));
     } catch (error) {
       if (sequence !== loadSequence.current) return;
       setLoadError(true);
-      if (offset === 0) setNotifications([]);
+      if (page === null) setNotifications([]);
       console.error("Failed to load notifications:", error);
     } finally {
       if (sequence === loadSequence.current) {
@@ -324,7 +333,7 @@ export default function NotificationsPage() {
         </select>
       </div>
 
-      {loadError && <div role="alert" className="rounded-lg border border-destructive/40 p-4 text-sm"><T text="Could not load notifications." /> <Button variant="ghost" onClick={() => loadNotifications(true, notifications.length && nextOffset !== null ? nextOffset : 0)}><T text="Retry" /></Button></div>}
+      {loadError && <div role="alert" className="rounded-lg border border-destructive/40 p-4 text-sm"><T text="Could not load notifications." /> <Button variant="ghost" onClick={() => loadNotifications(true, failedPage.current)}><T text="Retry" /></Button></div>}
       {actionError && <p role="alert" className="text-sm text-destructive"><T text="Could not update notifications. Please try again." /></p>}
 
       {/* Notification list */}
@@ -398,9 +407,9 @@ export default function NotificationsPage() {
               })}
             </section>
           ))}
-          {nextOffset !== null && (
+          {nextPage !== null && (
             <div className="text-center">
-              <Button variant="outline" disabled={loadingMore} onClick={() => loadNotifications(false, nextOffset)}>
+              <Button variant="outline" disabled={loadingMore} onClick={() => loadNotifications(false, nextPage)}>
                 {loadingMore ? <T text="Loading..." /> : <T text="Load More" />}
               </Button>
             </div>

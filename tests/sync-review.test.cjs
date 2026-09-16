@@ -8,11 +8,11 @@ function serviceFixture(options = {}) {
   const rankedRequests = [];
   const tags = options.tags || ["#PLAYER"];
   const db = {
-    from: () => ({ select: () => ({ in: async () => ({data:[{key:"club_tag",value:"#CLUB"},{key:"api_key",value:"secret-test-only"}],error:null}) }) }),
-    rpc: async (name,args) => {
+    from: table => {const result={data:table==='settings'?[{key:"club_tag",value:"#CLUB"},{key:"api_key",value:"secret-test-only"}]:[],error:null};const query={select:()=>query,eq:()=>query,in:()=>Object.assign(Promise.resolve(result),{abortSignal:()=>Promise.resolve(result)})};return query;},
+    rpc: (name,args) => {
       calls.push({name,args});
       if(name === "acquire_sync_run") return {data: options.acquisition || {acquired:true,run_id:"test-run",fence:4},error:null};
-      if(name === "begin_sync_ranked_fallback") return {data:args.p_player_tags,error:null};
+      if(name === "begin_sync_ranked_fallback") return {abortSignal:async()=>({data:args.p_player_tags,error:null})};
       if(name === "commit_sync_snapshot") return {data: options.commitError ? null : {success:true,synced:tags.length,events:0,timestamp:"2026-09-16T00:00:00Z",runId:"test-run",changes:{joins:[],leaves:[]},member:{player_tag:"#PLAYER"}},error:options.commitError || null};
       if(name === "fail_sync_run") return {data:null,error:null};
       throw new Error(`Unexpected RPC ${name}`);

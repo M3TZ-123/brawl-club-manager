@@ -38,9 +38,11 @@ export default function HistoryPage() {
   const [loadError, setLoadError] = useState(false);
   const [noteError, setNoteError] = useState(false);
   const loadSequence = useRef(0);
-  const [editingTag, setEditingTag] = useState<string | null>(null);
-  const [editingNote, setEditingNote] = useState("");
+  const [noteEditor, setNoteEditor] = useState<{ tag: string; note: string } | null>(null);
+  const editingTag = noteEditor?.tag ?? null;
+  const editingNote = noteEditor?.note ?? "";
   const [savingNote, setSavingNote] = useState(false);
+  const noteSaveInFlight = useRef(false);
   const [reviewMember, setReviewMember] = useState<MemberHistory | null>(null);
 
   const loadHistory = useCallback(async (force = false) => {
@@ -112,17 +114,16 @@ export default function HistoryPage() {
 
   const startEditingNote = (playerTag: string, currentNote: string | null) => {
     if (!isAdmin) return;
-    setEditingTag(playerTag);
-    setEditingNote(currentNote || "");
+    setNoteEditor({ tag: playerTag, note: currentNote || "" });
   };
 
   const cancelEditingNote = () => {
-    setEditingTag(null);
-    setEditingNote("");
+    setNoteEditor(null);
   };
 
   const saveNote = async (playerTag: string, value = editingNote) => {
-    if (!isAdmin) return;
+    if (!isAdmin || noteSaveInFlight.current) return;
+    noteSaveInFlight.current = true;
     setNoteError(false);
     try {
       setSavingNote(true);
@@ -139,13 +140,15 @@ export default function HistoryPage() {
             h.player_tag === playerTag ? { ...h, notes: value.trim() || null } : h
           )
         );
-        setEditingTag(null);
-        setEditingNote("");
+        // A delayed save must not close a different member's editor, or erase
+        // further typing in the same editor while that save was in flight.
+        setNoteEditor(current => current?.tag === playerTag && current.note.trim() === value.trim() ? null : current);
       }
     } catch (error) {
       setNoteError(true);
       console.error("Error saving note:", error);
     } finally {
+      noteSaveInFlight.current = false;
       setSavingNote(false);
     }
   };
@@ -302,7 +305,7 @@ export default function HistoryPage() {
                                 <div className="flex items-center gap-1">
                                   <Input
                                     value={editingNote}
-                                    onChange={(e) => setEditingNote(e.target.value)}
+                                    onChange={(e) => setNoteEditor(current => current ? { ...current, note: e.target.value } : current)}
                                     placeholder={t("Add a note...")}
                                     className="h-8 text-sm"
                                     autoFocus

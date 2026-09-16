@@ -54,13 +54,16 @@ export async function GET(request?: Request) {
     if (currentMembersRes.error) throw currentMembersRes.error;
     const currentTags = new Set<string>((currentMembersRes.data || []).map(h => h.player_tag));
     const memberFilter = currentTags.size ? [...currentTags] : [""];
-    const [membersRes, thisWeekStats, prevWeekStats] = await Promise.all([
+    const [membersRes, currentDailyRows, previousDailyRows] = await Promise.all([
       supabaseAdmin.from("members").select("player_tag, player_name, trophies, is_active, last_updated").in("player_tag", memberFilter),
       fetchDailyStats([...currentTags], weekStartStr, period.dates.at(-1)!),
       fetchDailyStats([...currentTags], previousWeekStartStr, new Date(period.start.getTime() - 86_400_000).toISOString().slice(0, 10)),
     ]);
     if (membersRes.error) throw membersRes.error;
     const members = (membersRes.data || []).filter(m => currentTags.has(m.player_tag));
+    const rosterTags = new Set(members.map(member => member.player_tag));
+    const thisWeekStats = currentDailyRows.filter(row => rosterTags.has(row.player_tag));
+    const prevWeekStats = previousDailyRows.filter(row => rosterTags.has(row.player_tag));
 
     // ============================
     // 0. MEGA BOSS STATUS — derived from exact tracked battle_history mode.

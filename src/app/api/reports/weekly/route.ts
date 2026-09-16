@@ -26,7 +26,7 @@ export async function GET(request?: Request) {
     const weekAgoDate = period.dates[0];
     const currentMemberFilter = currentMemberTags.length > 0 ? currentMemberTags : [""];
 
-    const [membersRes, weeklyStats, eventsRes, trophyTrend] = await Promise.all([
+    const [membersRes, dailyRows, eventsRes, trophyTrend] = await Promise.all([
       supabaseAdmin
         .from("members")
         .select("player_tag, player_name, trophies, is_active")
@@ -47,6 +47,10 @@ export async function GET(request?: Request) {
     if (eventsRes.error) throw eventsRes.error;
 
     const members = membersRes.data || [];
+    // A historical current flag can outlive a missing member snapshot. Match
+    // the actual roster used by the report, dashboard and leaderboard totals.
+    const rosterTags = new Set(members.map(member => member.player_tag));
+    const weeklyStats = dailyRows.filter(row => rosterTags.has(row.player_tag));
     const events = eventsRes.data || [];
 
     // Calculate report data

@@ -91,6 +91,35 @@ test("all five ranges keep report, insights and leaderboard daily totals consist
   }
 });
 
+test("report and insights exclude history-only members from current and previous battle totals", async () => {
+  for (const [range, days] of Object.entries(config)) {
+    const tables = fixture();
+    tables.member_history.push({ player_tag: "#MISSING", is_current_member: true });
+    tables.daily_stats.push(
+      { player_tag: "#MISSING", date: date(0), battles: 1000, wins: 1000 },
+      { player_tag: "#MISSING", date: date(days + 1), battles: 777, wins: 777 },
+    );
+    const report = await (await load("src/app/api/reports/weekly/route.ts", tables).GET(request(range))).json();
+    const { insights } = await (await load("src/app/api/insights/route.ts", tables).GET(request(range))).json();
+    assert.equal(report.summary.totalMembers, 30);
+    assert.equal(report.summary.weeklyBattles, days * 30);
+    assert.equal(report.summary.weeklyWins, days * 30);
+    assert.equal(insights.totalBattlesThisWeek, days * 30);
+    assert.equal(insights.totalWins, days * 30);
+    assert.equal(insights.prevWeekTotal, days * 30);
+    assert.equal(insights.trendDiff, 0);
+  }
+});
+
+test("an empty actual roster never reports retained daily battles as current club activity", async () => {
+  const tables = fixture(); tables.members = [];
+  const report = await (await load("src/app/api/reports/weekly/route.ts", tables).GET(request("7d"))).json();
+  const { insights } = await (await load("src/app/api/insights/route.ts", tables).GET(request("7d"))).json();
+  assert.equal(report.summary.totalMembers, 0); assert.equal(report.summary.weeklyBattles, 0); assert.equal(report.summary.weeklyWins, 0);
+  assert.equal(insights.totalBattlesThisWeek, 0); assert.equal(insights.totalWins, 0); assert.equal(insights.prevWeekTotal, 0);
+  assert.equal(insights.trendDiff, 0); assert.equal(insights.mvpName, null);
+});
+
 test("dashboard selected-range gain, no-progress and change summaries distinguish NULL from observed zero", async () => {
   const tables = fixture();
   const day = await (await load("src/app/api/dashboard/route.ts",tables).GET(request("24h"))).json();

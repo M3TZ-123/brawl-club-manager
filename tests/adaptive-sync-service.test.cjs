@@ -10,19 +10,19 @@ function fixture(options = {}) {
   const db = {
     from(table) {
       const query = { select() { return query; }, eq() { return query; },
-        in: async () => ({ data: Object.entries(settings).map(([key,value]) => ({key,value})), error: null }),
+        in: () => {const result={data:table==='settings'?Object.entries(settings).map(([key,value])=>({key,value})):[...attempted].map(player_tag=>({player_tag,attempted_at:new Date(now).toISOString()})),error:null};return Object.assign(Promise.resolve(result),{abortSignal:async()=>result});},
         maybeSingle: async () => ({data: table === 'sync_runs' && options.previousScope ? {scope:options.previousScope} : null,error:null}) };
       return query;
     },
-    async rpc(name,args) {
+    rpc(name,args) {
       calls.push({name,args});
       if (name === 'acquire_sync_run') return {data: options.replay || {acquired:true,run_id:'run-1',fence:2},error:null};
       if (name === 'begin_sync_ranked_fallback') {
-        if (options.attemptError) return {data:null,error:{code:'test'}};
-        if (options.attemptAllowed === false) return {data:[],error:null};
+        if (options.attemptError) return {abortSignal:async()=>({data:null,error:{code:'test'}})};
+        if (options.attemptAllowed === false) return {abortSignal:async()=>({data:[],error:null})};
         const eligible = args.p_player_tags.filter(tag=>!attempted.has(tag));
         eligible.forEach(tag=>attempted.add(tag));
-        return {data:eligible,error:null};
+        return {abortSignal:async()=>({data:eligible,error:null})};
       }
       if (name === 'commit_roster_snapshot' || name === 'commit_sync_snapshot') return {data:{success:true,runId:'run-1',timestamp:new Date(now).toISOString(),synced:1,scope:name === 'commit_roster_snapshot'?'roster':'full',warnings:args.p_payload.warnings||[]},error:null};
       if (name === 'defer_sync_upstream' || name === 'fail_sync_run') return {data:true,error:null};

@@ -77,3 +77,30 @@ test("a frozen network or frozen JSON body expires, aborts, and leaves the cache
     assert.equal((await retry).recovered, true); assert.equal(timers.size, 0);
   }
 });
+
+test("malformed successful responses are rejected instead of cached as empty data", async () => {
+  const cache = fixture();
+  const read = cache.fetchJsonCached("/api/reports/weekly?range=30d");
+  const rejected = assert.rejects(read, /invalid response/i);
+  cache.pending[0].resolve(new Response("<html>upstream unavailable</html>", { status: 200 }));
+  await rejected;
+  const retry = cache.fetchJsonCached("/api/reports/weekly?range=30d");
+  assert.equal(cache.pending.length, 2, "Invalid data must not hide the next real response");
+  cache.pending[1].resolve(Response.json({ summary: { totalMembers: 28 } }));
+  assert.equal((await retry).summary.totalMembers, 28);
+});
+
+test("HTTP errors preserve safe messages and tolerate non-JSON or null bodies", async () => {
+  for (const [response, expected] of [
+    [new Response("<html>service unavailable</html>", { status: 503 }), "Request failed: 503"],
+    [Response.json(null, { status: 502 }), "Request failed: 502"],
+    [Response.json({ error: "Please retry later." }, { status: 429 }), "Please retry later."],
+    [Response.json({ error: { internal: "details" } }, { status: 500 }), "Request failed: 500"],
+  ]) {
+    const cache = fixture();
+    const read = cache.fetchJsonCached("/api/history");
+    const rejected = assert.rejects(read, error => error.message === expected);
+    cache.pending[0].resolve(response);
+    await rejected;
+  }
+});

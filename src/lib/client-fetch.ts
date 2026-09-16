@@ -14,8 +14,17 @@ export async function fetchJsonWithTimeout<T>(url: string, init: RequestInit = {
     return await Promise.race([
       cancelled,
       fetch(url, { ...init, signal: controller.signal }).then(async response => {
-        const data = await response.json().catch(() => ({}));
-        if (!response.ok) throw new Error(data?.error || data?.message || `Request failed: ${response.status}`);
+        let data: unknown;
+        try { data = await response.json(); }
+        catch {
+          if (response.ok) throw new Error("Invalid response. Please try again.");
+          throw new Error(`Request failed: ${response.status}`);
+        }
+        if (!response.ok) {
+          const details = data && typeof data === "object" ? data as Record<string, unknown> : {};
+          const message = [details.error, details.message].find(value => typeof value === "string" && value.trim());
+          throw new Error(typeof message === "string" ? message : `Request failed: ${response.status}`);
+        }
         return data as T;
       }),
     ]);
