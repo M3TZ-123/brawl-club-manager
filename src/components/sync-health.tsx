@@ -1,35 +1,12 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
-import { fetchJsonCached } from "@/lib/client-data-cache";
+import { useSyncExternalStore } from "react";
+import { getSyncHealth, getServerSyncHealth, subscribeSyncHealth } from "@/lib/client-sync-status";
 import { useI18n, LocalDate } from "@/components/locale-provider";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 
-export interface SyncHealth {
-  lastSuccessAt: string | null;
-  lastAttemptAt: string | null;
-  lastOutcome: string | null;
-  expectedIntervalMinutes: number;
-  freshness: "never" | "fresh" | "stale";
-  running: boolean;
-  latestRun?: { source: string; scope: string; status: string; errorCode?: string | null } | null;
-}
-
 export function useSyncHealth() {
-  const [health, setHealth] = useState<SyncHealth | null>(null);
-  const load = useCallback(async (force = false) => {
-    try { setHealth(await fetchJsonCached<SyncHealth>("/api/sync/status", { staleMs: 15_000, force })); }
-    catch { setHealth(null); }
-  }, []);
-  useEffect(() => {
-    void Promise.resolve().then(() => load());
-    const update = () => { void load(true); };
-    const timer = window.setInterval(update, 60_000);
-    window.addEventListener("club-data-updated", update);
-    window.addEventListener("admin-session-changed", update);
-    return () => { window.clearInterval(timer); window.removeEventListener("club-data-updated", update); window.removeEventListener("admin-session-changed", update); };
-  }, [load]);
-  return health;
+  return useSyncExternalStore(subscribeSyncHealth, getSyncHealth, getServerSyncHealth);
 }
 
 export function DataConfidenceNotice() {

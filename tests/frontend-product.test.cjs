@@ -200,7 +200,7 @@ test("timeline preserves provenance, missing snapshots and opaque pagination cur
 
 test("sync health displays backend attempt and outcome rather than inferring a next scheduled time", async () => {
   const renderer = hookRenderer();
-  const { SyncHealthCard } = loadTypeScript("src/components/sync-health.tsx", { ...componentMocks, react: renderer.react, "@/lib/client-data-cache": { fetchJsonCached: async () => ({ freshness: "stale", running: false, lastSuccessAt: "2026-01-01T00:00:00Z", lastAttemptAt: "2026-01-01T01:00:00Z", lastOutcome: "failed", expectedIntervalMinutes: 45 }) } }, { window: { ...windowMock, setInterval() { return 1; }, clearInterval() {} } });
+  const { SyncHealthCard } = loadTypeScript("src/components/sync-health.tsx", { ...componentMocks, react: { ...renderer.react, useSyncExternalStore: (_subscribe, getSnapshot) => getSnapshot() }, "@/lib/client-sync-status": { subscribeSyncHealth() {}, getServerSyncHealth: () => null, getSyncHealth: () => ({ freshness: "stale", running: false, lastSuccessAt: "2026-01-01T00:00:00Z", lastAttemptAt: "2026-01-01T01:00:00Z", lastOutcome: "failed", expectedIntervalMinutes: 45 }) } });
   const tree = await renderer.render(() => SyncHealthCard());
   assert.match(textContent(tree), /Stale/);
   assert.match(textContent(tree), /failed/);

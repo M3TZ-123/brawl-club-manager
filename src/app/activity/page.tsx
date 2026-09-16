@@ -7,6 +7,7 @@ import Link from "next/link";
 import { DataConfidenceNotice } from "@/components/sync-health";
 import { LayoutWrapper } from "@/components/layout-wrapper";
 import { fetchJsonCached } from "@/lib/client-data-cache";
+import { useAppStore } from "@/lib/store";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
@@ -430,7 +431,7 @@ export default function LeaderboardPage() {
     label: "last 7 days",
     minWinRateBattles: 10,
   });
-  const [lastSyncTime, setLastSyncTime] = useState<string | null>(null);
+  const lastSyncTime = useAppStore(state => state.lastSyncTime);
   const [isLoading, setIsLoading] = useState(true);
   const [activeTab, setActiveTab] = useState("trophyLeaders");
   const [selectedRange, setSelectedRange] = useState<RangeKey>("7d");
@@ -448,7 +449,6 @@ export default function LeaderboardPage() {
       setLeaderboards(data.leaderboards);
       setMemberCount(data.memberCount || 0);
       if (data.range) setRangeMeta(data.range);
-      setLastSyncTime(data.lastSyncTime || null);
     } catch (err) {
       console.error("Error loading leaderboard:", err);
     } finally {

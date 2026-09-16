@@ -9,6 +9,7 @@ import { useAppStore } from "@/lib/store";
 import { useAdminSession } from "@/hooks/use-admin-session";
 import { cn } from "@/lib/utils";
 import { fetchJsonCached, invalidateJsonCache } from "@/lib/client-data-cache";
+import { useSyncHealth } from "@/components/sync-health";
 import {
   LayoutDashboard,
   Users,
@@ -63,6 +64,7 @@ export function useSidebarContext() {
 }
 
 function SimpleSidebar() {
+  useSyncHealth();
   const pathname = usePathname();
   const { clubName, lastSyncTime, isSyncing, clubTag, apiKeyConfigured, notificationsEnabled } = useAppStore();
   const { isOpen, close } = useSidebarContext();

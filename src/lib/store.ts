@@ -103,6 +103,7 @@ export const useAppStore = create<AppState>()(
         }
         try {
           if (!get().hasLoadedSettings) set({ isLoadingSettings: true });
+          const syncTimeAtRequest = get().lastSyncTime;
           const response = await fetch("/api/settings", { cache: "no-store" });
           if (response.ok) {
             const settings = await response.json();
@@ -121,7 +122,9 @@ export const useAppStore = create<AppState>()(
               requiredTrophies: settings.required_trophies != null
                 ? parseNullableIntegerSetting(settings.required_trophies, get().requiredTrophies)
                 : get().requiredTrophies,
-              lastSyncTime: settings.last_sync_time || null,
+              ...(get().lastSyncTime === syncTimeAtRequest
+                ? { lastSyncTime: settings.last_sync_time || null }
+                : {}),
             });
           } else {
             throw new Error("Failed to load settings");
@@ -187,6 +190,12 @@ export const useAppStore = create<AppState>()(
     }),
     {
       name: "brawl-club-manager-storage",
+      // Old persisted timestamps are unverified hints, not server state.
+      merge: (persistedState, currentState) => ({
+        ...currentState,
+        ...(persistedState as Partial<AppState>),
+        lastSyncTime: currentState.lastSyncTime,
+      }),
       partialize: (state) => ({
         theme: state.theme,
         locale: state.locale,
@@ -199,7 +208,6 @@ export const useAppStore = create<AppState>()(
         notificationsEnabled: state.notificationsEnabled,
         discordWebhookConfigured: state.discordWebhookConfigured,
         requiredTrophies: state.requiredTrophies,
-        lastSyncTime: state.lastSyncTime,
       }),
     }
   )

@@ -294,24 +294,10 @@ export default function MembersPage() {
       }
       if (force) {
         invalidateJsonCache("/api/members");
-        invalidateJsonCache("/api/sync/status");
       }
 
-      const [membersData, syncStatus] = await Promise.all([
-        fetchJsonCached<{ members: MemberWithGains[] }>("/api/members", {
-          staleMs: 30_000,
-          force,
-        }),
-        fetchJsonCached<{ lastSyncTime: string | null }>("/api/sync/status", {
-          staleMs: 30_000,
-          force,
-        }).catch(() => ({ lastSyncTime: null })),
-      ]);
-
+      const membersData = await fetchJsonCached<{ members: MemberWithGains[] }>("/api/members", { staleMs: 30_000, force });
       setMembers(membersData.members || []);
-      if (syncStatus.lastSyncTime) {
-        setLastSyncTime(syncStatus.lastSyncTime);
-      }
     } catch (error) {
       console.error("Error loading members:", error);
       setErrorMessage(error instanceof Error ? error.message : "Failed to load members");
@@ -319,7 +305,7 @@ export default function MembersPage() {
       setIsLoading(false);
       setIsRefreshing(false);
     }
-  }, [setLastSyncTime]);
+  }, []);
 
   useEffect(() => {
     loadMembers();

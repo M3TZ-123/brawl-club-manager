@@ -280,7 +280,6 @@ export default function DashboardPage() {
     isLoadingSettings,
     hasLoadedSettings,
     loadSettingsFromDB,
-    setLastSyncTime,
   } = useAppStore();
   const [dashboard, setDashboard] = useState<DashboardResponse | null>(null);
   const [isLoading, setIsLoading] = useState(true);
@@ -310,16 +309,13 @@ export default function DashboardPage() {
       });
 
       setDashboard(dashboardData);
-      if (dashboardData.syncStatus.lastSyncTime) {
-        setLastSyncTime(dashboardData.syncStatus.lastSyncTime);
-      }
     } catch (error) {
       console.error("Error loading dashboard:", error);
     } finally {
       setIsLoading(false);
       setDataLoaded(true);
     }
-  }, [setLastSyncTime]);
+  }, []);
 
   const loadInsights = useCallback(async (force = false) => {
     try {
