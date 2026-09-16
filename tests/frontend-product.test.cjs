@@ -200,7 +200,7 @@ test("timeline preserves provenance, missing snapshots and opaque pagination cur
   await action(tree, "Load More")(); tree = await render();
   assert.equal(new URL(urls[1], "http://fixture").searchParams.get("cursor"), "opaque+/=");
   assert.match(textContent(tree), /Recorded/);
-  assert.match(textContent(tree), /senior/);
+  assert.match(textContent(tree), /Before: MemberAfter: Senior/);
 });
 
 test("sync health displays backend attempt and outcome rather than inferring a next scheduled time", async () => {

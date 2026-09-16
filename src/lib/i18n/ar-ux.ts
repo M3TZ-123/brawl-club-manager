@@ -16,6 +16,7 @@ const arUx: Record<string, string> = {
   "History": "سجل العضوية",
   "Analysis": "تحليل المعارك",
   "Main navigation": "القائمة الرئيسية",
+  "Sign in": "تسجيل الدخول",
   "Maps and rankings": "الخرائط والترتيب",
   "Check the current maps or compare club rankings.": "اطّلع على الخرائط الحالية أو ترتيب الأندية.",
   "Current maps": "الخرائط الحالية",

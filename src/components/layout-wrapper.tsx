@@ -162,6 +162,8 @@ function SimpleSidebar() {
       
       {/* Sidebar */}
       <aside
+        id="club-sidebar"
+        inert={!isOpen}
         className={cn(
           "fixed top-0 start-0 z-50 h-full w-64 bg-card border-e border-border transform transition-transform duration-200 ease-in-out",
           isOpen ? "translate-x-0" : "-translate-x-full rtl:translate-x-full"
@@ -239,7 +241,7 @@ type NotificationMutationResponse = {
 function SimpleHeader() {
   const { t, number } = useI18n();
   const { clubName, theme, setTheme } = useAppStore();
-  const { toggle } = useSidebarContext();
+  const { isOpen, toggle } = useSidebarContext();
   const { isAdmin } = useAdminSession();
   const [notifications, setNotifications] = useState<NotificationItem[]>([]);
   const [showNotifications, setShowNotifications] = useState(false);
@@ -443,6 +445,8 @@ function SimpleHeader() {
           variant="ghost"
           size="icon"
           onClick={toggle}
+          aria-expanded={isOpen}
+          aria-controls="club-sidebar"
           className="h-9 w-9"
         >
           <PanelLeft className="h-5 w-5" />
