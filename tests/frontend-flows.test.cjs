@@ -29,7 +29,8 @@ function battleDatabase(tables) {
 test("battle pagination keeps squads and interleaved same-time matches complete", async () => {
   const tags = ["#A", "#B", "#C", "#D"];
   const boundaryTime = "2026-01-01T20:00:00.000Z";
-  const battle = (player_tag, battle_time, map = "Map") => ({ player_tag, battle_time, mode: "brawlBall", map, result: "victory" });
+  const battle = (player_tag, battle_time, map = "Map") => ({ player_tag, battle_time, mode: "brawlBall", map, result: "victory",
+    teams_json: (map === "Map" ? [["#A", "#C", "#D"], ["#E", "#F", "#G"]] : [["#B", "#H", "#I"], ["#J", "#K", "#L"]]).map(team => team.map(tag => ({tag}))) });
   const rows = Array.from({ length: 48 }, (_, index) => battle("#A", new Date(Date.UTC(2026, 0, 2) - index * 60_000).toISOString()));
   // A/C/D played together; B played a different map in the same second.
   rows.push(battle("#A", boundaryTime), battle("#B", boundaryTime, "Other"), battle("#C", boundaryTime), battle("#D", boundaryTime));
@@ -46,8 +47,62 @@ test("battle pagination keeps squads and interleaved same-time matches complete"
   assert.equal(second.nextOffset, null);
   assert.equal(second.matches.length, 1);
   assert.equal(second.matches[0].battle_time, "2026-01-01T19:00:00.000Z");
-  const keys = [...first.matches, ...second.matches].map(match => `${match.battle_time}|${match.mode}|${match.map}`);
+  const keys = [...first.matches, ...second.matches].map(match => match.matchId);
   assert.equal(keys.length, new Set(keys).size);
+});
+
+function battleFeedFixture(rows, tags = ["#A", "#B", "#C", "#D", "#M"]) {
+  return loadRoute("src/app/api/battles/feed/route.ts", battleDatabase({ battle_history: rows,
+    member_history: tags.map(player_tag => ({player_tag,is_current_member:true})),
+    members: tags.map(player_tag => ({player_tag,player_name:player_tag})),
+  }));
+}
+
+test("same-second matches use complete participant sets, regardless of team shape or shared players", async () => {
+  const common = {battle_time:"2026-01-01T20:00:00.000Z",mode:"brawlBall",map:"Map",result:"victory"};
+  const roster = ["#A", "#C", "#D", "#E", "#F", "#G"].map(tag => ({tag}));
+  const route = battleFeedFixture([
+    {...common,player_tag:"#A",teams_json:JSON.stringify([roster.slice(0,3),roster.slice(3)])},
+    {...common,player_tag:"#C",teams_json:{teams:[roster.slice(3).reverse(),roster.slice(0,3).reverse()]}},
+    {...common,player_tag:"#D",teams_json:{players:[...roster].reverse().map(player=>({tag:player.tag.replace("#","%23").toLowerCase()}))}},
+    {...common,player_tag:"#B",teams_json:["#B","#H","#I","#J","#K","#L"].map(tag=>({tag}))},
+    // A is also listed in this separate roster: overlap is not match identity.
+    {...common,player_tag:"#M",teams_json:["#A","#M","#N","#O","#P","#Q"].map(tag=>({tag}))},
+  ]);
+  const response=await route.GET(new Request("http://fixture/api/battles/feed?limit=2"));assert.equal(response.status,200);
+  const body=await response.json();assert.equal(body.matches.length,3);assert.equal(body.nextOffset,null);
+  assert.deepEqual(body.matches.map(match=>match.clubPlayers.map(player=>player.tag)),[["#A","#C","#D"],["#B"],["#M"]]);
+  assert.equal(new Set(body.matches.map(match=>match.matchId)).size,3);
+  const filtered=await (await route.GET(new Request("http://fixture/api/battles/feed?player=%23C"))).json();
+  assert.equal(filtered.matches[0].matchId,body.matches[0].matchId);
+});
+
+test("missing, partial, malformed, duplicate, or unknown participant data keeps observations separate", async () => {
+  const players=["#A","#B","#C","#D","#E","#F"].map(tag=>({tag}));
+  const cases=[null,"invalid JSON",[],players.slice(0,5),[players.slice(0,3)],
+    [...players.slice(0,5),players[0]],[...players.slice(0,5),{tag:123}],
+    [players.slice(0,3),null],{players:[...players.slice(0,5),{}]},
+    ["#C","#D","#E","#F","#G","#H"].map(tag=>({tag}))];
+  for(const teams_json of cases){
+    const rows=["#A","#B"].map(player_tag=>({player_tag,battle_time:"2026-01-01T20:00:00.000Z",mode:"brawlBall",map:"Map",teams_json}));
+    const response=await battleFeedFixture(rows).GET(new Request("http://fixture/api/battles/feed"));assert.equal(response.status,200);
+    const body=await response.json();assert.equal(body.matches.length,2,JSON.stringify(teams_json));
+    assert.ok(body.matches.every(match=>match.clubPlayers.length===1));assert.notEqual(body.matches[0].matchId,body.matches[1].matchId);
+  }
+  const unknown=battleFeedFixture(["#A","#B"].map(player_tag=>({player_tag,battle_time:"2026-01-01T20:00:00.000Z",mode:"unknown",map:"Map",teams_json:players})));
+  assert.equal((await (await unknown.GET(new Request("http://fixture/api/battles/feed"))).json()).matches.length,2);
+});
+
+test("complete duels, showdown and five-player team rosters still combine club observations", async () => {
+  for(const [mode,count] of [["duels",2],["soloShowdown",10],["duoShowdown",10],["trioShowdown",12],["brawlBall5V5",10]]){
+    const players=Array.from({length:count},(_,index)=>({tag:index===0?"#A":index===1?"#B":`#P${index}`}));
+    const route=battleFeedFixture([
+      {player_tag:"#A",battle_time:"2026-01-01T20:00:00.000Z",mode,map:"Map",teams_json:{players}},
+      {player_tag:"#B",battle_time:"2026-01-01T20:00:00.000Z",mode,map:"Map",teams_json:[...players].reverse().map(player=>[player])},
+    ]);
+    const body=await (await route.GET(new Request("http://fixture/api/battles/feed"))).json();
+    assert.equal(body.matches.length,1,mode);assert.deepEqual(body.matches[0].clubPlayers.map(player=>player.tag),["#A","#B"]);
+  }
 });
 
 test("notification filters reach older unread records and paginate without gaps", async () => {
@@ -256,7 +311,7 @@ test("realtime insert bypasses a fresh battle cache and uses the server paginati
   let refreshTimer;
   const requests = [];
   let inserted = false;
-  const match = tag => ({ battle_time: "2026-01-01T00:00:00.000Z", mode: "brawlBall", map: "Map", clubPlayers: [{ tag, result: "victory" }] });
+  const match = tag => ({ matchId: `same-match-${tag}`, battle_time: "2026-01-01T00:00:00.000Z", mode: "brawlBall", map: "Map", clubPlayers: [{ tag, result: "victory" }] });
   const cache = loadTypeScript("src/lib/client-data-cache.ts", {}, { fetch: async url => {
     requests.push(String(url));
     const row = match(inserted ? "#NEW" : "#OLD");
@@ -284,6 +339,26 @@ test("realtime insert bypasses a fresh battle cache and uses the server paginati
   tree = await renderer.render(component);
   assert.equal(elements(tree).filter(element => element.props?.match).length, 1);
   assert.deepEqual(json(elements(tree).find(element => element.props?.match).props.match.clubPlayers.map(player => player.tag)), ["#NEW", "#TEAMMATE"]);
+});
+
+test("Load More preserves different same-second matches and merges only a shared match identity",async()=>{
+  const renderer=hookRenderer();
+  const match=(matchId,tags)=>({matchId,battle_time:"2026-01-01T00:00:00.000Z",mode:"brawlBall",map:"Map",clubPlayers:tags.map(tag=>({tag,result:"victory"})),ourTeam:null,theirTeam:null});
+  const channel={on(){return channel;},subscribe(){return channel;}};
+  const component=loadTypeScript("src/app/battle-feed/page.tsx",{
+    ...componentMocks,react:renderer.react,
+    "@/lib/supabase":{supabase:{channel:()=>channel,removeChannel(){}}},
+    "@/lib/client-data-cache":{fetchJsonCached:async url=>String(url).startsWith("/api/battles/feed")
+      ?new URL(url,"http://fixture").searchParams.get("offset")==="2"
+        ?{matches:[match("first",["#C"]),match("third",["#D"])],total:4,nextOffset:null}
+        :{matches:[match("first",["#A"]),match("second",["#B"])],total:4,nextOffset:2}
+      :{members:[],list:[]}},
+  },{window:windowMock,document:windowMock}).default;
+  let tree=await renderer.render(component);assert.equal(elements(tree).filter(element=>element.props?.match).length,2);
+  await action(tree,"Load More")();tree=await renderer.render(component);
+  const cards=elements(tree).filter(element=>element.props?.match);
+  assert.deepEqual(json(cards.map(card=>[card.props.match.matchId,card.props.match.clubPlayers.map(player=>player.tag)])),[["first",["#A","#C"]],["second",["#B"]],["third",["#D"]]]);
+  assert.deepEqual(cards.map(card=>card.key),["first","second","third"]);
 });
 
 test("notification UI requests unread/category filters and follows nextOffset", async () => {

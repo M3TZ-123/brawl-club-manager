@@ -11,6 +11,43 @@ type BattleModeRow = {
   mode: string | null;
 };
 
+function normalizeTag(tag: string): string {
+  const decoded = tag.trim().replace(/^%23/i, "#").toUpperCase();
+  return decoded.startsWith("#") ? decoded : `#${decoded}`;
+}
+
+function participantKey(raw: unknown, mode: string | null, playerTag: string): string | null {
+  // Missing opponents can make two partial rosters look identical. Only known
+  // complete mode rosters may identify a shared match; unknown formats stay apart.
+  const expectedPlayers: Record<string, number> = {
+    gemgrab: 6, brawlball: 6, heist: 6, bounty: 6, siege: 6, hotzone: 6,
+    knockout: 6, wipeout: 6, payload: 6, trophythieves: 6, paintbrawl: 6,
+    basketbrawl: 6, volleybrawl: 6, holdthetrophy: 6, airhockey: 6, brawlarena: 6,
+    brawlball5v5: 10, gemgrab5v5: 10, wipeout5v5: 10, knockout5v5: 10,
+    soloshowdown: 10, duoshowdown: 10, showdown: 10, trioshowdown: 12,
+    duels: 2, biggame: 6, bossfight: 3, roborumble: 3, laststand: 3,
+    lonestar: 10, takedown: 10, hunters: 10,
+  };
+  const expected = expectedPlayers[mode?.toLowerCase() || ""];
+  if (!expected || !raw || typeof raw !== "object") return null;
+  const object = raw as Record<string, unknown>;
+  const source = Array.isArray(raw) ? raw : Array.isArray(object.teams) ? object.teams : object.players;
+  if (!Array.isArray(source) || source.length === 0) return null;
+  const nested = Array.isArray(source[0]);
+  if (source.some(value => Array.isArray(value) !== nested || (Array.isArray(value) && value.length === 0))) return null;
+  const players: unknown[] = nested ? source.flat() : source;
+  if (players.length !== expected) return null;
+  const tags: string[] = [];
+  for (const player of players) {
+    if (!player || typeof player !== "object" || !("tag" in player) || typeof player.tag !== "string") return null;
+    const tag = normalizeTag(player.tag);
+    if (!/^#[A-Z0-9]{1,20}$/.test(tag)) return null;
+    tags.push(tag);
+  }
+  if (new Set(tags).size !== tags.length || !tags.includes(normalizeTag(playerTag))) return null;
+  return JSON.stringify(tags.sort());
+}
+
 async function fetchRecentBattleModes(playerTags: string[]): Promise<BattleModeRow[]> {
   if (playerTags.length === 0) return [];
 
@@ -99,9 +136,10 @@ export async function GET(request: Request) {
     }
     const nextOffset = offset + battles.length;
 
-    // Group battles into matches
-    // Key: battle_time + mode + map (battles at the same time on the same map = same match)
+    // A timestamp/map can contain separate matches. Shared identity additionally
+    // requires the same complete participant set, independent of team ordering.
     const matchMap = new Map<string, {
+      matchId: string;
       battle_time: string;
       mode: string;
       map: string;
@@ -114,22 +152,21 @@ export async function GET(request: Request) {
         trophy_change: number;
         is_star_player: boolean;
       }[];
-      teams: { tag: string; name: string; brawler: string | null; power: number | null; trophies: number | null }[][] | null;
+      teams: unknown;
     }>();
 
     for (const b of battles || []) {
-      const key = `${b.battle_time}|${b.mode}|${b.map}`;
+      let teams: unknown = null;
+      if (b.teams_json) {
+        try { teams = typeof b.teams_json === "string" ? JSON.parse(b.teams_json) : b.teams_json; } catch { /* Keep this observation separate. */ }
+      }
+      const participants = participantKey(teams, b.mode, b.player_tag);
+      const key = JSON.stringify([b.battle_time, b.mode, b.map,
+        participants ? ["participants", participants] : ["observation", normalizeTag(b.player_tag)]]);
 
       if (!matchMap.has(key)) {
-        // Parse teams_json if available
-        let teams = null;
-        if (b.teams_json) {
-          try {
-            teams = typeof b.teams_json === "string" ? JSON.parse(b.teams_json) : b.teams_json;
-          } catch { /* ignore */ }
-        }
-
         matchMap.set(key, {
+          matchId: key,
           battle_time: b.battle_time,
           mode: b.mode || "unknown",
           map: b.map || "unknown",
@@ -152,12 +189,6 @@ export async function GET(request: Request) {
         });
       }
 
-      // If this battle has teams_json and the match doesn't yet, use it
-      if (!match.teams && b.teams_json) {
-        try {
-          match.teams = typeof b.teams_json === "string" ? JSON.parse(b.teams_json) : b.teams_json;
-        } catch { /* ignore */ }
-      }
     }
 
     // Convert to array, sorted by time descending
@@ -168,9 +199,6 @@ export async function GET(request: Request) {
     // Detect Showdown modes
     const isShowdownMode = (mode: string) =>
       mode === "soloShowdown" || mode === "duoShowdown" || mode === "showdown";
-
-    // Normalize tag format: Brawl Stars API may use %23 instead of #
-    const normalizeTag = (tag: string) => tag.startsWith("%23") ? "#" + tag.slice(3) : tag;
 
     type RawPlayer = {
       tag?: string;
@@ -183,7 +211,7 @@ export async function GET(request: Request) {
     type TeamPlayer = { tag: string; name: string; brawler: string | null; power: number | null; trophies: number | null };
 
     const toTeamPlayer = (p: RawPlayer): TeamPlayer | null => {
-      if (!p?.tag) return null;
+      if (typeof p?.tag !== "string" || !p.tag.trim()) return null;
       const tag = normalizeTag(p.tag);
       return {
         tag,
@@ -221,7 +249,7 @@ export async function GET(request: Request) {
       // teams[][] shape
       return source
         .map((team) =>
-          (team as unknown[])
+          (Array.isArray(team) ? team : [])
             .map((player) => toTeamPlayer(player as RawPlayer))
             .filter((player): player is TeamPlayer => !!player)
         )
@@ -300,6 +328,7 @@ export async function GET(request: Request) {
       }
 
       return {
+        matchId: match.matchId,
         battle_time: match.battle_time,
         mode: match.mode,
         map: match.map,

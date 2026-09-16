@@ -43,6 +43,7 @@ interface ClubPlayer {
 }
 
 interface Match {
+  matchId?: string;
   battle_time: string;
   mode: string;
   map: string;
@@ -50,6 +51,11 @@ interface Match {
   ourTeam: TeamPlayer[] | null;
   theirTeam: TeamPlayer[] | null;
   isShowdown?: boolean;
+}
+
+function matchKey(match: Match): string {
+  return match.matchId || JSON.stringify([match.battle_time, match.mode, match.map,
+    match.clubPlayers.map(player => normalizeTag(player.tag)).sort()]);
 }
 
 const RESULT_STYLES: Record<string, { bg: string; text: string; border: string; label: string }> = {
@@ -495,7 +501,6 @@ export default function BattleFeedPage() {
         }
         if (append) {
           setMatches((prev) => {
-            const matchKey = (match: Match) => `${match.battle_time}|${match.mode}|${match.map}`;
             const merged = new Map(prev.map((match) => [matchKey(match), match]));
             for (const match of data.matches || []) {
               const previous = merged.get(matchKey(match));
@@ -777,9 +782,9 @@ export default function BattleFeedPage() {
           </Card>
         ) : (
           <div className="space-y-3">
-            {matches.map((match, i) => (
+            {matches.map((match) => (
               <MatchCard
-                key={`${match.battle_time}-${match.mode}-${i}`}
+                key={matchKey(match)}
                 match={match}
                 clubTags={clubTags}
                 clockDelta={clockDelta}
