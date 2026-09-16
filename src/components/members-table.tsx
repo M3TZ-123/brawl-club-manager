@@ -6,6 +6,7 @@ import { memo, useEffect, useMemo, useRef, useState } from "react";
 import Image from "next/image";
 import Link from "next/link";
 import { Member } from "@/types/database";
+import { clubRoleLabel } from "@/lib/club-role";
 import { TIME_RANGES, type TimeRangeKey } from "@/lib/time-range";
 import { cn, getRankColor } from "@/lib/utils";
 import { getFallbackInitial, getProfileIconUrl, getRankIconUrl } from "@/lib/brawl-assets";
@@ -404,7 +405,7 @@ export const MembersTable = memo(function MembersTable({
                     <div className="flex items-center gap-2">
                       <span className="text-xs font-semibold text-muted-foreground">#{startIndex + index + 1}</span>
                       <Badge variant={getRoleBadgeVariant(member.role)} className="text-[11px]">
-                        {<T text={member.role} />}
+                        {<T text={clubRoleLabel(member.role)} />}
                       </Badge>
                     </div>
                     <p className="mt-1 truncate font-semibold">{member.player_name}</p>
@@ -566,7 +567,7 @@ export const MembersTable = memo(function MembersTable({
                     </TableCell>
                     {columnVisibility.role && (
                       <TableCell>
-                        <Badge variant={getRoleBadgeVariant(member.role)}>{<T text={member.role} />}</Badge>
+                        <Badge variant={getRoleBadgeVariant(member.role)}>{<T text={clubRoleLabel(member.role)} />}</Badge>
                       </TableCell>
                     )}
                     {columnVisibility.trophies && (

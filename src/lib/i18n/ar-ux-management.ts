@@ -7,6 +7,7 @@ const arUxManagement: Record<string, string> = {
   "More account details": "تفاصيل إضافية للحساب",
   "Show all recent battles": "عرض كل المعارك الأخيرة",
   "Show fewer battles": "عرض معارك أقل",
+  "{shown} of {total}": "{shown} من {total}",
   "Club connection": "ربط النادي",
   "Change API key": "تغيير مفتاح API",
   "Set up API key": "إعداد مفتاح API",

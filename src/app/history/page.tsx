@@ -8,6 +8,7 @@ import { TimeRangePicker } from "@/components/time-range-picker";
 import { ClubRetention } from "@/components/club-retention";
 import { ClubIdentity } from "@/components/club-identity";
 import { type TimeRangeKey } from "@/lib/time-range";
+import { clubRoleLabel } from "@/lib/club-role";
 import { invalidateJsonCache } from "@/lib/client-data-cache";
 import { fetchJsonWithTimeout } from "@/lib/client-fetch";
 import { useAdminSession } from "@/hooks/use-admin-session";
@@ -288,7 +289,7 @@ export default function HistoryPage() {
                               <LocalDate value={h.last_left_at} time />
                             </TableCell>
                             <TableCell className="hidden lg:table-cell text-muted-foreground">
-                              {!h.is_current_member ? t(h.role_at_leave || "Unknown") : "-"}
+                              {!h.is_current_member ? t(clubRoleLabel(h.role_at_leave)) : "-"}
                             </TableCell>
                             <TableCell className="hidden lg:table-cell text-muted-foreground">
                               {!h.is_current_member

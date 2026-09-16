@@ -24,6 +24,7 @@ import { fetchJsonCached, invalidateJsonCache } from "@/lib/client-data-cache";
 import { useAppStore } from "@/lib/store";
 import { useAdminSession } from "@/hooks/use-admin-session";
 import { cn } from "@/lib/utils";
+import { clubRoleLabel } from "@/lib/club-role";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
@@ -840,7 +841,7 @@ export default function MembersPage() {
               <div className="mt-6 space-y-5">
                 <MemberReviewButton prominent member={selectedMember} initialRange={timeRange} />
                 <div className="flex flex-wrap items-center gap-2">
-                  <Badge variant="secondary">{<T text={selectedMember.role} />}</Badge>
+                  <Badge variant="secondary">{<T text={clubRoleLabel(selectedMember.role)} />}</Badge>
                   <span className={cn("rounded-full border px-2.5 py-0.5 text-xs font-semibold", getActivityClass(getActivityStatus(selectedMember)))}>
                     <T text={getActivityLabel(getActivityStatus(selectedMember))} />
                   </span>

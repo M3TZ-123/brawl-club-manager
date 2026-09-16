@@ -344,7 +344,9 @@ export default function ReportsPage() {
                 <Card>
                   <CardHeader>
                     <CardTitle className="flex items-center gap-2">
-                      <TrendingDown className="h-5 w-5 text-red-500" />
+                      {report.topLosersMode === "lowest_progress"
+                        ? <Trophy className="h-5 w-5 text-muted-foreground" />
+                        : <TrendingDown className="h-5 w-5 text-red-500" />}
                       {report.topLosersMode === "lowest_progress"
                         ? <T text="Lowest Trophy Progress" />
                         : <T text="Worst Trophy Drops" />}
@@ -355,7 +357,7 @@ export default function ReportsPage() {
                       {report.topLosers.map((player, index) => (
                         <div
                           key={player.playerTag}
-                          className="flex items-center justify-between p-3 rounded-lg bg-red-500/10"
+                          className={`flex items-center justify-between p-3 rounded-lg ${player.trophyChange < 0 ? "bg-red-500/10" : "bg-muted/40"}`}
                         >
                           <div className="flex items-center gap-3">
                             <span className="font-bold text-lg">{index + 1}</span>
@@ -366,7 +368,7 @@ export default function ReportsPage() {
                               </p>
                             </div>
                           </div>
-                          <span className={`font-bold ${player.trophyChange < 0 ? "text-red-500" : "text-yellow-400"}`}>
+                          <span className={`font-bold ${player.trophyChange < 0 ? "text-red-500" : player.trophyChange > 0 ? "text-green-500" : "text-muted-foreground"}`}>
                             {player.trophyChange > 0 ? <T text="+{value0}" values={{ value0: String(formatNumber(player.trophyChange)) }} /> : formatNumber(player.trophyChange)}
                           </span>
                         </div>

@@ -96,10 +96,12 @@ test("profile recent-battle expansion is local, preserves unknown points, and re
   let tree = await render();
   const pointRows = () => elements(tree).filter(node => node.props?.title === "Reported change");
   assert.equal(pointRows().length, 5);
+  assert.ok(elements(tree).some(node => node.type === "Badge" && textContent(node) === "5 of 8"));
   assert.equal(reads.length, 1);
   action(tree, "Show all recent battles")();
   tree = await render();
   assert.equal(pointRows().length, 8);
+  assert.ok(elements(tree).some(node => node.type === "Badge" && textContent(node) === "8 of 8"));
   assert.match(textContent(pointRows().at(-1)), /—/);
   assert.equal(reads.length, 1);
   action(tree, "Show fewer battles")();

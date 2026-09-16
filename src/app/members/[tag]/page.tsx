@@ -23,6 +23,7 @@ import { Member, ActivityLog, MemberHistory } from "@/types/database";
 import type { ActivityStatus } from "@/lib/activity-status";
 import { getActivityEmoji, getRankColor } from "@/lib/utils";
 import { getProfileIconUrl } from "@/lib/brawl-assets";
+import { clubRoleLabel } from "@/lib/club-role";
 import { describeBattleContext, getBattleModeInfo } from "@/lib/battle-catalog";
 import {
   Trophy,
@@ -354,7 +355,7 @@ export default function MemberDetailPage({ params }: PageProps) {
                       </div>
                       <p className="text-muted-foreground"><bdi dir="ltr">{member.player_tag}</bdi></p>
                       <div className="flex items-center gap-2 mt-1">
-                        <Badge>{<T text={member.role} />}</Badge>
+                        <Badge>{<T text={clubRoleLabel(member.role)} />}</Badge>
                         {getMemberBadge()}
                       </div>
 
@@ -498,7 +499,7 @@ export default function MemberDetailPage({ params }: PageProps) {
             <Card>
               <CardHeader className="flex flex-row items-center justify-between">
                 <CardTitle><T text="Recent Matches" /></CardTitle>
-                <Badge variant="outline"><T text="Last 25" /></Badge>
+                <Badge variant="outline"><T text="{shown} of {total}" values={{ shown: formatNumber(showAllMatches ? recentMatches.length : Math.min(5, recentMatches.length)), total: formatNumber(recentMatches.length) }} /></Badge>
               </CardHeader>
               <CardContent>
                 {recentMatches.length === 0 ? (

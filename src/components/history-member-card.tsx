@@ -6,6 +6,7 @@ import { useI18n, LocalDate } from "@/components/locale-provider";
 import { MembershipTimeline } from "@/components/membership-timeline";
 import { Button } from "@/components/ui/button";
 import { MemberHistory } from "@/types/database";
+import { clubRoleLabel } from "@/lib/club-role";
 
 export function HistoryMemberCard({ member, isAdmin, onReview }: { member: MemberHistory; isAdmin: boolean; onReview: () => void }) {
   const { t, number } = useI18n();
@@ -17,7 +18,7 @@ export function HistoryMemberCard({ member, isAdmin, onReview }: { member: Membe
       <div><dt className="text-muted-foreground">{t("Left At")}</dt><dd><LocalDate value={member.last_left_at} time /></dd></div>
       <div><dt className="text-muted-foreground">{t("Recorded joins")}</dt><dd>{member.times_joined == null ? t("Unknown") : number(member.times_joined)}</dd></div>
       <div><dt className="text-muted-foreground">{t("Recorded departures")}</dt><dd>{member.times_left == null ? t("Unknown") : number(member.times_left)}</dd></div>
-      <div><dt className="text-muted-foreground">{t("Role at departure")}</dt><dd>{member.role_at_leave ? t(member.role_at_leave) : t("Unknown")}</dd></div>
+      <div><dt className="text-muted-foreground">{t("Role at departure")}</dt><dd>{t(clubRoleLabel(member.role_at_leave))}</dd></div>
       <div><dt className="text-muted-foreground">{t("Trophies at departure")}</dt><dd>{member.trophies_at_leave == null ? t("Unknown") : number(member.trophies_at_leave)}</dd></div>
     </dl>{isAdmin && <div><p className="text-sm font-medium">{t("Private notes")}</p><p className="whitespace-pre-wrap break-words text-sm text-muted-foreground">{member.notes || t("No private notes")}</p></div>}
     <Button asChild variant="outline"><Link href={`/members/${encodeURIComponent(member.player_tag)}`}>{t("Open Profile")}</Link></Button>

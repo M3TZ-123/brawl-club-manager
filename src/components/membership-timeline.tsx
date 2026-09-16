@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { fetchJsonCached } from "@/lib/client-data-cache";
+import { clubRoleLabel } from "@/lib/club-role";
 import { useI18n, LocalDate } from "@/components/locale-provider";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -51,7 +52,7 @@ export function MembershipTimeline({ playerTag }: { playerTag: string }) {
     const parts = [];
     if (typeof value.player_name === "string") parts.push(value.player_name);
     else if (typeof value.name === "string") parts.push(value.name);
-    if (typeof value.role === "string") parts.push(t(value.role));
+    if (typeof value.role === "string") parts.push(t(clubRoleLabel(value.role)));
     if (typeof value.trophies === "number") parts.push(`${t("Trophies")}: ${number(value.trophies)}`);
     return parts.length ? parts.join(" · ") : t("No snapshot");
   };
