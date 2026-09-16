@@ -6,6 +6,7 @@ import { useState } from "react";
 import Link from "next/link";
 import { useAppStore } from "@/lib/store";
 import { invalidateJsonCache } from "@/lib/client-data-cache";
+import { syncErrorMessage } from "@/lib/sync-error-message";
 import { AdminGate } from "@/components/admin-gate";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -79,7 +80,7 @@ export function SetupWizard() {
       });
       const data = await response.json().catch(() => ({}));
       if (!response.ok) {
-        throw new Error(data.error || data.message || "Initial sync failed");
+        throw new Error(syncErrorMessage(data) || data.error || data.message || "Initial sync failed");
       }
       invalidateJsonCache();
       await loadSettingsFromDB(true);

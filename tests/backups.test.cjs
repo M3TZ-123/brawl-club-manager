@@ -9,6 +9,20 @@ const { encryptionKey, sha256, writeEncryptedBackup, readEncryptedBackup } = req
 const { validateRestoreTarget, validateRestoreConnection } = require("../scripts/restore-backup.cjs");
 const next = { NextResponse: { json: (body, init) => Response.json(body, init) } };
 
+test("backup admission contention retries the same request with the bounded existing backoff", async () => {
+  const waits=[],requests=[];
+  const {backupClient}=loadTypeScript('scripts/backup-http.cjs',{'node:timers/promises':{setTimeout:async ms=>{waits.push(ms);}}});
+  const call=backupClient({VERCEL_APP_URL:'https://app.test',CRON_SECRET:'fixture-only'},async(_url,options)=>{
+    requests.push(JSON.parse(options.body));return requests.length<3?Response.json({error:'Backup is busy; retry shortly'},{status:409}):Response.json({status:'ready'});
+  });
+  const body={action:'begin',request_id:'00000000-0000-4000-8000-000000000001'};
+  assert.equal((await call(null,body)).status,'ready');assert.deepEqual(waits,[1000,2000]);
+  assert.deepEqual(requests,[body,body,body]);
+  waits.length=0;let attempts=0;
+  const busy=backupClient({VERCEL_APP_URL:'https://app.test',CRON_SECRET:'fixture-only'},async()=>{attempts++;return Response.json({error:'busy'},{status:409});});
+  await assert.rejects(busy(null,body),/HTTP 409/);assert.equal(attempts,5);assert.deepEqual(waits,[1000,2000,4000,8000]);
+});
+
 test("backup restore refuses remote, general-purpose and connection-override targets", () => {
   for (const target of ["postgres://x:pass@prod.example/brawl_restore_tests", "postgres://x:pass@127.0.0.1/postgres", "postgres://x:pass@127.0.0.1/brawl_restore_tests?host=prod.example", "postgres://x:pass@127.0.0.1/brawl_restore_tests?options=-csearch_path=evil"]) {
     assert.throws(() => validateRestoreTarget(target), /loopback-only/);

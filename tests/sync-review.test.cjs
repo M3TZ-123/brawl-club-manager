@@ -13,13 +13,13 @@ function serviceFixture(options = {}) {
       calls.push({name,args});
       if(name === "acquire_sync_run") return {data: options.acquisition || {acquired:true,run_id:"test-run",fence:4},error:null};
       if(name === "begin_sync_ranked_fallback") return {abortSignal:async()=>({data:args.p_player_tags,error:null})};
-      if(name === "commit_sync_snapshot") return {data: options.commitError ? null : {success:true,synced:tags.length,events:0,timestamp:"2026-09-16T00:00:00Z",runId:"test-run",changes:{joins:[],leaves:[]},member:{player_tag:"#PLAYER"}},error:options.commitError || null};
+      if(name === "commit_sync_snapshot" || name === "commit_roster_snapshot") return {data: options.commitError ? null : {success:true,synced:tags.length,events:0,timestamp:"2026-09-16T00:00:00Z",runId:"test-run",changes:{joins:[],leaves:[]},member:{player_tag:"#PLAYER"}},error:options.commitError || null};
       if(name === "fail_sync_run") return {data:null,error:null};
       throw new Error(`Unexpected RPC ${name}`);
     }
   };
   const api = {
-    getClub: async () => ({members:tags.map(tag=>({tag,name:tag,role:"member"})),requiredTrophies:100}),
+    getClub: async () => ({members:tags.map(tag=>({tag,name:tag,role:"member",trophies:100})),requiredTrophies:100}),
     getPlayer: async tag => {if(options.playerError) throw options.playerError;if(options.failPlayer) throw new Error("Bearer secret-test-only upstream response"); return {tag,name:tag,trophies:100,highestTrophies:100,expLevel:10,brawlers:[{id:1,name:"SHELLY",power:1,trophies:100,rank:1}],soloVictories:1,duoVictories:2,"3vs3Victories":3};},
     getPlayerRankedData: async (...args) => {
       rankedRequests.push(calls.map(call => call.name));
@@ -58,6 +58,20 @@ test("overlapping sync is rejected before any fetch or commit",async()=>{
   const {service,calls}=serviceFixture({acquisition:{acquired:false,busy:true}});
   await assert.rejects(service.executeSync({source:"cron"}),e=>e.code==="sync_busy"&&e.status===409);
   assert.equal(calls.length,1);
+});
+
+test("backup admission contention returns temporary503 before upstream work",async()=>{
+  const {service,calls,rankedRequests}=serviceFixture({acquisition:{acquired:false,busy:true,backup_busy:true}});
+  const route=loadTypeScript('src/app/api/sync/route.ts',{
+    '@/lib/sync-service':service,
+    '@/lib/admin-auth':{rejectUnauthorizedAdminRequest:()=>null,rejectUnauthorizedAdminMutation:()=>null},
+    '@/lib/scheduler-auth':{isAuthorizedSchedulerRequest:async()=>true},
+    'next/server':{NextResponse:{json:(body,init)=>Response.json(body,init)}}
+  });
+  const response=await route.GET({nextUrl:new URL('https://app.test/api/sync'),headers:new Headers()});
+  assert.equal(response.status,503);assert.equal(response.headers.get('retry-after'),'5');
+  assert.deepEqual(await response.json(),{code:'backup_busy',error:'A database backup is in progress. Please try again shortly.'});
+  assert.deepEqual(calls.map(call=>call.name),['acquire_sync_run']);assert.equal(rankedRequests.length,0);
 });
 test("successful request replay returns persisted outcome without committing again",async()=>{
   const {service,calls}=serviceFixture({acquisition:{acquired:false,replayed:true,status:"succeeded",result:{success:true,runId:"original"}}});
@@ -98,6 +112,33 @@ test("private run failures retain SQLSTATE without exposing it in the public mes
   await assert.rejects(service.executeSync({source:"manual"}),e=>e.code==="snapshot_rejected"&&e.status===409&&!e.message.includes("23505")&&!e.message.includes("secret"));
   assert.match(calls.at(-1).args.p_error_message,/\[phase=commit;provider=database;sqlstate=23505\]$/);
   assert.ok(calls.at(-1).args.p_error_message.length<=200);assert.equal(JSON.stringify(calls.at(-1)).includes("secret-test-only"),false);
+});
+
+test("canceled full, member and roster commits are retryable database timeouts rather than rejected snapshots",async()=>{
+  for(const scope of ['full','member','roster']){
+    const {service,calls}=serviceFixture({commitError:{code:'57014',message:'canceling statement due to statement timeout',details:'private SQL row secret-test-only'}});
+    await assert.rejects(service.executeSync({source:scope==='member'?'member':'manual',...(scope==='member'?{playerTag:'#PLAYER'}:{scope}),idempotencyKey:'timed-out-request'}),error=>{
+      assert.equal(error.code,'database_timeout');assert.equal(error.status,503);assert.match(error.message,/new request ID/);
+      assert.doesNotMatch(error.message,/57014|secret|SQL row/);assert.deepEqual(JSON.parse(JSON.stringify(error.diagnostics)),{phase:'commit',provider:'database',sqlstate:'57014'});return true;
+    });
+    assert.deepEqual(calls.map(call=>call.name),scope==='roster'?['acquire_sync_run','commit_roster_snapshot','fail_sync_run']:['acquire_sync_run','begin_sync_ranked_fallback','commit_sync_snapshot','fail_sync_run']);
+    assert.equal(calls[0].args.p_idempotency_key,'timed-out-request');assert.equal(calls.at(-1).args.p_error_code,'database_timeout');
+    assert.match(calls.at(-1).args.p_error_message,/\[phase=commit;provider=database;sqlstate=57014\]$/);
+    assert.doesNotMatch(JSON.stringify(calls),/secret-test-only|private SQL/);
+  }
+});
+
+test("sync HTTP response exposes timeout503 and keeps database diagnostics private",async()=>{
+  const {service}=serviceFixture({commitError:{code:'57014',message:'private SQL secret-test-only'}});
+  const route=loadTypeScript('src/app/api/sync/route.ts',{
+    '@/lib/sync-service':service,
+    '@/lib/admin-auth':{rejectUnauthorizedAdminRequest:()=>null,rejectUnauthorizedAdminMutation:()=>null},
+    '@/lib/scheduler-auth':{isAuthorizedSchedulerRequest:async()=>true},
+    'next/server':{NextResponse:{json:(body,init)=>Response.json(body,init)}}
+  });
+  const response=await route.GET({nextUrl:new URL('https://app.test/api/sync'),headers:new Headers({'idempotency-key':'timed-out-request'})});
+  assert.equal(response.status,503);const body=await response.json();assert.equal(body.code,'database_timeout');
+  assert.deepEqual(Object.keys(body).sort(),['code','error']);assert.doesNotMatch(JSON.stringify(body),/57014|sqlstate|phase|provider|secret-test-only/);
 });
 
 test("private upstream diagnostics retain only provider and HTTP status",async()=>{

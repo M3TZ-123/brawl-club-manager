@@ -11,6 +11,7 @@ import { cn } from "@/lib/utils";
 import { fetchJsonCached, invalidateJsonCache } from "@/lib/client-data-cache";
 import { useSyncHealth } from "@/components/sync-health";
 import { localizeNotificationForDisplay } from "@/lib/notification-display";
+import { syncErrorMessage } from "@/lib/sync-error-message";
 import {
   LayoutDashboard,
   Users,
@@ -104,7 +105,7 @@ function SimpleSidebar() {
       const data = await response.json();
       if (!response.ok) {
         console.error("Sync error:", data.error);
-        alert(t("Sync failed. Please try again."));
+        alert(t(syncErrorMessage(data) || "Sync failed. Please try again."));
       } else {
         const syncTime = typeof data.timestamp === "string" ? data.timestamp : null;
         invalidateJsonCache();

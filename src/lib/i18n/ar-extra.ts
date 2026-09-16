@@ -1,4 +1,6 @@
 export const arExtra: Record<string, string> = {
+  "Sync took too long. Please try again.": "استغرقت المزامنة وقتًا أطول من المتوقع. حاول مجددًا.",
+  "A backup is in progress. Please try again shortly.": "يجري الآن إنشاء نسخة احتياطية. حاول مجددًا بعد قليل.",
   "Ranked points": "نقاط التصنيف",
   "All-time best": "الأفضل تاريخيًا",
   "Season best": "الأفضل هذا الموسم",

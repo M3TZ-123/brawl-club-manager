@@ -12,6 +12,7 @@ import { DataConfidenceNotice } from "@/components/sync-health";
 import { MemberReviewButton } from "@/components/member-review";
 import { MembershipTimeline } from "@/components/membership-timeline";
 import { PlayerProgress } from "@/components/player-progress";
+import { syncErrorMessage } from "@/lib/sync-error-message";
 import { LayoutWrapper } from "@/components/layout-wrapper";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -188,7 +189,7 @@ export default function MemberDetailPage({ params }: PageProps) {
   const [recentMatches, setRecentMatches] = useState<RecentMatch[]>([]);
   const [selectedRange, setSelectedRange] = useState<TimeRangeKey>("7d");
   const [loadError, setLoadError] = useState(false);
-  const [refreshError, setRefreshError] = useState(false);
+  const [refreshError, setRefreshError] = useState<string | null>(null);
   const loadSequence = useRef(0);
   const [avatarError, setAvatarError] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
@@ -244,19 +245,23 @@ export default function MemberDetailPage({ params }: PageProps) {
 
   const handleRefresh = async () => {
     if (!isAdmin) return;
-    setRefreshError(false);
+    setRefreshError(null);
     setIsRefreshing(true);
+    let failureMessage = "Could not refresh this member. Please try again.";
     try {
       const response = await fetch(`/api/members/${encodeURIComponent(playerTag)}`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
       });
 
-      if (!response.ok) throw new Error("Refresh failed");
+      if (!response.ok) {
+        failureMessage = syncErrorMessage(await response.json().catch(() => ({}))) || failureMessage;
+        throw new Error(failureMessage);
+      }
       invalidateJsonCache(memberApiUrl);
       await loadMemberData(true);
     } catch (error) {
-      setRefreshError(true);
+      setRefreshError(failureMessage);
       console.error("Error refreshing member:", error);
     } finally {
       setIsRefreshing(false);
@@ -360,7 +365,7 @@ export default function MemberDetailPage({ params }: PageProps) {
             </Card>
 
             {loadError && <div role="alert" className="rounded-lg border border-destructive/30 p-3 text-sm"><T text="Could not load this member." /> <Button variant="ghost" onClick={() => loadMemberData(true)}><T text="Retry" /></Button></div>}
-            {refreshError && <p role="alert" className="text-sm text-destructive"><T text="Could not refresh this member. Please try again." /></p>}
+            {refreshError && <p role="alert" className="text-sm text-destructive"><T text={refreshError} /></p>}
             <h2 className="text-lg font-semibold"><T text="Current account" /></h2>
             {/* Stats Grid */}
             <div className="grid gap-4 md:grid-cols-3">

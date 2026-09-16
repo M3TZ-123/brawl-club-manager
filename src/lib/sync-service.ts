@@ -16,6 +16,7 @@ export class SyncError extends Error {
   constructor(public readonly code: string, message: string, public readonly status = 500, public readonly retryAfterSeconds?: number,
     public readonly diagnostics?: SyncFailureDiagnostics) { super(message); }
 }
+const databaseTimeoutMessage = "The database canceled the sync before it could commit. Retry with a new request ID.";
 export function formatSyncFailureMessage(failure: SyncError, diagnostic: SyncFailureDiagnostics): string {
   // Only fixed categories/codes enter the private run record. Never serialize an
   // upstream error object: Axios errors can contain credentials and raw bodies.
@@ -135,6 +136,7 @@ export async function executeSync(options: {
   });
   if (acquireError || !acquired) throw new SyncError("database_unavailable", "The sync could not start. Verify database migrations are installed.");
   if (acquired.replayed && acquired.status === "succeeded") return publicSyncResult(acquired.result as SyncResult);
+  if (!acquired.acquired && acquired.backup_busy) throw new SyncError("backup_busy", "A database backup is in progress. Please try again shortly.", 503, 5);
   if (!acquired.acquired) throw new SyncError(acquired.busy || acquired.status === "running" ? "sync_busy" : "previous_attempt_failed",
     acquired.busy || acquired.status === "running" ? "Another sync is already running for this club." : "This request already failed. Retry with a new request ID.", 409);
   const runId: string = acquired.run_id;
@@ -178,7 +180,9 @@ export async function executeSync(options: {
       } });
       if (result.error) {
         console.error("Roster snapshot rejected", { runId, sqlstate: /^[0-9A-Z]{5}$/.test(result.error.code || "") ? result.error.code : "unavailable" });
-        throw new SyncError(result.error.code ? "snapshot_rejected" : "database_unavailable", "The roster snapshot could not be committed.", result.error.code ? 409 : 503, undefined,
+        const canceled = result.error.code === "57014";
+        throw new SyncError(canceled ? "database_timeout" : result.error.code ? "snapshot_rejected" : "database_unavailable",
+          canceled ? databaseTimeoutMessage : "The roster snapshot could not be committed.", canceled || !result.error.code ? 503 : 409, undefined,
           { phase: "commit", provider: "database", sqlstate: result.error.code });
       }
       return publicSyncResult(result.data as SyncResult);
@@ -293,12 +297,16 @@ export async function executeSync(options: {
     if (error) {
       console.error("Full snapshot rejected", { runId, sqlstate: /^[0-9A-Z]{5}$/.test(error.code || "") ? error.code : "unavailable" });
       const code = ["stale_sync_fence", "club_configuration_changed", "member_not_found"].includes(error.message) ? error.message
-        : /^[0-9A-Z]{5}$/.test(error.code || "") ? "snapshot_rejected" : "database_unavailable";
+        : error.code === "57014" ? "database_timeout"
+          : /^[0-9A-Z]{5}$/.test(error.code || "") ? "snapshot_rejected" : "database_unavailable";
       // A transport failure can hide a successful commit. Keep the request key so
       // retrying resolves the durable outcome instead of applying another snapshot.
+      // An explicit PostgreSQL cancellation instead rolls back the transaction;
+      // its failed run is retained, so a new attempt needs a new request key.
       throw new SyncError(code, code === "member_not_found" ? "This member is not tracked by the club."
-        : code === "database_unavailable" ? "The sync outcome could not be confirmed. Retry with the same request ID."
-          : "The sync snapshot was not committed. It is safe to retry.", code === "member_not_found" ? 404 : code === "database_unavailable" ? 503 : 409, undefined,
+        : code === "database_timeout" ? databaseTimeoutMessage
+          : code === "database_unavailable" ? "The sync outcome could not be confirmed. Retry with the same request ID."
+            : "The sync snapshot was not committed. It is safe to retry.", code === "member_not_found" ? 404 : code === "database_unavailable" || code === "database_timeout" ? 503 : 409, undefined,
         { phase: "commit", provider: "database", sqlstate: error.code });
     }
     return { ...publicSyncResult(data as SyncResult), ...(playerTag ? { brawlers: refreshedBrawlers } : {}) };

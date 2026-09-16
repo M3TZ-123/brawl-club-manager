@@ -35,6 +35,8 @@ test('profile progress is prospective, bounded and atomic in local PostgreSQL', 
   await db.query(migration); await db.query(migration);
   const preservation = fs.readFileSync(path.join(root, 'supabase/migrations/202609160025_equipment_metadata_preservation.sql'), 'utf8');
   await db.query(preservation); await db.query(preservation);
+  const commonPath = fs.readFileSync(path.join(root, 'supabase/migrations/202609160027_progress_common_path.sql'), 'utf8');
+  await db.query(commonPath); await db.query(commonPath);
   const at = new Date(Date.now() - 30000).toISOString();
   const profile = { rankedSeasonId: 48, rankedRankName: 'DIAMOND I', rankedElo: 3417,
     highestSeasonRankedRankName: 'DIAMOND II', highestSeasonRankedElo: 3505, highestAllTimeRankedRankName: 'MASTERS', highestAllTimeRankedElo: 0 };
@@ -94,7 +96,7 @@ test('profile progress is prospective, bounded and atomic in local PostgreSQL', 
   });
   await t.test('partial equipment entries preserve known metadata for the same ID without inventing fresh verification', async () => {
     await reset(); await save(payload()); const before = await one('player_brawler_details');
-    await db.query(preservation); assert.deepEqual(await one('player_brawler_details'), before, 'Applying the fix must not rewrite existing observations');
+    await db.query(preservation); await db.query(commonPath); assert.deepEqual(await one('player_brawler_details'), before, 'Applying the fixes must not rewrite existing observations');
     const partial = brawler({ gears: [{ id: 62000000 }], skin: { id: 29000001 }, gadgets: [{ id: 23000000, name: '' }], hyper_charges: [{ id: 76000000 }] });
     partial.trophies = 751;
     await save(payload({ brawlers: [partial] })); const after = await one('player_brawler_details');
@@ -124,6 +126,17 @@ test('profile progress is prospective, bounded and atomic in local PostgreSQL', 
     await save(payload({ members: [member({ ...fields({}) })] })); assert.equal((await history()).length, 0);
     await save(payload({ members: [member({ ...fields({ highestAllTimeRankedRankName: 'MASTERS', highestAllTimeRankedElo: 0 }) })] }));
     assert.equal((await history()).length, 1);
+  });
+  await t.test('exact stored equipment avoids normalization and merge work for unchanged and trophy-only updates', async () => {
+    await reset(); await save(payload()); const before = await one('player_brawler_details');
+    await db.query('BEGIN');
+    try {
+      await db.query("CREATE OR REPLACE FUNCTION public.sync_progress_equipment(p_value jsonb) RETURNS jsonb LANGUAGE plpgsql IMMUTABLE AS $$ BEGIN RAISE EXCEPTION 'unexpected equipment normalization'; END $$");
+      await db.query("CREATE OR REPLACE FUNCTION public.sync_merge_progress_equipment(p_previous jsonb,p_incoming jsonb) RETURNS jsonb LANGUAGE plpgsql IMMUTABLE AS $$ BEGIN RAISE EXCEPTION 'unexpected equipment merge'; END $$");
+      await save(payload()); assert.equal((await one('player_brawler_details')).version, before.version);
+      await save(payload({ brawlers: [{ ...brawler(), trophies: 751 }] }));
+      const updated = await one('player_brawler_details'); assert.equal(updated.trophies, 751); assert.deepEqual(updated.gears, before.gears);
+    } finally { await db.query('ROLLBACK'); }
   });
   await t.test('missing optional equipment never resets daily counts, including the next UTC day', async () => {
     await reset(); await save(payload()); const before = await one('brawler_snapshots');
@@ -193,5 +206,9 @@ test('profile progress is prospective, bounded and atomic in local PostgreSQL', 
     }
     const run = await acquire(); await db.query('SET ROLE service_role');
     try { assert.equal((await commit(run, payload())).success, true); } finally { await db.query('RESET ROLE'); }
+  });
+  await t.test('bounded28-player full-club persistence benchmark', { skip: process.env.PROGRESS_BENCHMARK !== '1' }, async () => {
+    await reset();
+    await require('./helpers/progress-performance-checks.cjs')(db, t);
   });
 });

@@ -1,4 +1,5 @@
 "use client";
+import { syncErrorMessage } from "@/lib/sync-error-message";
 import { T, useI18n } from "@/components/locale-provider";
 
 
@@ -472,7 +473,7 @@ export default function MembersPage() {
       const data = await response.json().catch(() => ({}));
 
       if (!response.ok) {
-        throw new Error(data.error || data.message || "Sync failed");
+        throw new Error(syncErrorMessage(data) || data.error || data.message || "Sync failed");
       }
 
       invalidateJsonCache();
@@ -793,7 +794,7 @@ export default function MembersPage() {
                 <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-red-300" />
                 <div>
                   <p className="font-semibold"><T text="Members failed to load" /></p>
-                  <p className="text-red-100/80">{errorMessage}</p>
+                  <p className="text-red-100/80">{t(errorMessage)}</p>
                 </div>
               </div>
             )}
