@@ -4,10 +4,10 @@ import { T, useI18n } from "@/components/locale-provider";
 
 import { useEffect, useState, useCallback, useMemo, useRef } from "react";
 import Image from "next/image";
+import { BrawlImage } from "@/components/brawl-image";
 import Link from "next/link";
-import { supabase } from "@/lib/supabase";
 import { fetchJsonCached } from "@/lib/client-data-cache";
-import { getBrawlerIconFromMap, normalizeBrawlerName } from "@/lib/brawl-assets";
+import { getBrawlerIconFromMap } from "@/lib/brawl-assets";
 import { battleContextOptions, describeBattleContext, getBattleModeInfo } from "@/lib/battle-catalog";
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetDescription } from "@/components/ui/sheet";
 import { LayoutWrapper } from "@/components/layout-wrapper";
@@ -69,6 +69,8 @@ function matchKey(match: Match): string {
   return match.matchId || JSON.stringify([match.battle_time, match.mode, match.map,
     match.clubPlayers.map(player => normalizeTag(player.tag)).sort()]);
 }
+
+const EMPTY_ICON_OVERRIDES: Record<string, string> = {};
 
 const RESULT_STYLES: Record<string, { bg: string; text: string; border: string; label: string }> = {
   victory: { bg: "bg-green-500/10", text: "text-green-500", border: "border-green-500/30", label: "Victory" },
@@ -226,7 +228,7 @@ function MatchCard({ match, clubTags, clockDelta, brawlerIconByName }: {
       {/* Match header */}
       <div className="flex flex-wrap items-center justify-between gap-2 px-4 py-2.5 border-b border-border/50">
         <div className="flex items-center gap-2">
-          {mode.imageUrl ? <Image src={mode.imageUrl} alt="" width={22} height={22} className="h-[22px] w-[22px] object-contain" /> : <span aria-hidden="true" className="text-lg">{mode.icon}</span>}
+          {mode.imageUrl ? <BrawlImage fallback={mode.icon} src={mode.imageUrl} alt="" width={22} height={22} className="h-[22px] w-[22px] object-contain" /> : <span aria-hidden="true" className="text-lg">{mode.icon}</span>}
           <div>
             <span className="text-sm font-semibold">{t(mode.label)}</span>
             <span className="text-xs text-muted-foreground ms-2">{match.map !== "unknown" ? match.map : ""}</span>
@@ -451,7 +453,7 @@ export default function BattleFeedPage() {
   const [rawOffset, setRawOffset] = useState<number | null>(0);
   const [loadError, setLoadError] = useState(false);
   const [clockDelta, setClockDelta] = useState(0);
-  const [brawlerIconByName, setBrawlerIconByName] = useState<Record<string, string>>({});
+  const brawlerIconByName = EMPTY_ICON_OVERRIDES;
   const loadSequence = useRef(0);
 
   const PAGE_SIZE = 50;
@@ -473,18 +475,10 @@ export default function BattleFeedPage() {
         if (filterContext) params.set("context", filterContext);
         if (filterPlayer) params.set("player", filterPlayer);
 
-        const [data, membersData] = await Promise.all([
-          fetchJsonCached<BattleFeedResponse>(`/api/battles/feed?${params}`, {
+        const data = await fetchJsonCached<BattleFeedResponse>(`/api/battles/feed?${params}`, {
             staleMs: 15_000,
             force,
-          }),
-          !append
-            ? fetchJsonCached<{ members?: { player_tag: string }[] }>("/api/members", {
-                staleMs: 30_000,
-                force,
-              })
-            : Promise.resolve(null),
-        ]);
+          });
         if (sequence !== loadSequence.current) return;
 
         // Compute clock delta: difference between client clock and server clock.
@@ -520,10 +514,7 @@ export default function BattleFeedPage() {
         setTotal(data.total || 0);
         setRawOffset(data.nextOffset ?? null);
 
-        if (membersData) {
-          const tags = new Set<string>((membersData.members || []).map((m) => normalizeTag(m.player_tag)));
-          setClubTags(tags);
-        }
+        if (data.members) setClubTags(new Set(data.members.map(member => normalizeTag(member.tag))));
       } catch (err) {
         if (sequence !== loadSequence.current) return;
         setLoadError(true);
@@ -540,74 +531,26 @@ export default function BattleFeedPage() {
   );
 
   useEffect(() => {
-    let cancelled = false;
-
-    async function loadBrawlerIcons() {
-      try {
-        const data = await fetchJsonCached<{
-          list?: Array<{ name?: unknown; imageUrl2?: unknown }>;
-        }>("https://api.brawlapi.com/v1/brawlers", {
-          staleMs: 24 * 60 * 60 * 1000,
-        });
-        const list = Array.isArray(data?.list) ? data.list : [];
-        const iconMap: Record<string, string> = {};
-        for (const item of list) {
-          if (!item?.name || !item?.imageUrl2) continue;
-          const name = String(item.name);
-          const url = String(item.imageUrl2);
-          iconMap[name.toUpperCase()] = url;
-          iconMap[normalizeBrawlerName(name)] = url;
-        }
-        if (!cancelled) {
-          setBrawlerIconByName(iconMap);
-        }
-      } catch {
-      }
-    }
-
-    loadBrawlerIcons();
-
-    return () => {
-      cancelled = true;
-    };
-  }, []);
-
-  useEffect(() => {
     setRawOffset(0);
     loadMatches(0, false);
   }, [loadMatches]);
 
-  // Supabase Realtime: listen for new battle_history inserts
+  // The shared health monitor receives one public completion signal per sync.
   const loadMatchesRef = useRef(loadMatches);
   loadMatchesRef.current = loadMatches;
 
   useEffect(() => {
-    let refreshTimer: ReturnType<typeof setTimeout> | undefined;
-    const channel = supabase
-      .channel("battle-feed-realtime")
-      .on(
-        "postgres_changes",
-        { event: "INSERT", schema: "public", table: "battle_history" },
-        () => {
-          // Coalesce a sync's inserts and bypass cached data after the last one.
-          clearTimeout(refreshTimer);
-          refreshTimer = setTimeout(() => loadMatchesRef.current(0, false, true), 250);
-        }
-      )
-      .subscribe();
-
-    return () => {
-      clearTimeout(refreshTimer);
-      supabase.removeChannel(channel);
-    };
-  }, []);
-
-  useEffect(() => {
-    const handleClubDataUpdated = () => {
+    let refreshWhenVisible = false;
+    const handleClubDataUpdated = (event: Event) => {
+      const datasets = (event as CustomEvent).detail?.datasets;
+      if (Array.isArray(datasets) && !datasets.some(dataset => dataset === "roster" || dataset === "battles")) return;
+      if (document.visibilityState === "hidden") { refreshWhenVisible = true; return; }
       loadMatchesRef.current(0, false, true);
     };
+    const wake = () => { if (refreshWhenVisible && document.visibilityState !== "hidden") { refreshWhenVisible = false; loadMatchesRef.current(0, false, true); } };
     window.addEventListener("club-data-updated", handleClubDataUpdated);
-    return () => window.removeEventListener("club-data-updated", handleClubDataUpdated);
+    document.addEventListener("visibilitychange", wake);
+    return () => { window.removeEventListener("club-data-updated", handleClubDataUpdated); document.removeEventListener("visibilitychange", wake); };
   }, []);
 
   // Close member dropdown on outside click

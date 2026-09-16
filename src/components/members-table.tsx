@@ -301,9 +301,9 @@ function SortableHead({
 
 function RankCell({ rank }: { rank: string | null }) {
   return (
-    <span className={cn("inline-flex items-center gap-1.5", getRankColor(rank || "Unranked"))}>
-      <RankIcon rank={rank} />
-      {rank || "Unranked"}
+    <span className={cn("inline-flex items-center gap-1.5", rank ? getRankColor(rank) : "text-muted-foreground")}>
+      {rank && <RankIcon rank={rank} />}
+      {rank || <T text="Unknown" />}
     </span>
   );
 }

@@ -1,69 +1,57 @@
 "use client";
 
-type CacheEntry<T> = {
-  value?: T;
-  promise?: Promise<T>;
+import { fetchJsonWithTimeout } from "@/lib/client-fetch";
+
+type CacheEntry = {
+  value?: unknown;
+  promise?: Promise<unknown>;
   expiresAt: number;
+  refreshQueued: boolean;
+  controller?: AbortController;
 };
+const jsonCache = new Map<string, CacheEntry>();
+interface FetchJsonCachedOptions { staleMs?: number; force?: boolean; timeoutMs?: number }
 
-const jsonCache = new Map<string, CacheEntry<unknown>>();
-
-interface FetchJsonCachedOptions {
-  staleMs?: number;
-  force?: boolean;
-}
-
-export async function fetchJsonCached<T>(
-  url: string,
-  { staleMs = 30_000, force = false }: FetchJsonCachedOptions = {}
-): Promise<T> {
-  const now = Date.now();
-  const cached = jsonCache.get(url) as CacheEntry<T> | undefined;
-
-  if (!force && cached?.value !== undefined && cached.expiresAt > now) {
-    return cached.value;
+export function fetchJsonCached<T>(url: string, { staleMs = 30_000, force = false, timeoutMs = 15_000 }: FetchJsonCachedOptions = {}): Promise<T> {
+  const cached = jsonCache.get(url);
+  if (cached?.promise) {
+    // A data-change signal needs one read after the current one, not parallel
+    // requests. Every waiter receives the final accepted response.
+    if (force) cached.refreshQueued = true;
+    return cached.promise as Promise<T>;
   }
-
-  if (!force && cached?.promise) {
-    return cached.promise;
-  }
-
-  const promise = fetch(url, { cache: force ? "no-store" : "default" })
-    .then(async (response) => {
-      const data = await response.json().catch(() => ({}));
-      if (!response.ok) {
-        throw new Error(data.error || data.message || `Request failed: ${response.status}`);
+  if (!force && cached?.value !== undefined && cached.expiresAt > Date.now()) return Promise.resolve(cached.value as T);
+  const entry: CacheEntry = { expiresAt: 0, refreshQueued: false, controller: new AbortController() };
+  jsonCache.set(url, entry);
+  entry.promise = (async () => {
+    let bypass = force;
+    try {
+      for (;;) {
+        entry.refreshQueued = false;
+        let value: T;
+        try { value = await fetchJsonWithTimeout<T>(url, { cache: bypass ? "no-store" : "default", signal: entry.controller!.signal }, timeoutMs); }
+        catch (error) {
+          if (entry.refreshQueued && !entry.controller!.signal.aborted) { bypass = true; continue; }
+          throw error;
+        }
+        if (entry.refreshQueued && !entry.controller!.signal.aborted) { bypass = true; continue; }
+        if (jsonCache.get(url) === entry) { entry.value = value; entry.expiresAt = Date.now() + staleMs; }
+        return value;
       }
-      if (jsonCache.get(url)?.promise === promise) {
-        jsonCache.set(url, {
-          value: data as T,
-          expiresAt: Date.now() + staleMs,
-        });
-      }
-      return data as T;
-    })
-    .catch((error) => {
-      if (jsonCache.get(url)?.promise === promise) jsonCache.delete(url);
+    } catch (error) {
+      if (jsonCache.get(url) === entry) jsonCache.delete(url);
       throw error;
-    });
-
-  jsonCache.set(url, {
-    promise,
-    expiresAt: now + staleMs,
-  });
-
-  return promise;
+    } finally { entry.promise = undefined; entry.controller = undefined; }
+  })();
+  return entry.promise as Promise<T>;
 }
 
-export function invalidateJsonCache(prefix?: string) {
-  if (!prefix) {
-    jsonCache.clear();
-    return;
-  }
-
-  for (const key of jsonCache.keys()) {
-    if (key.startsWith(prefix)) {
-      jsonCache.delete(key);
-    }
+// Club changes invalidate API data; independently cached external catalogs stay
+// intact. Authentication boundaries additionally cancel old-session requests.
+export function invalidateJsonCache(prefix = "/api/", { cancelPending = false }: { cancelPending?: boolean } = {}) {
+  for (const [key, entry] of jsonCache) {
+    if (!key.startsWith(prefix)) continue;
+    if (entry.promise && !cancelPending) { delete entry.value; entry.expiresAt = 0; entry.refreshQueued = true; }
+    else { jsonCache.delete(key); entry.controller?.abort(); }
   }
 }

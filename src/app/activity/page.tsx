@@ -42,33 +42,14 @@ interface LeaderboardMember {
   role: string;
   trophies: number;
   highestTrophies: number;
-  winRate: number | null;
-  totalVictories: number;
   brawlersCount: number;
-  expLevel: number;
-  rankCurrent: string | null;
-  rankHighest: string | null;
   activityStatus: "active" | "minimal" | "inactive";
   lastBattleAt: string | null;
-  allTime: {
-    battles: number;
-    wins: number;
-    losses: number;
-    starPlayer: number;
-    trophiesGained: number;
-    trophiesLost: number;
-    activeDays: number;
-    currentStreak: number;
-    bestStreak: number;
-    peakDayBattles: number;
-  };
   weekly: {
     battles: number;
     wins: number;
     losses: number;
     starPlayer: number;
-    trophiesGained: number;
-    trophiesLost: number;
     activeDays: number;
     winRate: number;
     netTrophies: number | null;
@@ -82,7 +63,6 @@ interface Leaderboards {
   weeklyTrophyGainers: LeaderboardMember[];
   weeklyStarPlayers: LeaderboardMember[];
   mostActive: LeaderboardMember[];
-  allTimeBattlers: LeaderboardMember[];
 }
 
 interface LeaderboardResponse {

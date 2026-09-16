@@ -46,7 +46,9 @@ export async function GET(request: NextRequest) {
     const capacity = admin ? await readCapacityHealth(now) : undefined;
     const expectedIntervalMinutes = interval(settings.sync_expected_interval_minutes, 10);
     const rosterIntervalMinutes = interval(settings.sync_roster_interval_minutes, 2);
-    const rankedIntervalMinutes = interval(settings.sync_ranked_interval_minutes, 30);
+    // Ranked fields arrive with the player profiles; the separate configured
+    // interval now limits only optional RNT fallback requests.
+    const rankedIntervalMinutes = expectedIntervalMinutes;
     const full = marker(settings.last_full_sync_time ?? settings.last_sync_time, expectedIntervalMinutes, now);
     const roster = marker(settings.last_roster_sync_time, rosterIntervalMinutes, now);
     const battle = marker(settings.last_battle_sync_time, expectedIntervalMinutes, now);

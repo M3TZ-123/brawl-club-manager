@@ -26,14 +26,14 @@ test("a fresh roster never promotes old full or missing gameplay data to fresh",
  assert.equal(body.freshness,"stale");assert.equal(body.fullFreshness,"stale");
  assert.equal(body.lastBattleSuccessAt,null);assert.equal(body.battleFreshness,"never");
  assert.equal(body.lastRankedSuccessAt,null);assert.equal(body.rankedFreshness,"never");
- assert.deepEqual([body.rosterIntervalMinutes,body.expectedIntervalMinutes,body.rankedIntervalMinutes],[2,10,30]);
+ assert.deepEqual([body.rosterIntervalMinutes,body.expectedIntervalMinutes,body.rankedIntervalMinutes],[2,10,10]);
 });
 
-test("battle and ranked completion keep independent cadence and timestamps",async()=>{
+test("battle and ranked completion keep independent timestamps at the profile cadence",async()=>{
  const body=await get(route({last_sync_time:ago(1),last_full_sync_time:ago(1),last_roster_sync_time:ago(1),last_battle_sync_time:ago(40),last_ranked_sync_time:ago(40)}));
- assert.equal(body.fullFreshness,"fresh");assert.equal(body.battleFreshness,"stale");assert.equal(body.rankedFreshness,"fresh");
+ assert.equal(body.fullFreshness,"fresh");assert.equal(body.battleFreshness,"stale");assert.equal(body.rankedFreshness,"stale");
  assert.equal(body.lastBattleSuccessAt,ago(40));assert.equal(body.lastRankedSuccessAt,ago(40));
- assert.deepEqual([body.rosterStaleAfterMinutes,body.staleAfterMinutes,body.battleStaleAfterMinutes,body.rankedStaleAfterMinutes],[5,25,25,65]);
+ assert.deepEqual([body.rosterStaleAfterMinutes,body.staleAfterMinutes,body.battleStaleAfterMinutes,body.rankedStaleAfterMinutes],[5,25,25,25]);
 });
 
 test("legacy full marker is compatible but an explicitly reset marker stays empty",async()=>{
@@ -61,7 +61,7 @@ test("public run warnings and counts allow only known safe fields",async()=>{
 test("invalid or future markers cannot claim freshness",async()=>{
  const body=await get(route({last_full_sync_time:"not-a-date",last_roster_sync_time:"2099-01-01T00:00:00Z",last_battle_sync_time:"2099-01-01T00:00:00Z",sync_expected_interval_minutes:"invalid",sync_roster_interval_minutes:"0",sync_ranked_interval_minutes:"-1"}));
  assert.equal(body.lastSuccessAt,null);assert.equal(body.fullFreshness,"stale");assert.equal(body.lastRosterSuccessAt,null);assert.equal(body.rosterFreshness,"stale");assert.equal(body.battleFreshness,"stale");
- assert.deepEqual([body.rosterIntervalMinutes,body.expectedIntervalMinutes,body.rankedIntervalMinutes],[2,10,30]);
+ assert.deepEqual([body.rosterIntervalMinutes,body.expectedIntervalMinutes,body.rankedIntervalMinutes],[2,10,10]);
 });
 
 test("frequent roster successes cannot hide the separate full attempt or its safe partial warnings",async()=>{

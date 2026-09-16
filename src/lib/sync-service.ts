@@ -2,10 +2,29 @@ import { supabaseAdmin } from "@/lib/supabase-admin";
 import { publicMemberSnapshot } from "@/lib/sync-public-snapshots";
 import { getUpstreamCooldownMs } from "@/lib/upstream-rate-limit";
 import { battleObservation, type BattleObservation } from "@/lib/battle-coverage";
+import { readProfileRankedData, rankedCoreComplete, mergeRankedFallback, rankedSnapshot } from "@/lib/ranked-data";
 import { getClub, getPlayer, getPlayerBattleLog, getPlayerRankedData, processBattleLog, calculateWinRateFromBattleLog, type BrawlStarsBrawler } from "@/lib/brawl-api";
 
+export type SyncFailureDiagnostics = {
+  phase: "fetch" | "commit";
+  provider?: "brawl" | "rnt" | "database";
+  httpStatus?: number;
+  sqlstate?: string;
+};
 export class SyncError extends Error {
-  constructor(public readonly code: string, message: string, public readonly status = 500, public readonly retryAfterSeconds?: number) { super(message); }
+  constructor(public readonly code: string, message: string, public readonly status = 500, public readonly retryAfterSeconds?: number,
+    public readonly diagnostics?: SyncFailureDiagnostics) { super(message); }
+}
+export function formatSyncFailureMessage(failure: SyncError, diagnostic: SyncFailureDiagnostics): string {
+  // Only fixed categories/codes enter the private run record. Never serialize an
+  // upstream error object: Axios errors can contain credentials and raw bodies.
+  const fields: string[] = [];
+  if (diagnostic.phase === "fetch" || diagnostic.phase === "commit") fields.push(`phase=${diagnostic.phase}`);
+  if (["brawl", "rnt", "database"].includes(diagnostic.provider || "")) fields.push(`provider=${diagnostic.provider}`);
+  if (Number.isInteger(diagnostic.httpStatus) && diagnostic.httpStatus! >= 100 && diagnostic.httpStatus! <= 599) fields.push(`http=${diagnostic.httpStatus}`);
+  if (/^[0-9A-Z]{5}$/.test(diagnostic.sqlstate || "")) fields.push(`sqlstate=${diagnostic.sqlstate}`);
+  const suffix = fields.length ? ` [${fields.join(";")}]` : "";
+  return failure.message.slice(0, 200 - suffix.length) + suffix;
 }
 export function normalizeSyncTag(value: unknown): string {
   if (typeof value !== "string") throw new SyncError("invalid_tag", "A valid player or club tag is required.", 400);
@@ -120,7 +139,8 @@ export async function executeSync(options: {
       const until = Math.max(cooldowns.get(provider) || 0, inProcess > 0 ? Date.now() + inProcess : 0);
       if (until <= Date.now()) continue;
       const result = await supabaseAdmin.rpc("defer_sync_upstream", { p_provider: provider, p_until: new Date(until).toISOString() });
-      if (result.error) throw new SyncError("database_unavailable", "The upstream cooldown could not be saved.", 503);
+      if (result.error) throw new SyncError("database_unavailable", "The upstream cooldown could not be saved.", 503, undefined,
+        { phase, provider: "database", sqlstate: result.error.code });
       cooldowns.delete(provider);
     }
   };
@@ -141,27 +161,17 @@ export async function executeSync(options: {
       } });
       if (result.error) {
         console.error("Roster snapshot rejected", { runId, sqlstate: /^[0-9A-Z]{5}$/.test(result.error.code || "") ? result.error.code : "unavailable" });
-        throw new SyncError(result.error.code ? "snapshot_rejected" : "database_unavailable", "The roster snapshot could not be committed.", result.error.code ? 409 : 503);
+        throw new SyncError(result.error.code ? "snapshot_rejected" : "database_unavailable", "The roster snapshot could not be committed.", result.error.code ? 409 : 503, undefined,
+          { phase: "commit", provider: "database", sqlstate: result.error.code });
       }
       return publicSyncResult(result.data as SyncResult);
     }
     const warnings = new Set<string>();
-    const rankedAt = Date.parse(settings.last_ranked_attempt_time || settings.last_ranked_sync_time || "");
-    const rankDue = Boolean(playerTag) || !Number.isFinite(rankedAt) || Date.now() - rankedAt >= intervalMinutes(settings.sync_ranked_interval_minutes, 30, 10) * 60_000 - 60_000;
     const rankCooling = remainingCooldown(settings.sync_ranked_cooldown_until) > 0;
-    let fetchRanks = rankDue && !rankCooling;
-    if (fetchRanks && scope === "full") {
-      // Persist the attempt before network work, independently of the snapshot.
-      // A later profile/commit failure must not trigger another rank batch at
-      // every two-minute scheduler tick. The RPC rechecks cadence under the lease.
-      const attempt = await supabaseAdmin.rpc("begin_sync_ranked_attempt", { p_run_id: runId, p_fence: fence });
-      fetchRanks = !attempt.error && attempt.data === true;
-      if (attempt.error) warnings.add("ranked_unavailable");
-    }
-    let rankedComplete = fetchRanks;
+    let fallbackAttempted = false;
+    let rankedComplete = true;
     let battleLogsComplete = true;
-    if (rankDue && rankCooling) warnings.add("ranked_rate_limited");
-    if (fetchRanks) ranked = prefetchSyncRanks(roster.map((member) => member.tag), signal, Math.min(deadlineAt, Date.now() + 8000));
+    const fetchedMembers = [];
     const members = [];
     const battles: ReturnType<typeof processBattleLog> = [];
     const battleObservations: BattleObservation[] = [];
@@ -172,8 +182,8 @@ export async function executeSync(options: {
       if (offset > 0) await new Promise((resolve) => setTimeout(resolve, 300));
       const batch = await Promise.all(roster.slice(offset, offset + 4).map(async (member) => {
         let logFetched = true;
-        const [player, rank, log] = await Promise.all([
-          getPlayer(member.tag, apiKey, signal, deadlineAt), ranked?.results.get(member.tag) ?? null,
+        const [player, log] = await Promise.all([
+          getPlayer(member.tag, apiKey, signal, deadlineAt),
           getPlayerBattleLog(member.tag, apiKey, signal, deadlineAt).catch(error => {
             logFetched = false;
             battleLogsComplete = false;
@@ -181,9 +191,35 @@ export async function executeSync(options: {
             return { items: [] };
           }),
         ]);
-        return { member, player, rank, log, logFetched };
+        return { member, player, log, logFetched, checkedAt: new Date().toISOString() };
       }));
-      for (const { member, player, rank, log: fetchedLog, logFetched } of batch) {
+      fetchedMembers.push(...batch);
+    }
+    // Only missing profile fields justify another provider request. The durable
+    // per-player gate also bounds repeated manual member refreshes.
+    const profileRanks = new Map(fetchedMembers.map(item => [item.member.tag, readProfileRankedData(item.player)]));
+    const missingTags = fetchedMembers.filter(item => !rankedCoreComplete(profileRanks.get(item.member.tag)!)).map(item => item.member.tag);
+    if (missingTags.length && !rankCooling) {
+      const attempt = await supabaseAdmin.rpc("begin_sync_ranked_fallback", { p_run_id: runId, p_fence: fence, p_player_tags: missingTags });
+      if (attempt.error || !Array.isArray(attempt.data)) warnings.add("ranked_unavailable");
+      else {
+        const requested = new Set(missingTags);
+        const eligible = attempt.data.filter((tag): tag is string => typeof tag === "string" && requested.has(tag));
+        if (eligible.length) {
+          fallbackAttempted = true;
+          ranked = prefetchSyncRanks(eligible, signal, Math.min(deadlineAt, Date.now() + 8000));
+          await ranked.finished;
+        }
+      }
+    }
+    for (const { member, player, log: fetchedLog, logFetched, checkedAt } of fetchedMembers) {
+        const fallback = await ranked?.results.get(member.tag);
+        const rank = mergeRankedFallback(profileRanks.get(member.tag)!, fallback);
+        if (!rankedCoreComplete(rank)) {
+          rankedComplete = false;
+          warnings.add(rankCooling || fallback?.retryAfterMs ? "ranked_rate_limited" : "ranked_unavailable");
+        }
+        if (fallback?.retryAfterMs) rememberRateLimit({ status: 429, provider: "rnt", retryAfterMs: fallback.retryAfterMs });
         let log = fetchedLog;
         let observation = battleObservation(member.tag, logFetched ? log : null);
         let processed: ReturnType<typeof processBattleLog> = [];
@@ -197,15 +233,9 @@ export async function executeSync(options: {
           log = { items: [] };
         }
         battleObservations.push(observation);
-        if (fetchRanks && !rank?.available) {
-          rankedComplete = false;
-          warnings.add(rank?.retryAfterMs ? "ranked_rate_limited" : "ranked_unavailable");
-          if (rank?.retryAfterMs) rememberRateLimit({ status: 429, provider: "rnt", retryAfterMs: rank.retryAfterMs });
-        }
         members.push({ player_tag: member.tag, player_name: playerTag ? player.name : member.name, role: member.role,
           icon_id: player.icon?.id ?? null, trophies: player.trophies, highest_trophies: player.highestTrophies, exp_level: player.expLevel,
-          rank_current: rank?.available ? rank.currentRank : undefined, rank_highest: rank?.available ? rank.highestRank : undefined,
-          rank_available: rank?.available === true, win_rate: calculateWinRateFromBattleLog(log).winRate,
+          ...rankedSnapshot(rank, fallback ? new Date().toISOString() : checkedAt), win_rate: calculateWinRateFromBattleLog(log).winRate,
           brawlers_count: player.brawlers.length, solo_victories: player.soloVictories, duo_victories: player.duoVictories, trio_victories: player["3vs3Victories"] });
         const uniqueBattles = new Map(processed.map((battle) => [battle.battle_time, battle]));
         battles.push(...uniqueBattles.values());
@@ -213,14 +243,13 @@ export async function executeSync(options: {
           power_level: b.power, trophies: b.trophies, rank: b.rank, gadgets_count: b.gadgets?.length || 0,
           star_powers_count: b.starPowers?.length || 0, gears_count: b.gears?.length || 0 })));
         if (playerTag) refreshedBrawlers = player.brawlers;
-      }
     }
     await persistCooldowns();
     phase = "commit";
     const { data, error } = await supabaseAdmin.rpc("commit_sync_snapshot", { p_run_id: runId, p_fence: fence,
       p_payload: { members, battles, brawlers, initial_setup: options.initialSetup === true, required_trophies: club?.requiredTrophies ?? null,
         battle_logs_complete: battleLogsComplete, battle_observations: battleObservations,
-        ranked_complete: rankedComplete, ranked_attempted: fetchRanks, warnings: [...warnings] } });
+        ranked_complete: rankedComplete, ranked_attempted: fallbackAttempted, warnings: [...warnings] } });
     if (error) {
       console.error("Full snapshot rejected", { runId, sqlstate: /^[0-9A-Z]{5}$/.test(error.code || "") ? error.code : "unavailable" });
       const code = ["stale_sync_fence", "club_configuration_changed", "member_not_found"].includes(error.message) ? error.message
@@ -229,7 +258,8 @@ export async function executeSync(options: {
       // retrying resolves the durable outcome instead of applying another snapshot.
       throw new SyncError(code, code === "member_not_found" ? "This member is not tracked by the club."
         : code === "database_unavailable" ? "The sync outcome could not be confirmed. Retry with the same request ID."
-          : "The sync snapshot was not committed. It is safe to retry.", code === "member_not_found" ? 404 : code === "database_unavailable" ? 503 : 409);
+          : "The sync snapshot was not committed. It is safe to retry.", code === "member_not_found" ? 404 : code === "database_unavailable" ? 503 : 409, undefined,
+        { phase: "commit", provider: "database", sqlstate: error.code });
     }
     return { ...publicSyncResult(data as SyncResult), ...(playerTag ? { brawlers: refreshedBrawlers } : {}) };
   } catch (error) {
@@ -239,7 +269,13 @@ export async function executeSync(options: {
     try { await persistCooldowns(); } catch { console.error("Could not save upstream cooldown", { runId }); }
     const failure = error instanceof SyncError ? error : limited ? new SyncError("upstream_rate_limited", "The game API requested a pause. Sync will resume after its cooldown.", 429, Math.ceil(limited.ms / 1000)) : new SyncError(phase === "fetch" ? "upstream_unavailable" : "database_unavailable",
       phase === "fetch" ? "A required player profile could not be fetched. No snapshot was committed." : "The sync could not be committed.");
-    const { error: finishError } = await supabaseAdmin.rpc("fail_sync_run", { p_run_id: runId, p_fence: fence, p_error_code: failure.code, p_error_message: failure.message });
+    const upstream = error && typeof error === "object" ? error as Record<string, unknown> : {};
+    const diagnostics: SyncFailureDiagnostics = failure.diagnostics || {
+      phase, provider: phase === "commit" ? "database" : upstream.provider === "rnt" ? "rnt" : "brawl",
+      httpStatus: !(error instanceof SyncError) && typeof upstream.status === "number" ? upstream.status : undefined,
+    };
+    const { error: finishError } = await supabaseAdmin.rpc("fail_sync_run", { p_run_id: runId, p_fence: fence, p_error_code: failure.code,
+      p_error_message: formatSyncFailureMessage(failure, diagnostics) });
     if (finishError) console.error("Could not record sync failure", { runId, code: failure.code });
     throw failure;
   } finally {

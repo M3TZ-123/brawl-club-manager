@@ -1,3 +1,4 @@
+const { reportingReadRpc } = require("./helpers/reporting-reads-database.cjs");
 const test = require("node:test");
 const assert = require("node:assert/strict");
 const { loadTypeScript } = require("./helpers/load-typescript.cjs");
@@ -40,6 +41,7 @@ function database(tables, calls) {
       return target;
     },
     async rpc(name,args) {
+      if (["report_dashboard_read","report_leaderboard_read"].includes(name)) return reportingReadRpc(tables,calls)(name,args);
       calls.push({name,args});
       assert.equal(args.p_now, now.toISOString());
       if (name === "sync_activity_summary_v2") return { data:tables.activity_summary.filter(row => args.p_player_tags.includes(row.player_tag)),error:null };

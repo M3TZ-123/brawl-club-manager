@@ -183,7 +183,7 @@ test("mobile history expands dates and departure snapshots while keeping private
 
 test("timeline preserves provenance, missing snapshots and opaque pagination cursor", async () => {
   const renderer = hookRenderer(), urls = [];
-  const { MembershipTimeline } = loadTypeScript("src/components/membership-timeline.tsx", { ...componentMocks, react: renderer.react }, { fetch: async url => {
+  const { MembershipTimeline } = loadTypeScript("src/components/membership-timeline.tsx", { ...componentMocks, react: renderer.react }, { window: {addEventListener(){},removeEventListener(){}}, document: {visibilityState:"visible",addEventListener(){},removeEventListener(){}}, fetch: async url => {
     urls.push(url);
     return Response.json(urls.length === 1 ? { events: [{ id: "old", eventType: "initial_seen", occurredAt: "2025-01-01T00:00:00Z", source: "reconstructed", before: null, after: null }], nextCursor: "opaque+/=" } : { events: [{ id: "new", eventType: "role_change", occurredAt: "2026-01-01T00:00:00Z", source: "recorded", before: { role: "member" }, after: { role: "senior" } }], nextCursor: null });
   } });

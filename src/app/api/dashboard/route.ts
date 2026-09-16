@@ -1,8 +1,7 @@
 import { NextResponse } from "next/server";
-import { supabaseAdmin } from "@/lib/supabase-admin";
+import { readDashboard } from "@/lib/reporting-reads";
 import { Member } from "@/types/database";
 import {
-  appendMemberActivityMetrics,
   MemberActivityMetrics,
 } from "@/lib/member-activity-metrics";
 import { parseTimeRange, TIME_RANGES, type TrophyPeriodMetric } from "@/lib/time-range";
@@ -44,14 +43,6 @@ function sortByRisk(a: DashboardMember, b: DashboardMember, metric: TrophyPeriod
   return getNumberMetric(a[metric]) - getNumberMetric(b[metric]);
 }
 
-function normalizeTimestamp(value: string | null | undefined) {
-  const timestamp = value?.trim();
-  if (!timestamp) return null;
-
-  const parsed = new Date(timestamp);
-  return Number.isNaN(parsed.getTime()) ? timestamp : parsed.toISOString();
-}
-
 export async function GET(request?: Request) {
   try {
     const now = new Date();
@@ -59,66 +50,11 @@ export async function GET(request?: Request) {
     const period = getReportingPeriod(range, now);
     const metric = TIME_RANGES[range].metric;
     const since = period.start.toISOString();
-    const until = now.toISOString();
-
-    const [currentMembersRes, eventsRes] = await Promise.all([
-      supabaseAdmin
-        .from("member_history")
-        .select("player_tag")
-        .eq("is_current_member", true),
-      supabaseAdmin
-        .from("club_events")
-        .select("id, event_type, player_tag, player_name, event_time")
-        .gte("event_time", since).lte("event_time", until)
-        .order("event_time", { ascending: false })
-        .limit(5),
-    ]);
-
-    if (currentMembersRes.error) throw currentMembersRes.error;
-    if (eventsRes.error) throw eventsRes.error;
-
-    const currentTags = new Set(
-      (currentMembersRes.data || []).map((row) => row.player_tag)
-    );
-    const currentTagList = [...currentTags];
-
-    const [
-      membersRes,
-      joinsRes,
-      leavesRes,
-      namesRes,
-      rolesRes,
-      settingsRes,
-    ] = await Promise.all([
-      currentTagList.length > 0
-        ? supabaseAdmin
-            .from("members")
-            .select("player_tag, player_name, icon_id, role, trophies, highest_trophies, exp_level, rank_current, rank_highest, win_rate, brawlers_count, solo_victories, duo_victories, trio_victories, is_active, last_updated")
-            .in("player_tag", currentTagList)
-            .order("trophies", { ascending: false })
-        : Promise.resolve({ data: [], error: null }),
-      supabaseAdmin.from("club_events").select("id", { count: "exact", head: true })
-        .eq("event_type", "join").gte("event_time", since).lte("event_time", until),
-      supabaseAdmin.from("club_events").select("id", { count: "exact", head: true })
-        .eq("event_type", "leave").gte("event_time", since).lte("event_time", until),
-      supabaseAdmin.from("notifications").select("id", { count: "exact", head: true })
-        .eq("type", "name_change").gte("created_at", since).lte("created_at", until),
-      supabaseAdmin.from("notifications").select("id", { count: "exact", head: true })
-        .in("type", ["promotion", "demotion", "role_change"]).gte("created_at", since).lte("created_at", until),
-      supabaseAdmin
-        .from("settings")
-        .select("key, value")
-        .in("key", ["last_sync_time"]),
-    ]);
-
-    if (membersRes.error) throw membersRes.error;
-    for (const result of [joinsRes, leavesRes, namesRes, rolesRes]) { if (result.error) throw result.error; }
-    if (settingsRes.error) throw settingsRes.error;
-
-    const members = ((membersRes.data || []) as Member[]).sort(sortByTrophiesDesc);
+    const snapshot = await readDashboard(period.days, now);
+    const membersWithMetrics = snapshot.members.sort(sortByTrophiesDesc);
+    const members = membersWithMetrics;
 
     const totalTrophies = members.reduce((sum, member) => sum + (member.trophies || 0), 0);
-    const membersWithMetrics = await appendMemberActivityMetrics(members, now);
     const activeMembers = membersWithMetrics.filter((member) => member.activity_status === "active").length;
 
     const summary: DashboardSummary = {
@@ -143,16 +79,12 @@ export async function GET(request?: Request) {
       .slice(0, 6);
 
     const changeSummary: ChangeSummary = {
-      joins: joinsRes.count ?? 0,
-      leaves: leavesRes.count ?? 0,
-      nameChanges: namesRes.count ?? 0,
-      roleChanges: rolesRes.count ?? 0,
+      joins: snapshot.changeCounts.joins,
+      leaves: snapshot.changeCounts.leaves,
+      nameChanges: snapshot.changeCounts.nameChanges,
+      roleChanges: snapshot.changeCounts.roleChanges,
       since,
     };
-
-    const settings = new Map(
-      (settingsRes.data || []).map((setting) => [setting.key, setting.value])
-    );
 
     return NextResponse.json(
       {
@@ -164,17 +96,15 @@ export async function GET(request?: Request) {
         attentionMembers,
         changeSummary,
         syncStatus: {
-          lastSyncTime: normalizeTimestamp(settings.get("last_sync_time")),
+          lastSyncTime: snapshot.lastSyncTime,
         },
-        recentEvents: (eventsRes.data || []).map(({ id, event_type, player_tag, player_name, event_time }) => ({
-          id, event_type, player_tag, player_name, event_time,
-        })),
+        recentEvents: snapshot.recentEvents,
         generatedAt: now.toISOString(),
       },
       { headers: { "Cache-Control": "no-store" } }
     );
   } catch (error) {
-    console.error("Error fetching dashboard:", error);
+    console.error("Error fetching dashboard:", error instanceof Error ? error.name : "database_error");
     return NextResponse.json(
       { error: "Failed to fetch dashboard" },
       { status: 500, headers: { "Cache-Control": "no-store" } }

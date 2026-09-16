@@ -35,6 +35,12 @@ test("encrypted backup restores actual schema, rows and private permissions into
   `);
   for (const filename of (await fs.readdir(path.join(root, "supabase/migrations"))).filter(name => /^20260916\d{4}_.*\.sql$/.test(name)).sort()) await client.query(await fs.readFile(path.join(root, "supabase/migrations", filename), "utf8"));
   await client.query(`
+    INSERT INTO public.settings(key,value) VALUES('club_tag','#CLUB') ON CONFLICT(key) DO UPDATE SET value=excluded.value;
+    INSERT INTO public.sync_ranked_fallback_attempts(club_tag,player_tag,attempted_at) VALUES('#CLUB','#PLAYER',now());
+    UPDATE public.members SET rank_current='Diamond I',rank_highest='Mythic I',ranked_points=3417,
+      ranked_all_time_best_points=4678,ranked_season_id=48,ranked_season_best='Diamond II',ranked_season_best_points=3505,
+      ranked_checked_at=now(),ranked_source='profile',ranked_provenance=jsonb_build_object('rank_current',jsonb_build_object('source','profile','checked_at',now()))
+      WHERE player_tag='#PLAYER';
     INSERT INTO public.battle_history(player_tag,battle_time,mode,map,result,trophy_change,trophy_change_reported,battle_type,event_id,event_mode_id,battle_mode,event_mode,placement_rank)
       VALUES('#PLAYER',now()-interval '1 hour','trioShowdown','خريطة','defeat',NULL,false,'soloRanked',15001280,38,'duoShowdown','trioShowdown',3);
     INSERT INTO public.sync_runs(id,club_tag,source,scope,fence,status,finished_at)
@@ -84,7 +90,7 @@ test("encrypted backup restores actual schema, rows and private permissions into
       assert.ok(manifest.functions.some(fn => fn.name === name), `Range function ${name} must be captured`);
     }
     assert.equal(manifest.tables.find(table => table.name === "backup_chunks").row_count, 0);
-    for (const name of ["sync_battle_coverage", "sync_battle_gaps", "capacity_samples"]) assert.equal(manifest.tables.find(table => table.name === name).row_count, 1);
+    for (const name of ["sync_battle_coverage", "sync_battle_gaps", "capacity_samples", "sync_ranked_fallback_attempts", "club_sync_signals"]) assert.equal(manifest.tables.find(table => table.name === name).row_count, 1);
     assert.ok(manifest.tables.find(table => table.name === "profiles").columns.some(column => column.name === "owner_user_id"));
     assert.ok((await client.query("SELECT max(octet_length(payload)) AS size FROM public.backup_chunks")).rows[0].size < 1024 * 1024);
     assert.ok(manifest.tables.find(table => table.name === "member_reviews").chunks.length > 1, "Large Arabic record must split safely");
@@ -138,7 +144,13 @@ test("encrypted backup restores actual schema, rows and private permissions into
     assert.equal(restoredBattlePage.length,1);assert.equal(restoredBattlePage[0].mode,"trioShowdown");assert.equal(restoredBattlePage[0].event_mode_id,38);
     const restoredFacets=(await client.query("SELECT public.battle_feed_facets(ARRAY['#PLAYER'],now()-interval '1 day',now()) x")).rows[0].x;
     assert.equal(restoredFacets.total,1);assert.deepEqual(restoredFacets.contexts,[{key:"ranked",count:1}]);
-    for (const name of ["sync_battle_coverage", "sync_battle_gaps", "capacity_samples"]) assert.equal((await client.query(`SELECT count(*)::int AS n FROM public.${name}`)).rows[0].n, 1);
+    for (const name of ["sync_battle_coverage", "sync_battle_gaps", "capacity_samples", "sync_ranked_fallback_attempts", "club_sync_signals"]) assert.equal((await client.query(`SELECT count(*)::int AS n FROM public.${name}`)).rows[0].n, 1);
+    const restoredRank=(await client.query("SELECT rank_current,rank_highest,ranked_points,ranked_all_time_best_points,ranked_season_best_points,ranked_source FROM public.members WHERE player_tag='#PLAYER'")).rows[0];
+    assert.deepEqual(restoredRank,{rank_current:'Diamond I',rank_highest:'Mythic I',ranked_points:3417,ranked_all_time_best_points:4678,ranked_season_best_points:3505,ranked_source:'profile'});
+    assert.equal((await client.query("SELECT version::text FROM public.club_sync_signals WHERE id=1")).rows[0].version,'00000000-0000-4000-8000-000000000009');
+    for(const rpc of ['report_dashboard_read','report_leaderboard_read']) {
+      assert.ok(Array.isArray((await client.query(`SELECT public.${rpc}(7,now()) x`)).rows[0].x.members));
+    }
     assert.equal((await client.query("SELECT possible_gap FROM public.sync_battle_coverage_summary('#CLUB',ARRAY['#PLAYER'])")).rows[0].possible_gap, true);
     assert.equal((await client.query("SELECT owner_user_id,normalized_owner FROM public.profiles")).rows[0].owner_user_id, "owner-A");
     assert.equal((await client.query("SELECT normalized_owner FROM public.profiles")).rows[0].normalized_owner, "OWNER-A");
@@ -164,7 +176,10 @@ test("encrypted backup restores actual schema, rows and private permissions into
         assert.equal((await client.query("SELECT player_tag FROM public.member_history")).rowCount, 1);
         await assert.rejects(client.query("SELECT notes FROM public.member_history"), error => error.code === "42501");
         await assert.rejects(client.query("SELECT * FROM public.member_reviews"), error => error.code === "42501");
-        for (const name of ["sync_battle_coverage", "sync_battle_gaps", "capacity_samples"]) await assert.rejects(client.query(`SELECT * FROM public.${name}`), error => error.code === "42501");
+        for (const name of ["sync_battle_coverage", "sync_battle_gaps", "capacity_samples", "sync_ranked_fallback_attempts"]) await assert.rejects(client.query(`SELECT * FROM public.${name}`), error => error.code === "42501");
+        assert.deepEqual(Object.keys((await client.query("SELECT * FROM public.club_sync_signals")).rows[0]).sort(),['completed_at','datasets','id','version']);
+        await assert.rejects(client.query('UPDATE public.club_sync_signals SET version=NULL,completed_at=NULL'),error=>error.code==='42501');
+        for(const rpc of ['report_dashboard_read','report_leaderboard_read']) await assert.rejects(client.query(`SELECT public.${rpc}(7,now())`),error=>error.code==='42501');
         await assert.rejects(client.query("SELECT public.sample_database_capacity()"), error => error.code === "42501");
         for(const query of ["SELECT * FROM public.battle_feed_page(ARRAY['#PLAYER'],now()-interval '1 day',now())","SELECT public.battle_feed_facets(ARRAY['#PLAYER'],now()-interval '1 day',now())"]){
           await assert.rejects(client.query(query),error=>error.code==="42501");

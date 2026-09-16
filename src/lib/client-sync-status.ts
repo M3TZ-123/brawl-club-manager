@@ -2,6 +2,8 @@
 
 import { fetchJsonCached, invalidateJsonCache } from "@/lib/client-data-cache";
 import { useAppStore } from "@/lib/store";
+import { supabase } from "@/lib/supabase";
+import { getAdminSessionGeneration, isAdminSessionChanging } from "@/lib/client-admin-session";
 
 export interface SyncRunSummary {
   source: string;
@@ -59,11 +61,23 @@ const SYNC_SIGNAL_KEY = "brawl-club-manager-sync-updated";
 const listeners = new Set<() => void>();
 // Undefined means the first request has not settled; null means a failed read.
 let health: SyncHealth | null | undefined;
+let healthAuthGeneration = 0;
 let inFlight: Promise<void> | null = null;
 let refreshQueued = false;
 let stopMonitoring: (() => void) | null = null;
+let authMutationPending = false;
+let signalVersion: string | null = null;
+const pendingDatasets = new Set<string>();
 
-export const getSyncHealth = () => health;
+export const getSyncHealth = () => {
+  // Auth may have changed while no health component was subscribed. Never
+  // expose the previous session's private snapshot on the first new render.
+  if (health?.capacity && healthAuthGeneration !== getAdminSessionGeneration()) {
+    health = { ...health };
+    delete health.capacity;
+  }
+  return health;
+};
 export const getServerSyncHealth = () => undefined;
 
 function broadcastSyncChange() {
@@ -81,14 +95,29 @@ export function refreshSyncHealth(afterPending = false): Promise<void> {
     if (afterPending) refreshQueued = true;
     return inFlight;
   }
+  if (authMutationPending) return Promise.resolve();
+  refreshQueued = false;
+  const authGeneration = getAdminSessionGeneration();
   inFlight = fetchJsonCached<SyncHealth>("/api/sync/status", { staleMs: 0, force: true })
     .then(data => {
       // A sync completed while this read was in flight. Wait for the queued
       // fresh read instead of briefly replacing its timestamp with an old one.
+      if (authGeneration !== getAdminSessionGeneration()) refreshQueued = true;
       if (refreshQueued) return;
       const parsed = data.lastSuccessAt ? Date.parse(data.lastSuccessAt) : NaN;
       const lastSuccessAt = Number.isFinite(parsed) ? new Date(parsed).toISOString() : null;
-      const changed = useAppStore.getState().lastSyncTime !== lastSuccessAt
+      const datasets = new Set(pendingDatasets);
+      const fullChanged = useAppStore.getState().lastSyncTime !== lastSuccessAt;
+      const rosterChanged = (health?.lastRosterSuccessAt || null) !== (data.lastRosterSuccessAt || null);
+      const battlesChanged = (health?.lastBattleSuccessAt || null) !== (data.lastBattleSuccessAt || null);
+      const rankedChanged = (health?.lastRankedSuccessAt || null) !== (data.lastRankedSuccessAt || null);
+      const completedRunChanged = data.latestRun?.status === "succeeded" && Boolean(data.latestRun.finishedAt)
+        && data.latestRun.finishedAt !== health?.latestRun?.finishedAt;
+      if (rosterChanged) datasets.add("roster");
+      if (battlesChanged) datasets.add("battles");
+      if (rankedChanged) datasets.add("ranked");
+      if (fullChanged || (completedRunChanged && data.latestRun?.scope !== "roster")) ["roster", "battles", "ranked"].forEach(value => datasets.add(value));
+      const changed = datasets.size > 0 || useAppStore.getState().lastSyncTime !== lastSuccessAt
         || (health?.lastRosterSuccessAt || null) !== (data.lastRosterSuccessAt || null)
         || (health?.lastBattleSuccessAt || null) !== (data.lastBattleSuccessAt || null)
         || (health?.lastRankedSuccessAt || null) !== (data.lastRankedSuccessAt || null);
@@ -101,11 +130,13 @@ export function refreshSyncHealth(afterPending = false): Promise<void> {
         rosterIntervalMinutes: data.rosterIntervalMinutes, rankedIntervalMinutes: data.rankedIntervalMinutes,
         running: data.running, latestRun: data.latestRun, latestFullRun: data.latestFullRun,
         battleCoverage: data.battleCoverage ?? null, ...(data.capacity ? { capacity: data.capacity } : {}) };
+      healthAuthGeneration = authGeneration;
       useAppStore.getState().setLastSyncTime(lastSuccessAt);
+      pendingDatasets.clear();
       if (changed) {
         invalidateJsonCache();
         broadcastSyncChange();
-        window.dispatchEvent(new CustomEvent("club-data-updated", { detail: { source: "sync-status", syncTime: lastSuccessAt } }));
+        window.dispatchEvent(new CustomEvent("club-data-updated", { detail: { source: "sync-status", syncTime: lastSuccessAt, datasets: [...datasets] } }));
       }
     })
     .catch(() => { health = null; })
@@ -114,7 +145,7 @@ export function refreshSyncHealth(afterPending = false): Promise<void> {
       listeners.forEach(listener => listener());
       if (refreshQueued) {
         refreshQueued = false;
-        if (listeners.size) void refreshSyncHealth();
+        if (listeners.size && !authMutationPending) void refreshSyncHealth();
       }
     });
   return inFlight;
@@ -123,14 +154,36 @@ export function refreshSyncHealth(afterPending = false): Promise<void> {
 export function subscribeSyncHealth(listener: () => void) {
   listeners.add(listener);
   if (!stopMonitoring) {
-    const wake = () => { if (document.visibilityState !== "hidden") void refreshSyncHealth(); };
+    // A route gate may have unmounted every consumer during an auth change.
+    // Its completion event can therefore precede this subscription.
+    authMutationPending = isAdminSessionChanging();
+    let channel: ReturnType<typeof supabase.channel> | null = null;
+    const disconnect = () => { if (channel) { void supabase.removeChannel(channel); channel = null; } };
+    const connect = () => {
+      if (channel || document.visibilityState === "hidden") return;
+      channel = supabase.channel("club-sync-completions").on("postgres_changes",
+        { event: "UPDATE", schema: "public", table: "club_sync_signals", filter: "id=eq.1" }, payload => {
+          const row = payload.new as { id?: number; version?: string; datasets?: unknown };
+          if (document.visibilityState === "hidden" || row.id !== 1 || !row.version || row.version === signalVersion) return;
+          signalVersion = row.version;
+          if (Array.isArray(row.datasets)) for (const dataset of row.datasets) {
+            if (["roster", "battles", "ranked"].includes(dataset)) pendingDatasets.add(dataset);
+          }
+          void refreshSyncHealth(true);
+        }).subscribe();
+    };
+    const wake = () => {
+      if (document.visibilityState === "hidden") { disconnect(); return; }
+      connect(); void refreshSyncHealth();
+    };
     const clubChanged = (event: Event) => {
       if ((event as CustomEvent).detail?.source === "sync-status") return;
       broadcastSyncChange();
-      void refreshSyncHealth(true);
+      if (document.visibilityState !== "hidden") void refreshSyncHealth(true);
     };
-    const authChanged = () => {
-      invalidateJsonCache("/api/sync/status");
+    const authChanged = (event: Event) => {
+      authMutationPending = (event as CustomEvent).detail?.pending === true;
+      invalidateJsonCache("/api/sync/status", { cancelPending: true });
       // Remove admin-only data before awaiting the new session's response.
       // refreshQueued also prevents an earlier admin request restoring it.
       if (health?.capacity) {
@@ -138,10 +191,11 @@ export function subscribeSyncHealth(listener: () => void) {
         delete health.capacity;
         listeners.forEach(listener => listener());
       }
-      void refreshSyncHealth(true);
+      if (authMutationPending) refreshQueued = true;
+      else if (document.visibilityState !== "hidden") void refreshSyncHealth(true);
     };
     const storageChanged = (event: StorageEvent) => {
-      if (event.key === SYNC_SIGNAL_KEY) void refreshSyncHealth(true);
+      if (event.key === SYNC_SIGNAL_KEY && document.visibilityState !== "hidden") void refreshSyncHealth(true);
     };
     const timer = window.setInterval(wake, 30_000);
     window.addEventListener("focus", wake);
@@ -158,9 +212,10 @@ export function subscribeSyncHealth(listener: () => void) {
       window.removeEventListener("club-data-updated", clubChanged);
       window.removeEventListener("admin-session-changed", authChanged);
       window.removeEventListener("storage", storageChanged);
+      disconnect();
       stopMonitoring = null;
     };
-    void refreshSyncHealth();
+    wake();
   }
   return () => {
     listeners.delete(listener);

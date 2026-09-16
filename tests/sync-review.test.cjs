@@ -12,7 +12,7 @@ function serviceFixture(options = {}) {
     rpc: async (name,args) => {
       calls.push({name,args});
       if(name === "acquire_sync_run") return {data: options.acquisition || {acquired:true,run_id:"test-run",fence:4},error:null};
-      if(name === "begin_sync_ranked_attempt") return {data:true,error:null};
+      if(name === "begin_sync_ranked_fallback") return {data:args.p_player_tags,error:null};
       if(name === "commit_sync_snapshot") return {data: options.commitError ? null : {success:true,synced:tags.length,events:0,timestamp:"2026-09-16T00:00:00Z",runId:"test-run",changes:{joins:[],leaves:[]},member:{player_tag:"#PLAYER"}},error:options.commitError || null};
       if(name === "fail_sync_run") return {data:null,error:null};
       throw new Error(`Unexpected RPC ${name}`);
@@ -20,7 +20,7 @@ function serviceFixture(options = {}) {
   };
   const api = {
     getClub: async () => ({members:tags.map(tag=>({tag,name:tag,role:"member"})),requiredTrophies:100}),
-    getPlayer: async tag => {if(options.failPlayer) throw new Error("Bearer secret-test-only upstream response"); return {tag,name:tag,trophies:100,highestTrophies:100,expLevel:10,brawlers:[{id:1,name:"SHELLY",power:1,trophies:100,rank:1}],soloVictories:1,duoVictories:2,"3vs3Victories":3};},
+    getPlayer: async tag => {if(options.playerError) throw options.playerError;if(options.failPlayer) throw new Error("Bearer secret-test-only upstream response"); return {tag,name:tag,trophies:100,highestTrophies:100,expLevel:10,brawlers:[{id:1,name:"SHELLY",power:1,trophies:100,rank:1}],soloVictories:1,duoVictories:2,"3vs3Victories":3};},
     getPlayerRankedData: async (...args) => {
       rankedRequests.push(calls.map(call => call.name));
       return options.ranked ? options.ranked(...args) : {currentRank:"Unranked",highestRank:"Unranked",currentPoints:0,highestPoints:0,available:true};
@@ -35,11 +35,11 @@ test("successful full sync performs one fenced commit with complete fetched data
   const {service,calls,rankedRequests}=serviceFixture();
   const result=await service.executeSync({source:"manual",idempotencyKey:"retry-123"});
   assert.equal(result.success,true);
-  assert.deepEqual(calls.map(c=>c.name),["acquire_sync_run","begin_sync_ranked_attempt","commit_sync_snapshot"]);
+  assert.deepEqual(calls.map(c=>c.name),["acquire_sync_run","begin_sync_ranked_fallback","commit_sync_snapshot"]);
   assert.equal(calls[0].args.p_scope,"full");
   assert.equal(calls[0].args.p_idempotency_key,"retry-123");
-  assert.deepEqual(JSON.parse(JSON.stringify(calls[1].args)),{p_run_id:"test-run",p_fence:4});
-  assert.deepEqual(rankedRequests,[["acquire_sync_run","begin_sync_ranked_attempt"]]);
+  assert.deepEqual(JSON.parse(JSON.stringify(calls[1].args)),{p_run_id:"test-run",p_fence:4,p_player_tags:["#PLAYER"]});
+  assert.deepEqual(rankedRequests,[["acquire_sync_run","begin_sync_ranked_fallback"]]);
   assert.equal(calls[2].args.p_run_id,"test-run");
   assert.equal(calls[2].args.p_fence,4);
   assert.equal(calls[2].args.p_payload.members[0].trophies,100);
@@ -50,7 +50,7 @@ test("successful full sync performs one fenced commit with complete fetched data
 });
 test("member refresh shares the club lease and preserves member response",async()=>{
   const {service,calls}=serviceFixture(); const result=await service.executeSync({source:"member",playerTag:"#PLAYER"});
-  assert.deepEqual(calls.map(c=>c.name),["acquire_sync_run","commit_sync_snapshot"]);
+  assert.deepEqual(calls.map(c=>c.name),["acquire_sync_run","begin_sync_ranked_fallback","commit_sync_snapshot"]);
   assert.equal(calls[0].args.p_club_tag,"#CLUB"); assert.equal(calls[0].args.p_scope,"member");
   assert.equal(result.member.player_tag,"#PLAYER"); assert.equal(result.brawlers.length,1);
 });
@@ -72,29 +72,43 @@ test("public member results and audit snapshots exclude legacy tenant IDs and pr
   const audit=publicAuditSnapshot({first_seen:null,times_joined:2,owner_user_id:"private-tenant",notes:"private-note",player_name:{owner_user_id:"nested-secret"}});
   assert.deepEqual(JSON.parse(JSON.stringify(audit)),{first_seen:null,times_joined:2});
 });
-test("primary failure records a sanitized durable failure and never commits",async()=>{
+test("primary failure records a sanitized durable failure without starting fallback",async()=>{
   const {service,calls,rankedRequests}=serviceFixture({failPlayer:true,tags:Array.from({length:30},(_,i)=>`#P${i}`)});
   await assert.rejects(service.executeSync({source:"manual"}),e=>e.code==="upstream_unavailable");
-  assert.deepEqual(calls.map(c=>c.name),["acquire_sync_run","begin_sync_ranked_attempt","fail_sync_run"]);
-  assert.deepEqual(JSON.parse(JSON.stringify(calls[1].args)),{p_run_id:"test-run",p_fence:4});
-  assert.ok(rankedRequests.length>0);
-  assert.deepEqual(rankedRequests[0],["acquire_sync_run","begin_sync_ranked_attempt"]);
+  assert.deepEqual(calls.map(c=>c.name),["acquire_sync_run","fail_sync_run"]);
+  assert.equal(rankedRequests.length,0);
   assert.ok(!JSON.stringify(calls.at(-1)).includes("secret-test-only"));
 });
 test("transaction errors keep typed failure and invoke durable failure recording",async()=>{
   const {service,calls}=serviceFixture({commitError:{message:"stale_sync_fence"}});
   await assert.rejects(service.executeSync({source:"manual"}),e=>e.code==="stale_sync_fence");
-  assert.deepEqual(calls.map(c=>c.name),["acquire_sync_run","begin_sync_ranked_attempt","commit_sync_snapshot","fail_sync_run"]);
+  assert.deepEqual(calls.map(c=>c.name),["acquire_sync_run","begin_sync_ranked_fallback","commit_sync_snapshot","fail_sync_run"]);
   assert.equal(calls.at(-1).name,"fail_sync_run");
 });
 test("ambiguous commit transport failure preserves the retry key contract",async()=>{
   const {service,calls}=serviceFixture({commitError:{message:"fetch failed",code:""}});
   await assert.rejects(service.executeSync({source:"cron",idempotencyKey:"stable-request"}),e=>e.code==="database_unavailable"&&e.status===503);
-  assert.deepEqual(calls.map(c=>c.name),["acquire_sync_run","begin_sync_ranked_attempt","commit_sync_snapshot","fail_sync_run"]);
+  assert.deepEqual(calls.map(c=>c.name),["acquire_sync_run","begin_sync_ranked_fallback","commit_sync_snapshot","fail_sync_run"]);
   assert.equal(calls[0].args.p_idempotency_key,"stable-request");
   assert.equal(calls.at(-1).args.p_error_code,"database_unavailable");
 });
-test("ranked prefetch is bounded to four workers and finishes before slow primary batches",async()=>{
+
+test("private run failures retain SQLSTATE without exposing it in the public message",async()=>{
+  const {service,calls}=serviceFixture({commitError:{message:"private SQL detail secret-test-only",code:"23505",details:"private SQL row"}});
+  await assert.rejects(service.executeSync({source:"manual"}),e=>e.code==="snapshot_rejected"&&e.status===409&&!e.message.includes("23505")&&!e.message.includes("secret"));
+  assert.match(calls.at(-1).args.p_error_message,/\[phase=commit;provider=database;sqlstate=23505\]$/);
+  assert.ok(calls.at(-1).args.p_error_message.length<=200);assert.equal(JSON.stringify(calls.at(-1)).includes("secret-test-only"),false);
+});
+
+test("private upstream diagnostics retain only provider and HTTP status",async()=>{
+  const {service,calls}=serviceFixture({playerError:{provider:"brawl",status:503,message:"private body secret-test-only",config:{headers:{Authorization:"secret-test-only"}}}});
+  await assert.rejects(service.executeSync({source:"manual"}),e=>e.code==="upstream_unavailable"&&!e.message.includes("503"));
+  assert.match(calls.at(-1).args.p_error_message,/\[phase=fetch;provider=brawl;http=503\]$/);
+  assert.equal(JSON.stringify(calls.at(-1)).includes("secret-test-only"),false);
+  const formatted=service.formatSyncFailureMessage(new service.SyncError('test','Safe '.repeat(100)),{phase:'fetch',provider:'secret-provider',httpStatus:999,sqlstate:'secret SQL',raw:'private'});
+  assert.equal(formatted.length,200);assert.equal(formatted.includes('secret'),false);assert.equal(formatted.includes('private'),false);assert.match(formatted,/\[phase=fetch\]$/);
+});
+test("ranked fallback pool is bounded to four workers and settles every requested member",async()=>{
   let active=0,peak=0;const fetched=[];
   const {service}=serviceFixture({ranked:async(tag)=>{fetched.push(tag);active++;peak=Math.max(peak,active);await Promise.resolve();active--;return {currentRank:"Gold I",highestRank:"Gold I",currentPoints:1500,highestPoints:1500};}});
   const pool=service.prefetchSyncRanks(Array.from({length:30},(_,i)=>`#P${i}`),new AbortController().signal);

@@ -1,4 +1,8 @@
+import brawlerIds from "./brawler-ids.json";
+
 export const BRAWLIFY_CDN = "https://cdn.brawlify.com";
+// Small snapshot of Brawlify names/IDs; refresh with scripts/update-brawler-catalog.cjs.
+const brawlerIdByName = new Map(Object.entries(brawlerIds).map(([name, id]) => [normalizeBrawlerName(name), id]));
 
 const RANK_NAME_TO_ID: Record<string, number> = {
   "bronze i": 58000000,
@@ -49,7 +53,9 @@ export function getBrawlerIconFromMap(
   if (exact) return exact;
 
   const normalized = iconMap[normalizeBrawlerName(brawlerName)];
-  return normalized || null;
+  if (normalized) return normalized;
+  const id = brawlerIdByName.get(normalizeBrawlerName(brawlerName));
+  return id == null ? null : `${BRAWLIFY_CDN}/brawlers/borderless/${id}.png`;
 }
 
 export function getRankIconUrl(rank: string | null | undefined) {

@@ -57,7 +57,7 @@ type QuickFilter = "all" | "attention" | "top-gainers" | "no-progress";
 type RoleFilter = "all" | "president" | "vicepresident" | "senior" | "member";
 type ActivityFilter = "all" | ActivityStatus | "unknown";
 type MovementFilter = "all" | "positive" | "flat" | "unknown";
-type RankFilter = "all" | "masters" | "legendary" | "mythic" | "diamond" | "gold" | "lower" | "unranked";
+import { rankMatches, type RankFilter } from "@/lib/rank-filter";
 
 const ROLE_ORDER = ["president", "vicepresident", "senior", "member"];
 const ACTIVITY_ORDER: Record<ActivityFilter, number> = {
@@ -122,16 +122,6 @@ function hasNoProgress(member: MemberWithGains, timeRange: TimeRangeKey) {
 function needsAttention(member: MemberWithGains, timeRange: TimeRangeKey) {
   const status = getActivityStatus(member);
   return status === "minimal" || status === "inactive" || hasNoProgress(member, timeRange);
-}
-
-function rankMatches(rank: string | null, filter: RankFilter) {
-  if (filter === "all") return true;
-  const value = (rank || "").toLowerCase();
-  if (filter === "unranked") return !rank || value.includes("unranked");
-  if (filter === "lower") {
-    return value.includes("silver") || value.includes("bronze");
-  }
-  return value.includes(filter);
 }
 
 function getSortValue(member: MemberWithGains, key: MemberSortKey, timeRange: TimeRangeKey): string | number | null {
@@ -207,6 +197,7 @@ function getDeltaClass(value: number | null | undefined) {
 function getRankLabel(filter: RankFilter) {
   const labels: Record<RankFilter, string> = {
     all: "All ranks",
+    pro: "Pro",
     masters: "Masters",
     legendary: "Legendary",
     mythic: "Mythic",
@@ -214,6 +205,7 @@ function getRankLabel(filter: RankFilter) {
     gold: "Gold",
     lower: "Silver / Bronze",
     unranked: "Unranked",
+    unknown: "Unknown",
   };
   return labels[filter];
 }
@@ -731,7 +723,7 @@ export default function MembersPage() {
                       onChange={(event) => setRankFilter(event.target.value as RankFilter)}
                       className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
                     >
-                      {(["all", "masters", "legendary", "mythic", "diamond", "gold", "lower", "unranked"] as RankFilter[]).map((filter) => (
+                      {(["all", "pro", "masters", "legendary", "mythic", "diamond", "gold", "lower", "unranked", "unknown"] as RankFilter[]).map((filter) => (
                         <option key={filter} value={filter}><T text={getRankLabel(filter)} /></option>
                       ))}
                     </select>
@@ -896,11 +888,11 @@ export default function MembersPage() {
                   </div>
                   <div className="flex justify-between gap-4">
                     <span className="text-muted-foreground"><T text="Current rank" /></span>
-                    <span className="text-end font-medium">{selectedMember.rank_current || "Unranked"}</span>
+                    <span className="text-end font-medium">{selectedMember.rank_current || <T text="Unknown" />}</span>
                   </div>
                   <div className="flex justify-between gap-4">
                     <span className="text-muted-foreground"><T text="Best rank" /></span>
-                    <span className="text-end font-medium">{selectedMember.rank_highest || "Unranked"}</span>
+                    <span className="text-end font-medium">{selectedMember.rank_highest || <T text="Unknown" />}</span>
                   </div>
                   <div className="flex justify-between gap-4">
                     <span className="text-muted-foreground"><T text="Brawlers" /></span>

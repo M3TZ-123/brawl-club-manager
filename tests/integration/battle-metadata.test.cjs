@@ -23,7 +23,7 @@ test("battle metadata, canonical facets and fenced commits use actual PostgreSQL
   await db.query(fs.readFileSync(path.join(root,"supabase/schema.sql"),"utf8"));
   await db.query("ALTER TABLE battle_history ADD COLUMN owner_user_id uuid");
   const migrations=fs.readdirSync(path.join(root,"supabase/migrations")).filter(name=>/^20260916\d{4}_.*\.sql$/.test(name)).sort();
-  for(const filename of migrations.filter(name=>!name.includes("0014_")))await db.query(fs.readFileSync(path.join(root,"supabase/migrations",filename),"utf8"));
+  for(const filename of migrations.filter(name=>name<'202609160014_'))await db.query(fs.readFileSync(path.join(root,"supabase/migrations",filename),"utf8"));
   await db.query("INSERT INTO battle_history(player_tag,battle_time,mode,trophy_change) VALUES('#LEGACY',now()-interval '1 hour','megaBoss',0)");
   const legacyVersion=(await db.query("SELECT xmin::text FROM battle_history")).rows[0].xmin;
   const migration=fs.readFileSync(path.join(root,"supabase/migrations/202609160014_battle_metadata.sql"),"utf8");

@@ -326,10 +326,9 @@ test("saved credentials keep onboarding open, survive reload, and complete only 
   assert.equal(requests.filter(request => request.url === "/api/sync").length, 2);
 });
 
-test("realtime insert bypasses a fresh battle cache and uses the server pagination cursor", async () => {
+test("sync completion bypasses a fresh battle cache and uses the server pagination cursor", async () => {
   const renderer = hookRenderer();
-  let onInsert;
-  let refreshTimer;
+  let onUpdate;
   const requests = [];
   let inserted = false;
   const match = tag => ({ matchId: `same-match-${tag}`, battle_time: "2026-01-01T00:00:00.000Z", mode: "brawlBall", map: "Map", clubPlayers: [{ tag, result: "victory" }] });
@@ -341,17 +340,14 @@ test("realtime insert bypasses a fresh battle cache and uses the server paginati
       ? { matches: [row], total: 70, nextOffset: 52 }
       : { members: [], list: [] });
   } });
-  const channel = { on(_type, _filter, callback) { onInsert = callback; return channel; }, subscribe(callback) { callback?.("SUBSCRIBED"); return channel; } };
   const component = loadTypeScript("src/app/battle-feed/page.tsx", {
     ...componentMocks, react: renderer.react,
     "@/lib/client-data-cache": cache,
-    "@/lib/supabase": { supabase: { channel: () => channel, removeChannel() {} } },
-  }, { window: windowMock, document: windowMock, setTimeout: callback => { refreshTimer = callback; return 1; }, clearTimeout() {} }).default;
+  }, { window: {...windowMock,addEventListener(type,callback){if(type==="club-data-updated")onUpdate=callback;}}, document: windowMock }).default;
   let tree = await renderer.render(component);
   const before = requests.filter(url => url.startsWith("/api/battles/feed")).length;
   inserted = true;
-  onInsert();
-  await refreshTimer();
+  onUpdate({detail:{datasets:["battles"]}});
   tree = await renderer.render(component);
   assert.equal(requests.filter(url => url.startsWith("/api/battles/feed")).length, before + 1);
   assert.equal(elements(tree).find(element => element.props?.match)?.props.match.clubPlayers[0].tag, "#NEW");

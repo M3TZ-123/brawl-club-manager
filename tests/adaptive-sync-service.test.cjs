@@ -4,6 +4,7 @@ const { loadTypeScript } = require('./helpers/load-typescript.cjs');
 
 function fixture(options = {}) {
   const calls = [];
+  const attempted = new Set();
   const now = Date.now();
   const settings = { club_tag: '#CLUB', api_key: 'private-test-key', sync_expected_interval_minutes: '10', sync_ranked_interval_minutes: '30', ...options.settings };
   const db = {
@@ -16,11 +17,12 @@ function fixture(options = {}) {
     async rpc(name,args) {
       calls.push({name,args});
       if (name === 'acquire_sync_run') return {data: options.replay || {acquired:true,run_id:'run-1',fence:2},error:null};
-      if (name === 'begin_sync_ranked_attempt') {
+      if (name === 'begin_sync_ranked_fallback') {
         if (options.attemptError) return {data:null,error:{code:'test'}};
-        if (options.attemptAllowed === false) return {data:false,error:null};
-        settings.last_ranked_attempt_time = new Date().toISOString();
-        return {data:true,error:null};
+        if (options.attemptAllowed === false) return {data:[],error:null};
+        const eligible = args.p_player_tags.filter(tag=>!attempted.has(tag));
+        eligible.forEach(tag=>attempted.add(tag));
+        return {data:eligible,error:null};
       }
       if (name === 'commit_roster_snapshot' || name === 'commit_sync_snapshot') return {data:{success:true,runId:'run-1',timestamp:new Date(now).toISOString(),synced:1,scope:name === 'commit_roster_snapshot'?'roster':'full',warnings:args.p_payload.warnings||[]},error:null};
       if (name === 'defer_sync_upstream' || name === 'fail_sync_run') return {data:true,error:null};
@@ -29,7 +31,7 @@ function fixture(options = {}) {
   };
   const api = {
     async getClub(_tag,_key,_signal,deadlineAt) {calls.push({name:'club',deadlineAt});return {tag:'#CLUB',members:[{tag:'#PLAYER',name:'Player',role:'member',trophies:123,icon:{id:1}}],requiredTrophies:100};},
-    async getPlayer() {calls.push({name:'player'});if(options.profileError)throw options.profileError;return {tag:'#PLAYER',name:'Player',trophies:123,highestTrophies:150,expLevel:10,brawlers:[],soloVictories:1,duoVictories:2,'3vs3Victories':3};},
+    async getPlayer() {calls.push({name:'player'});if(options.profileError)throw options.profileError;return {tag:'#PLAYER',name:'Player',trophies:123,highestTrophies:150,expLevel:10,brawlers:[],soloVictories:1,duoVictories:2,'3vs3Victories':3,...options.profile};},
     async getPlayerBattleLog() {calls.push({name:'battles'});if(options.battleError)throw options.battleError;return options.log || {items:[]};},
     async getPlayerRankedData() {calls.push({name:'ranked'});return options.rank || {currentRank:'Gold I',highestRank:'Gold II',currentPoints:1500,highestPoints:1800,available:true};},
     processBattleLog:()=>{if(options.processError)throw options.processError;return [];},calculateWinRateFromBattleLog:()=>({winRate:null}),
@@ -62,50 +64,45 @@ test('automatic scope uses full age, allows cron completion time, and preserves 
   assert.equal(replay.calls[0].args.p_scope,'full');assert.equal(result.runId,'prior');assert.equal(replay.calls.length,1);
 });
 
-test('full sync skips fresh ranked data and cannot advance its completeness marker',async()=>{
-  const f=fixture({settings:{last_ranked_sync_time:new Date().toISOString()}});
+test('a deferred fallback cannot advance ranked completeness',async()=>{
+  const f=fixture({attemptAllowed:false});
   await f.service.executeSync({source:'cron'});
   assert.equal(f.calls.some(call=>call.name==='ranked'),false);
   const payload=f.calls.find(call=>call.name==='commit_sync_snapshot').args.p_payload;
-  assert.equal(payload.ranked_complete,false);assert.equal(payload.battle_logs_complete,true);assert.deepEqual([...payload.warnings],[]);
+  assert.equal(payload.ranked_complete,false);assert.equal(payload.battle_logs_complete,true);assert.deepEqual([...payload.warnings],['ranked_unavailable']);
 });
 
-test('ranked completion time does not delay a thirty-minute refresh until minute forty',async()=>{
-  const f=fixture({settings:{last_ranked_sync_time:new Date(Date.now()-29*60000-40000).toISOString()}});
+test('an eligible fallback reserves before requesting and completes missing core ranks',async()=>{
+  const f=fixture();
   await f.service.executeSync({source:'cron'});
   assert.equal(f.calls.filter(call=>call.name==='ranked').length,1);
+  assert.ok(f.calls.findIndex(call=>call.name==='begin_sync_ranked_fallback')<f.calls.findIndex(call=>call.name==='ranked'));
   const payload=f.calls.find(call=>call.name==='commit_sync_snapshot').args.p_payload;
   assert.equal(payload.ranked_complete,true);assert.equal(payload.members[0].rank_available,true);
 });
 
 test('a partial ranked attempt is throttled without pretending the ranked data succeeded',async()=>{
-  const f=fixture({settings:{last_ranked_attempt_time:new Date().toISOString()}});
+  const f=fixture({attemptAllowed:false});
   await f.service.executeSync({source:'cron'});
   assert.equal(f.calls.some(call=>call.name==='ranked'),false);
   const payload=f.calls.find(call=>call.name==='commit_sync_snapshot').args.p_payload;
   assert.equal(payload.ranked_complete,false);assert.equal(payload.ranked_attempted,false);
 });
 
-test('a failed full sync keeps its ranked attempt cadence for the next automatic retry',async()=>{
-  const options={profileError:new Error('Profile unavailable')};
-  const f=fixture(options);
+test('a failed mandatory fetch starts no optional request or fallback reservation',async()=>{
+  const options={profileError:new Error('Profile unavailable')};const f=fixture(options);
   await assert.rejects(f.service.executeSync({source:'cron',scope:'auto'}));
-  assert.ok(f.calls.findIndex(call=>call.name==='begin_sync_ranked_attempt')<f.calls.findIndex(call=>call.name==='ranked'));
-  assert.equal(f.calls.some(call=>call.name==='commit_sync_snapshot'),false);
+  assert.equal(f.calls.some(call=>call.name==='begin_sync_ranked_fallback'||call.name==='ranked'),false);
+  options.profileError=null;await f.service.executeSync({source:'cron',scope:'auto'});
   assert.equal(f.calls.filter(call=>call.name==='ranked').length,1);
-  options.profileError=null;
-  await f.service.executeSync({source:'cron',scope:'auto'});
-  assert.equal(f.calls.filter(call=>call.name==='ranked').length,1);
-  assert.equal(f.calls.find(call=>call.name==='commit_sync_snapshot').args.p_payload.ranked_complete,false);
 });
-
 test('the durable ranked gate can reject a stale cadence read or fail without starting RNT',async()=>{
   for(const options of [{attemptAllowed:false},{attemptError:true}]) {
     const f=fixture(options);
     const result=await f.service.executeSync({source:'cron'});
     assert.equal(f.calls.some(call=>call.name==='ranked'),false);
     assert.equal(f.calls.find(call=>call.name==='commit_sync_snapshot').args.p_payload.ranked_attempted,false);
-    assert.deepEqual([...result.warnings],options.attemptError?['ranked_unavailable']:[]);
+    assert.deepEqual([...result.warnings],['ranked_unavailable']);
   }
 });
 
@@ -171,4 +168,17 @@ test('the HTTP route passes adaptive scope only after authentication and returns
   allowed=true;const result=await route.GET(request);
   assert.equal(received.scope,'auto');assert.equal(received.idempotencyKey,'cron-bucket');
   assert.equal(result.status,429);assert.equal(result.headers.get('Retry-After'),'120');
+});
+
+const completeProfile={rankedSeasonId:48,rankedRank:10,rankedRankName:'DIAMOND I',rankedElo:3417,highestAllTimeRankedRank:13,highestAllTimeRankedRankName:'MYTHIC I',highestAllTimeRankedElo:4678,highestSeasonRankedRank:11,highestSeasonRankedRankName:'DIAMOND II',highestSeasonRankedElo:3505};
+test('complete profile-ranked data refreshes on every full read without an RNT request or attempt',async()=>{
+ const f=fixture({profile:completeProfile,settings:{last_ranked_attempt_time:new Date().toISOString(),sync_ranked_cooldown_until:new Date(Date.now()+3600000).toISOString()}});
+ await f.service.executeSync({source:'cron'});const payload=f.calls.find(c=>c.name==='commit_sync_snapshot').args.p_payload;
+ assert.equal(f.calls.some(c=>c.name==='ranked'||c.name==='begin_sync_ranked_fallback'),false);
+ assert.equal(payload.ranked_complete,true);assert.equal(payload.ranked_attempted,false);assert.equal(payload.members[0].ranked_points,3417);assert.equal(payload.members[0].ranked_season_best_points,3505);assert.equal(payload.members[0].ranked_all_time_best_points,4678);assert.equal(payload.members[0].ranked_source,'profile');assert.deepEqual([...payload.warnings],[]);
+});
+test('manual member fallback uses the same durable per-player gate and preserves partial profile fields',async()=>{
+ const f=fixture({profile:{rankedRankName:'DIAMOND I',rankedElo:3417}});
+ await f.service.executeSync({source:'member',playerTag:'#PLAYER'});await f.service.executeSync({source:'member',playerTag:'#PLAYER'});
+ assert.equal(f.calls.filter(c=>c.name==='ranked').length,1);const commits=f.calls.filter(c=>c.name==='commit_sync_snapshot');assert.equal(commits[0].args.p_payload.members[0].ranked_source,'mixed');assert.equal(commits[0].args.p_payload.members[0].ranked_points,3417);assert.equal(commits[1].args.p_payload.ranked_complete,false);
 });

@@ -24,24 +24,27 @@ const cards = tree => elements(tree).filter(element => element.type?.name === "M
 
 function feedHarness(response = {}) {
   const renderer = hookRenderer(), requests = [];
+  const target = () => { const listeners = new Map(); return {
+    addEventListener(type, callback) { if (!listeners.has(type)) listeners.set(type, new Set()); listeners.get(type).add(callback); },
+    removeEventListener(type, callback) { listeners.get(type)?.delete(callback); },
+    dispatchEvent(event) { for (const callback of [...listeners.get(event.type) || []]) callback(event); },
+  }; };
+  const window = target(), document = { ...target(), visibilityState: "visible" };
   let activeRenderer = renderer;
   const react = new Proxy({}, { get: (_, key) => (...args) => activeRenderer.react[key](...args) });
-  const channel = { on() { return this; }, subscribe() { return this; } };
   const component = loadTypeScript("src/app/battle-feed/page.tsx", {
     ...mocks, react,
-    "@/lib/supabase": { supabase: { channel: () => channel, removeChannel() {} } },
+    "@/lib/supabase": { supabase: { channel() { assert.fail("Feed must share the status monitor's subscription"); } } },
     "@/lib/client-data-cache": { fetchJsonCached: async url => {
-      if (url === "/api/members") return { members: [{ player_tag: "#ONE" }, { player_tag: "#TWO" }] };
-      if (url.startsWith("https://api.brawlapi.com/")) return { list: [] };
       assert.ok(url.startsWith("/api/battles/feed?"), `Unexpected request ${url}`);
       requests.push(new URL(url, "http://fixture").searchParams);
       return typeof response === "function" ? response(requests.at(-1)) : {
         matches: [match()], modes: ["gemGrab"], total: 1, nextOffset: null, ...response,
       };
     } },
-  }, { window: windowMock, document: { addEventListener() {}, removeEventListener() {} } }).default;
+  }, { window, document }).default;
   return {
-    requests,
+    requests, window, document,
     render() { activeRenderer = renderer; return renderer.render(component); },
     mount(element) {
       const child = hookRenderer();
@@ -49,6 +52,20 @@ function feedHarness(response = {}) {
     },
   };
 }
+
+test("the feed uses one response for roster and battles, ignores rank-only updates, and defers hidden refreshes", async () => {
+  const page = feedHarness({ members: [{ tag: "#ONE", name: "One" }] });
+  await page.render(); assert.equal(page.requests.length, 1);
+  page.window.dispatchEvent({ type: "club-data-updated", detail: { datasets: ["ranked"] } });
+  await page.render(); assert.equal(page.requests.length, 1);
+  page.window.dispatchEvent({ type: "club-data-updated", detail: { datasets: ["battles"] } });
+  await page.render(); assert.equal(page.requests.length, 2);
+  page.document.visibilityState = "hidden";
+  for (let i = 0; i < 3; i++) page.window.dispatchEvent({ type: "club-data-updated", detail: { datasets: ["roster"] } });
+  await page.render(); assert.equal(page.requests.length, 2);
+  page.document.visibilityState = "visible"; page.document.dispatchEvent({ type: "visibilitychange" });
+  await page.render(); assert.equal(page.requests.length, 3); assert.equal(page.requests.at(-1).get("offset"), "0");
+});
 
 test("desktop and mobile distinguish modes from battle types, retaining zero-count special events", async () => {
   const page = feedHarness({

@@ -75,6 +75,16 @@ export interface BrawlStarsPlayer {
     name: string;
   };
   brawlers: BrawlStarsBrawler[];
+  rankedSeasonId?: number;
+  rankedRank?: number;
+  rankedRankName?: string;
+  rankedElo?: number;
+  highestSeasonRankedRank?: number;
+  highestSeasonRankedRankName?: string;
+  highestSeasonRankedElo?: number;
+  highestAllTimeRankedRank?: number;
+  highestAllTimeRankedRankName?: string;
+  highestAllTimeRankedElo?: number;
 }
 
 export interface BrawlStarsBrawler {

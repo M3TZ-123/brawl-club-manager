@@ -1,4 +1,10 @@
 export const arExtra: Record<string, string> = {
+  "Ranked points": "نقاط التصنيف",
+  "All-time best": "الأفضل تاريخيًا",
+  "Season best": "الأفضل هذا الموسم",
+  "Rank last checked": "آخر فحص للرتبة",
+  "Could not sign out. Please try again.": "تعذّر تسجيل الخروج. يُرجى المحاولة مجددًا.",
+  "Request timed out. Please try again.": "انتهت مهلة الطلب. يُرجى المحاولة مجددًا.",
   "Battle type / event": "نوع المباراة / الحدث",
   "All battle types": "كل أنواع المباريات",
   "Choose a mode, battle type or member.": "اختر طورًا أو نوع مباراة أو عضوًا.",

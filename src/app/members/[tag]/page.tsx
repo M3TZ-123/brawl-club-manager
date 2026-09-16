@@ -1,10 +1,11 @@
 "use client";
-import { T, useI18n } from "@/components/locale-provider";
+import { T, useI18n, LocalDate } from "@/components/locale-provider";
 
 
 import dynamic from "next/dynamic";
 import { use, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Image from "next/image";
+import { BrawlImage } from "@/components/brawl-image";
 import { TimeRangePicker } from "@/components/time-range-picker";
 import { TIME_RANGES, type TimeRangeKey, type TrophyPeriodMetric } from "@/lib/time-range";
 import { DataConfidenceNotice } from "@/components/sync-health";
@@ -382,11 +383,14 @@ export default function MemberDetailPage({ params }: PageProps) {
                 </CardHeader>
                 <CardContent>
                   <div className={`text-2xl font-bold ${getRankColor(member.rank_current || "")}`}>
-                    {member.rank_current || "Unranked"}
+                    {member.rank_current || <T text="Unknown" />}
                   </div>
+                  {member.ranked_points != null && <p className="text-sm"><T text="Ranked points" />: {formatNumber(member.ranked_points)}</p>}
                   <p className="text-xs text-muted-foreground">
-                    <T text=" Highest: " />{member.rank_highest || "N/A"}
+                    <T text="All-time best" />: {member.rank_highest || <T text="Unknown" />}
                   </p>
+                  {member.ranked_season_best && <p className="text-xs text-muted-foreground"><T text="Season best" />: {member.ranked_season_best}</p>}
+                  {member.ranked_checked_at && <p className="mt-2 text-xs text-muted-foreground"><T text="Rank last checked" />: <LocalDate value={member.ranked_checked_at} time /></p>}
                 </CardContent>
               </Card>
 
@@ -461,7 +465,7 @@ export default function MemberDetailPage({ params }: PageProps) {
                     {topBrawlers.map((brawler) => (
                       <div key={brawler.id} className="rounded-md border border-border/70 bg-card/50 p-3">
                         <div className="flex items-center gap-2 mb-2">
-                          <Image
+                          <BrawlImage
                             src={brawler.icon_url}
                             alt={brawler.name}
                             width={36}
@@ -510,7 +514,7 @@ export default function MemberDetailPage({ params }: PageProps) {
                           <div className="min-w-0">
                             <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5">
                               <span className={`text-sm font-medium ${result.className}`}>{<T text={result.label} />}</span>
-                              <span className="inline-flex items-center gap-1 text-sm text-muted-foreground">{mode.imageUrl ? <Image src={mode.imageUrl} alt="" width={16} height={16} className="h-4 w-4 object-contain" /> : <span aria-hidden="true">{mode.icon}</span>}{t(mode.label)}</span>
+                              <span className="inline-flex items-center gap-1 text-sm text-muted-foreground">{mode.imageUrl ? <BrawlImage fallback={mode.icon} src={mode.imageUrl} alt="" width={16} height={16} className="h-4 w-4 object-contain" /> : <span aria-hidden="true">{mode.icon}</span>}{t(mode.label)}</span>
                               <span className="text-xs text-muted-foreground">{t(context.label)}</span>
                             </div>
                             <p className="text-xs text-muted-foreground truncate">

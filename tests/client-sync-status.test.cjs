@@ -8,7 +8,9 @@ function deferred() { let resolve; const promise = new Promise(done => {resolve 
 function target() { const events = new Map(); return {events,addEventListener(type,listener) {if (!events.has(type)) events.set(type,new Set()); events.get(type).add(listener);},removeEventListener(type,listener) {events.get(type)?.delete(listener);},dispatchEvent(event) {for (const listener of [...(events.get(event.type)||[])]) listener(event);}}; }
 function fixture(initial = "2026-09-15T23:40:07.824Z") {
   const window = target(), document = {...target(),visibilityState:"visible"}, timers = new Map(), requests = [], writes = [], emitted = [], invalidations = [];
-  let response = status(timestamp), nextTimer = 0;
+  let response = status(timestamp), nextTimer = 0, authPending = false, authGeneration = 0;
+  const channels = [];
+  const supabase = { channel(name) { const channel = {name,removed:false,on(type,filter,callback) {Object.assign(channel,{type,filter,callback});return channel;},subscribe() {return channel;}}; channels.push(channel);return channel; },removeChannel(channel) {channel.removed=true;} };
   const state = {lastSyncTime:initial,setLastSyncTime(value) {state.lastSyncTime = value;}};
   window.setInterval = (callback,ms) => {assert.equal(ms,30000);timers.set(++nextTimer,callback);return nextTimer;};
   window.clearInterval = id => timers.delete(id);
@@ -16,9 +18,11 @@ function fixture(initial = "2026-09-15T23:40:07.824Z") {
   window.addEventListener("club-data-updated",event => emitted.push(event.detail));
   const syncStatusModule = loadTypeScript("src/lib/client-sync-status.ts", {
     "@/lib/store": {useAppStore:{getState:()=>state}},
+    "@/lib/supabase": {supabase},
+    "@/lib/client-admin-session": {isAdminSessionChanging:()=>authPending,getAdminSessionGeneration:()=>authGeneration},
     "@/lib/client-data-cache": {invalidateJsonCache(prefix) {invalidations.push(prefix);},fetchJsonCached: async (url,options) => {requests.push({url,options}); if(response instanceof Error) throw response; return response;}},
   }, {window,document,CustomEvent:class {constructor(type,options={}) {this.type=type;this.detail=options.detail;}}});
-  return {module:syncStatusModule,state,window,document,timers,requests,writes,emitted,invalidations,setResponse(value) {response=value;}};
+  return {module:syncStatusModule,state,window,document,timers,requests,writes,emitted,invalidations,channels,setResponse(value) {response=value;},setAuthPending(value) {authPending=value;},advanceAuthGeneration(){authGeneration++;}};
 }
 
 test("sidebar and health consumers share one poll and replace even a newer persisted timestamp with the server value", async () => {
@@ -176,4 +180,63 @@ test("an older admin request cannot restore capacity after logout while the publ
  oldRead.resolve({...status(timestamp),capacity});await settle();
  assert.equal(Object.hasOwn(f.module.getSyncHealth(),"capacity"),false);assert.equal(f.requests.length,3);
  publicRead.resolve(status(timestamp));await settle();assert.equal(Object.hasOwn(f.module.getSyncHealth(),"capacity"),false);stop();
+});
+
+test("many health consumers share one public completion subscription and deduplicate run versions", async () => {
+ const f=fixture(timestamp); const stops=[1,2,3].map(()=>f.module.subscribeSyncHealth(()=>{})); await settle();
+ assert.equal(f.channels.length,1);
+ const channel=f.channels[0];
+ assert.deepEqual(JSON.parse(JSON.stringify(channel.filter)),{event:"UPDATE",schema:"public",table:"club_sync_signals",filter:"id=eq.1"});
+ assert.equal(channel.type,"postgres_changes");
+ channel.callback({new:{id:1,version:"run-1",datasets:["roster","private-notes","roster"]}}); await settle();
+ assert.equal(f.requests.length,2);
+ assert.deepEqual(Array.from(f.emitted.at(-1).datasets),["roster"]);
+ channel.callback({new:{id:1,version:"run-1",datasets:["roster"]}});
+ channel.callback({new:{id:2,version:"run-2",datasets:["battles"]}}); await settle();
+ assert.equal(f.requests.length,2,"Duplicate and non-singleton signals do not refetch");
+ stops[0](); stops[1](); assert.equal(channel.removed,false); stops[2](); assert.equal(channel.removed,true);
+});
+
+test("hidden tabs unsubscribe, pause polling and recover missed completion on visibility",async()=>{
+ const f=fixture(timestamp); const stop=f.module.subscribeSyncHealth(()=>{}); await settle();
+ f.document.visibilityState="hidden"; f.document.dispatchEvent({type:"visibilitychange"});
+ assert.equal(f.channels[0].removed,true);
+ f.channels[0].callback({new:{id:1,version:"hidden-run",datasets:["battles"]}});
+ f.timers.values().next().value(); await settle(); assert.equal(f.requests.length,1);
+ f.setResponse({...status(timestamp),latestRun:{scope:"member",status:"succeeded",finishedAt:"2026-09-16T00:25:00Z"}});
+ f.document.visibilityState="visible"; f.document.dispatchEvent({type:"visibilitychange"}); await settle();
+ assert.equal(f.channels.length,2); assert.equal(f.requests.length,2);
+ assert.ok(f.emitted.at(-1).datasets.includes("battles"),"Polling recovers a member refresh even if global full markers did not advance"); stop();
+});
+
+test("pending auth mutation clears capacity and defers HTTP until the cookie mutation finishes",async()=>{
+ const f=fixture(timestamp); f.setResponse({...status(timestamp),capacity}); const stop=f.module.subscribeSyncHealth(()=>{}); await settle();
+ f.window.dispatchEvent({type:"admin-session-changed",detail:{source:"admin-session-store",pending:true}});
+ assert.equal(Object.hasOwn(f.module.getSyncHealth(),"capacity"),false);
+ f.window.dispatchEvent({type:"focus"}); f.timers.values().next().value(); await settle();
+ assert.equal(f.requests.length,1,"A pending logout must not refetch with the old admin cookie");
+ f.setResponse(status(timestamp));
+ f.window.dispatchEvent({type:"admin-session-changed",detail:{source:"admin-session-store",pending:false}}); await settle();
+ assert.equal(f.requests.length,2); assert.equal(Object.hasOwn(f.module.getSyncHealth(),"capacity"),false); stop();
+});
+
+test("remounting after a gate hid all consumers recovers an auth completion event that was missed",async()=>{
+ const f=fixture(timestamp);f.setResponse({...status(timestamp),capacity});let stop=f.module.subscribeSyncHealth(()=>{});await settle();
+ f.setAuthPending(true);f.window.dispatchEvent({type:"admin-session-changed",detail:{pending:true}});stop();
+ stop=f.module.subscribeSyncHealth(()=>{});await settle();
+ assert.equal(f.requests.length,1,"A remount during the actual mutation must still defer HTTP");stop();
+ f.setAuthPending(false);f.setResponse(status(timestamp));f.window.dispatchEvent({type:"admin-session-changed",detail:{pending:false}});
+ stop=f.module.subscribeSyncHealth(()=>{});await settle();
+ assert.equal(f.requests.length,2,"A missed completion event must not pause health reads forever");
+ assert.equal(Object.hasOwn(f.module.getSyncHealth(),"capacity"),false);stop();
+});
+
+test("private snapshots cannot survive an auth generation change while every health consumer is unmounted",async()=>{
+ const f=fixture(timestamp);f.setResponse({...status(timestamp),capacity});const stop=f.module.subscribeSyncHealth(()=>{});await settle();
+ assert.equal(f.module.getSyncHealth().capacity.level,"warning");stop();
+ f.advanceAuthGeneration();
+ assert.equal(Object.hasOwn(f.module.getSyncHealth(),"capacity"),false,"The first snapshot read must clear private data before subscription effects");
+ const pending=deferred();f.setResponse(pending.promise);const read=f.module.refreshSyncHealth();
+ f.advanceAuthGeneration();pending.resolve({...status(timestamp),capacity});await read;
+ assert.equal(Object.hasOwn(f.module.getSyncHealth(),"capacity"),false,"A response from an earlier auth generation is not accepted even without listeners");
 });
