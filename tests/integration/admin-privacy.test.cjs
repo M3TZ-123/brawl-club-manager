@@ -7,7 +7,8 @@ const { Client, Pool } = require("pg");
 
 const connectionString = process.env.SECURITY_TEST_DATABASE_URL;
 const root = path.resolve(__dirname, "../..");
-const privacySql = fs.readFileSync(path.join(root, "supabase/migrations/202609160002_admin_privacy.sql"), "utf8");
+const privacySql = ["202609160002_admin_privacy.sql", "202609160019_login_retry_clock.sql"]
+  .map(file => fs.readFileSync(path.join(root, "supabase/migrations", file), "utf8")).join("\n");
 const key = value => createHash("sha256").update(value).digest("hex");
 
 test("private reviews and login limits enforce real database permissions", { skip: !connectionString }, async t => {
@@ -153,5 +154,36 @@ test("private reviews and login limits enforce real database permissions", { ski
     // asRole rolls back; use a committed request to measure cleanup.
     await client.query("SELECT * FROM public.consume_admin_login_attempt($1)", [key("cleanup")]);
     assert.equal((await client.query("SELECT count(*)::int AS count FROM public.admin_login_attempts WHERE expires_at < now()")).rows[0].count, 150);
+  });
+
+  await t.test("a waiting login measures retry time after a competing transaction establishes the window", async () => {
+    const locker = new Client({ connectionString }), waiting = new Client({ connectionString });
+    await Promise.all([locker.connect(), waiting.connect()]);
+    let attempt;
+    try {
+      await locker.query("BEGIN; LOCK TABLE public.admin_login_attempts IN SHARE ROW EXCLUSIVE MODE");
+      await waiting.query("SET ROLE service_role");
+      const pid = (await waiting.query("SELECT pg_backend_pid() pid")).rows[0].pid;
+      attempt = waiting.query("SELECT * FROM public.consume_admin_login_attempt($1)", [key("waited-window")]);
+      // Observe the lock wait instead of relying on scheduler timing. The
+      // function has captured its initial clock before its first DELETE waits.
+      let blocked = false;
+      const deadline = Date.now() + 5000;
+      while (!blocked && Date.now() < deadline) {
+        blocked = (await client.query("SELECT wait_event_type='Lock' blocked FROM pg_stat_activity WHERE pid=$1", [pid])).rows[0]?.blocked;
+        if (!blocked) await new Promise(resolve => setTimeout(resolve, 10));
+      }
+      assert.equal(blocked, true, "The login must be waiting inside the function before the competing write");
+      await locker.query("INSERT INTO public.admin_login_attempts(client_key,attempt_count,expires_at) VALUES($1,8,clock_timestamp()+interval '10 minutes')", [key("waited-window")]);
+      await locker.query("COMMIT");
+      const result = (await attempt).rows[0];
+      assert.equal(result.allowed, false);
+      assert.ok(result.retry_after > 0 && result.retry_after <= 600, `Retry after lock wait: ${result.retry_after}`);
+      assert.equal((await client.query("SELECT attempt_count FROM public.admin_login_attempts WHERE client_key=$1", [key("waited-window")])).rows[0].attempt_count, 9);
+    } finally {
+      await locker.query("ROLLBACK");
+      await attempt?.catch(() => {});
+      await Promise.all([locker.end(), waiting.end()]);
+    }
   });
 });
