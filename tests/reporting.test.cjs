@@ -16,7 +16,7 @@ function fixture(threshold = "48") {
     settings: [{ key: "inactivity_threshold", value: threshold }],
     activity_summary: [1, 30, 70].map((hours, index) => ({
       player_tag: ["#A", "#B", "#C"][index], last_battle_at: ago(hours), last_activity_at: ago(hours),
-      trophies_24h: index === 0 ? 8 : null, trophies_3d: 8, trophies_7d: 8,
+      trophies_24h: index === 0 ? 8 : null, trophies_3d: 8, trophies_7d: 8, trophies_30d: index === 0 ? 300 : null, trophies_90d: null,
     })),
     member_history: ["#A", "#B", "#C"].map(player_tag => ({ player_tag, is_current_member: true })),
     members: [
@@ -56,7 +56,12 @@ function load(file, tables) {
 
 function database(tables) {
   return { ...readOnlyDatabase(tables), async rpc(name, args) {
-    assert.equal(name, "sync_activity_summary");
+    if (name === "report_account_trophy_trend") {
+      const today = Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate());
+      return { data: Array.from({ length: args.p_days }, (_, index) => ({ date: new Date(today - (args.p_days - 1 - index) * 86_400_000).toISOString().slice(0, 10), trophies: null, observed_members: 0, total_members: args.p_player_tags.length })), error: null };
+    }
+    if (name === "report_member_activity_history") return { data: tables.activity_log.filter(row => row.player_tag === args.p_player_tag), error: null };
+    assert.equal(name, "sync_activity_summary_v2");
     assert.equal(args.p_now, now.toISOString());
     return { data: tables.activity_summary.filter(row => args.p_player_tags.includes(row.player_tag)), error: null };
   } };
@@ -92,7 +97,7 @@ test("weekly totals, chart, events, and insights share the same seven UTC dates"
   assert.equal(report.summary.totalTrophies, 6000);
   assert.equal(report.summary.weeklyBattles, 30);
   assert.equal(report.summary.weeklyWins, 25);
-  assert.equal(report.topGainers[0].trophyChange, 230);
+  assert.equal(report.topGainers[0].trophyChange, 8);
   assert.equal(report.trophyTrend.length, 7);
   assert.equal(report.trophyTrend[0].date, report.period.start.slice(0, 10));
   assert.equal(report.trophyTrend[6].date, report.period.end.slice(0, 10));

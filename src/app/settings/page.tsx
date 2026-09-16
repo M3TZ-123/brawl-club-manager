@@ -1,5 +1,5 @@
 "use client";
-import { T } from "@/components/locale-provider";
+import { T, useI18n } from "@/components/locale-provider";
 
 
 import { useState, useEffect } from "react";
@@ -18,13 +18,12 @@ import {
   Clock, 
   Palette, 
   Database, 
-  AlertTriangle,
   CheckCircle,
   ExternalLink,
-  RotateCcw
 } from "lucide-react";
 
 export default function SettingsPage() {
+  const { t } = useI18n();
   const {
     clubTag,
     apiKeyConfigured,
@@ -79,7 +78,7 @@ export default function SettingsPage() {
       setTimeout(() => setGeneralStatus("idle"), 2000);
     } catch (error) {
       console.error("Failed to save general settings:", error);
-      alert("Failed to save settings. Please try again.");
+      alert(t("Failed to save settings. Please try again."));
       setGeneralStatus("idle");
     }
   };
@@ -96,7 +95,7 @@ export default function SettingsPage() {
       setTimeout(() => setNotifStatus("idle"), 2000);
     } catch (error) {
       console.error("Failed to save notification settings:", error);
-      alert("Failed to save notification settings. Please try again.");
+      alert(t("Failed to save notification settings. Please try again."));
       setNotifStatus("idle");
     }
   };
@@ -110,37 +109,8 @@ export default function SettingsPage() {
       setTimeout(() => setActivityStatus("idle"), 2000);
     } catch (error) {
       console.error("Failed to save activity settings:", error);
-      alert("Failed to save activity settings. Please try again.");
+      alert(t("Failed to save activity settings. Please try again."));
       setActivityStatus("idle");
-    }
-  };
-
-  const handleClearData = () => {
-    if (confirm("Are you sure you want to clear all local data? This cannot be undone.")) {
-      localStorage.clear();
-      window.location.reload();
-    }
-  };
-
-  const [resetStatus, setResetStatus] = useState<"idle" | "resetting" | "done">("idle");
-
-  const handleResetTracking = async () => {
-    if (confirm("Are you sure you want to reset join/leave tracking? All existing events will be cleared and tracking will start fresh from today.")) {
-      setResetStatus("resetting");
-      try {
-        const response = await fetch("/api/events", { method: "DELETE" });
-        if (response.ok) {
-          setResetStatus("done");
-          setTimeout(() => setResetStatus("idle"), 3000);
-        } else {
-          alert("Failed to reset tracking. Please try again.");
-          setResetStatus("idle");
-        }
-      } catch (error) {
-        console.error("Error resetting tracking:", error);
-        alert("Failed to reset tracking. Please try again.");
-        setResetStatus("idle");
-      }
     }
   };
 
@@ -175,26 +145,33 @@ export default function SettingsPage() {
                   </CardHeader>
                   <CardContent className="space-y-4">
                     <div className="space-y-2">
-                      <label className="text-sm font-medium"><T text="Club Tag" /></label>
+                      <label htmlFor="settings-club-tag" className="text-sm font-medium"><T text="Club Tag" /></label>
                       <Input
+                        id="settings-club-tag"
+                        aria-describedby="settings-club-tag-hint"
+                        dir="ltr"
+                        spellCheck={false}
                         placeholder="#ABC123"
                         value={effectiveClubTag}
                         onChange={(e) => setLocalClubTag(e.target.value.toUpperCase())}
                       />
-                      <p className="text-xs text-muted-foreground">
+                      <p id="settings-club-tag-hint" className="text-xs text-muted-foreground">
                         <T text=" Your club&apos;s unique tag (found in-game) " /></p>
                     </div>
 
                     <div className="space-y-2">
-                      <label className="text-sm font-medium"><T text="API Key" /></label>
+                      <label htmlFor="settings-api-key" className="text-sm font-medium"><T text="API Key" /></label>
                       <Input
+                        id="settings-api-key"
+                        aria-describedby="settings-api-key-hint"
+                        dir="ltr"
                         type="password"
-                        placeholder={apiKeyConfigured ? "Stored API key configured" : "Enter your API key"}
+                        placeholder={t(apiKeyConfigured ? "Stored API key configured" : "Enter your API key")}
                         value={localApiKey}
                         onChange={(e) => setLocalApiKey(e.target.value)}
                         autoComplete="off"
                       />
-                      <p className="text-xs text-muted-foreground">
+                      <p id="settings-api-key-hint" className="text-xs text-muted-foreground">
                         {apiKeyConfigured ? <T text="Leave blank to keep the saved key. " /> : ""}
                         <T text=" Get your API key from" />{" "}
                         <a
@@ -210,7 +187,7 @@ export default function SettingsPage() {
 
                     <Button onClick={handleSaveGeneral} disabled={generalStatus === "saving"}>
                       {generalStatus === "saving" ? (
-                        "Saving..."
+                        t("Saving...")
                       ) : generalStatus === "saved" ? (
                         <>
                           <CheckCircle className="h-4 w-4 me-2" />
@@ -237,9 +214,12 @@ export default function SettingsPage() {
                   </CardHeader>
                   <CardContent className="space-y-4">
                     <div className="space-y-2">
-                      <label className="text-sm font-medium">
+                      <label htmlFor="settings-inactivity-threshold" className="text-sm font-medium">
                         <T text=" Inactivity Threshold (hours) " /></label>
                       <Input
+                        id="settings-inactivity-threshold"
+                        aria-describedby="settings-inactivity-hint"
+                        dir="ltr"
                         type="number"
                         min="48"
                         max="168"
@@ -248,28 +228,28 @@ export default function SettingsPage() {
                           setLocalInactivityThreshold(parseBoundedInput(e.target.value, 48, 48, 168))
                         }
                       />
-                      <p className="text-xs text-muted-foreground">
-                        <T text=" Players with no tracked battle past this threshold are marked inactive " /></p>
+                      <p id="settings-inactivity-hint" className="text-xs text-muted-foreground">
+                        <T text=" Players with no recorded battle or trophy change past this threshold are marked inactive " /></p>
                     </div>
 
                     <div className="p-4 rounded-lg bg-muted/50">
                       <h4 className="font-medium mb-2"><T text="Sync Schedule" /></h4>
                       <p className="text-sm text-muted-foreground">
-                        <T text="The dashboard shows the roster, full sync, and ranked refresh intervals. Use Sync Now for an immediate full sync." /></p>
+                        <T text="View sync and storage details in the Admin page. Use Sync Now for an immediate update." /></p>
                     </div>
 
                     <div className="p-4 rounded-lg bg-muted/50">
                       <h4 className="font-medium mb-2"><T text="Activity Detection" /></h4>
                       <ul className="text-sm text-muted-foreground space-y-1">
-                        <li><T text="Active: played in the last 24 hours" /></li>
-                        <li><T text="Low activity: played between 24 and " />{effectiveInactivityThreshold} <T text=" hours ago" /></li>
-                        <li><T text="Inactive: no tracked battle for more than " />{effectiveInactivityThreshold} <T text=" hours" /></li>
+                        <li><T text="Active: battle or trophy change in the last 24 hours" /></li>
+                        <li><T text="Low activity: last recorded activity between 24 and " />{effectiveInactivityThreshold} <T text=" hours ago" /></li>
+                        <li><T text="Inactive: no recorded activity for more than " />{effectiveInactivityThreshold} <T text=" hours" /></li>
                       </ul>
                     </div>
 
                     <Button onClick={handleSaveActivity} disabled={activityStatus === "saving"}>
                       {activityStatus === "saving" ? (
-                        "Saving..."
+                        t("Saving...")
                       ) : activityStatus === "saved" ? (
                         <>
                           <CheckCircle className="h-4 w-4 me-2" />
@@ -297,26 +277,32 @@ export default function SettingsPage() {
                   <CardContent className="space-y-4">
                     <div className="flex items-center justify-between">
                       <div>
-                        <p className="font-medium"><T text="Enable Notifications" /></p>
-                        <p className="text-sm text-muted-foreground">
+                        <label htmlFor="settings-notifications" className="font-medium"><T text="Enable Notifications" /></label>
+                        <p id="settings-notifications-hint" className="text-sm text-muted-foreground">
                           <T text=" Receive alerts for important events " /></p>
                       </div>
                       <Switch
+                        id="settings-notifications"
+                        aria-describedby="settings-notifications-hint"
                         checked={notificationsEnabled}
                         onCheckedChange={setNotificationsEnabled}
                       />
                     </div>
 
                     <div className="space-y-2">
-                      <label className="text-sm font-medium"><T text="Discord Webhook URL" /></label>
+                      <label htmlFor="settings-discord-webhook" className="text-sm font-medium"><T text="Discord Webhook URL" /></label>
                       <Input
+                        id="settings-discord-webhook"
+                        aria-describedby="settings-discord-webhook-hint"
+                        dir="ltr"
+                        spellCheck={false}
                         type="url"
-                        placeholder={discordWebhookConfigured ? "Stored webhook configured" : "https://discord.com/api/webhooks/..."}
+                        placeholder={discordWebhookConfigured ? t("Stored webhook configured") : "https://discord.com/api/webhooks/..."}
                         value={localDiscordWebhook}
                         onChange={(e) => setLocalDiscordWebhook(e.target.value)}
                         autoComplete="off"
                       />
-                      <p className="text-xs text-muted-foreground">
+                      <p id="settings-discord-webhook-hint" className="text-xs text-muted-foreground">
                         <T text=" Optional: Send notifications to a Discord channel. " />{discordWebhookConfigured ? <T text=" Leave blank to keep the saved webhook." /> : ""}
                       </p>
                     </div>
@@ -332,7 +318,7 @@ export default function SettingsPage() {
 
                     <Button onClick={handleSaveNotifications} disabled={notifStatus === "saving"}>
                       {notifStatus === "saving" ? (
-                        "Saving..."
+                        t("Saving...")
                       ) : notifStatus === "saved" ? (
                         <>
                           <CheckCircle className="h-4 w-4 me-2" />
@@ -358,10 +344,12 @@ export default function SettingsPage() {
                       <T text=" Customize the look and feel " /></CardDescription>
                   </CardHeader>
                   <CardContent className="space-y-4">
-                    <div>
-                      <label className="text-sm font-medium mb-3 block"><T text="Theme" /></label>
+                    <fieldset>
+                      <legend className="text-sm font-medium mb-3"><T text="Theme" /></legend>
                       <div className="flex gap-3">
                         <button
+                          type="button"
+                          aria-pressed={theme === "light"}
                           onClick={() => setTheme("light")}
                           className={`flex-1 p-4 rounded-lg border-2 transition-colors ${
                             theme === "light"
@@ -373,6 +361,8 @@ export default function SettingsPage() {
                           <p className="font-medium"><T text="Light" /></p>
                         </button>
                         <button
+                          type="button"
+                          aria-pressed={theme === "dark"}
                           onClick={() => setTheme("dark")}
                           className={`flex-1 p-4 rounded-lg border-2 transition-colors ${
                             theme === "dark"
@@ -384,7 +374,7 @@ export default function SettingsPage() {
                           <p className="font-medium"><T text="Dark" /></p>
                         </button>
                       </div>
-                    </div>
+                    </fieldset>
                   </CardContent>
                 </Card>
               </TabsContent>
@@ -401,56 +391,14 @@ export default function SettingsPage() {
                   </CardHeader>
                   <CardContent className="space-y-4">
                     <div className="p-4 rounded-lg bg-muted/50">
-                      <h4 className="font-medium mb-2"><T text="Storage Info" /></h4>
+                      <h4 className="font-medium mb-2"><T text="History and backups" /></h4>
                       <ul className="text-sm text-muted-foreground space-y-1">
-                        <li><T text="• Local settings stored in browser" /></li>
-                        <li><T text="• Member data synced to Supabase database" /></li>
-                        <li><T text="• Activity logs retained for 90 days; daily summaries for 365 days" /></li>
+                        <li><T text="Display preferences are saved on this device." /></li>
+                        <li><T text="Club history is saved securely and backed up daily." /></li>
+                        <li><T text="Account trophy history is retained for 91 days to support 90-day comparisons; daily summaries for 365 days." /></li>
                       </ul>
                     </div>
 
-                    {/* Reset Join/Leave Tracking */}
-                    <div className="border-t pt-4">
-                      <div className="flex items-start gap-3 p-4 rounded-lg bg-blue-500/10 border border-blue-500/20">
-                        <RotateCcw className="h-5 w-5 text-blue-500 mt-0.5" />
-                        <div>
-                          <h4 className="font-medium text-blue-500"><T text="Reset Join/Leave Tracking" /></h4>
-                          <p className="text-sm text-muted-foreground mb-3">
-                            <T text=" Clear all existing join/leave events and start tracking fresh from today. Current members will be set as the baseline - only new joins and leaves will be recorded. " /></p>
-                          <Button 
-                            variant="outline" 
-                            onClick={handleResetTracking}
-                            disabled={resetStatus === "resetting"}
-                            className="border-blue-500/50 hover:bg-blue-500/10"
-                          >
-                            {resetStatus === "resetting" ? (
-                              "Resetting..."
-                            ) : resetStatus === "done" ? (
-                              <>
-                                <CheckCircle className="h-4 w-4 me-2" />
-                                <T text=" Tracking Reset! " /></>
-                            ) : (
-                              <>
-                                <RotateCcw className="h-4 w-4 me-2" />
-                                <T text=" Reset Tracking from Today " /></>
-                            )}
-                          </Button>
-                        </div>
-                      </div>
-                    </div>
-
-                    <div className="border-t pt-4">
-                      <div className="flex items-start gap-3 p-4 rounded-lg bg-destructive/10 border border-destructive/20">
-                        <AlertTriangle className="h-5 w-5 text-destructive mt-0.5" />
-                        <div>
-                          <h4 className="font-medium text-destructive"><T text="Danger Zone" /></h4>
-                          <p className="text-sm text-muted-foreground mb-3">
-                            <T text=" Clear all locally stored data. This will reset your settings and require reconfiguration. " /></p>
-                          <Button variant="destructive" onClick={handleClearData}>
-                            <T text=" Clear Local Data " /></Button>
-                        </div>
-                      </div>
-                    </div>
                   </CardContent>
                 </Card>
               </TabsContent>

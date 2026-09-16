@@ -6,8 +6,11 @@ import { ReactNode, useCallback, useEffect, useMemo, useRef, useState } from "re
 import Link from "next/link";
 import { cn } from "@/lib/utils";
 import { fetchJsonCached, invalidateJsonCache } from "@/lib/client-data-cache";
+import { localizeNotificationForDisplay } from "@/lib/notification-display";
 import { useAdminSession } from "@/hooks/use-admin-session";
 import { LayoutWrapper } from "@/components/layout-wrapper";
+import { TimeRangePicker } from "@/components/time-range-picker";
+import { type TimeRangeKey } from "@/lib/time-range";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import {
@@ -56,7 +59,7 @@ function getDateHeading(date: Date, locale: string) {
 }
 
 export default function NotificationsPage() {
-  const { locale } = useI18n();
+  const { locale, t, number } = useI18n();
   const { isAdmin } = useAdminSession();
   const [notifications, setNotifications] = useState<Notification[]>([]);
   const [unreadCount, setUnreadCount] = useState(0);
@@ -64,15 +67,19 @@ export default function NotificationsPage() {
   const [loadingMore, setLoadingMore] = useState(false);
   const [nextOffset, setNextOffset] = useState<number | null>(null);
   const loadSequence = useRef(0);
+  const [selectedRange, setSelectedRange] = useState<TimeRangeKey>("7d");
+  const [loadError, setLoadError] = useState(false);
+  const [actionError, setActionError] = useState(false);
   const [filter, setFilter] = useState<"all" | "unread">("all");
   const [category, setCategory] = useState<"all" | "join" | "leave" | "inactive" | "promotion" | "name_change" | "capacity" | "battle_gap">("all");
 
   const loadNotifications = useCallback(async (force = false, offset = 0) => {
     const sequence = ++loadSequence.current;
+    setLoadError(false);
     try {
       if (offset === 0) setLoading(true);
       else setLoadingMore(true);
-      const params = new URLSearchParams({ limit: "100", offset: String(offset) });
+      const params = new URLSearchParams({ limit: "100", offset: String(offset), range: selectedRange });
       if (filter === "unread") params.set("unreadOnly", "true");
       if (category !== "all") {
         params.set("types", category === "promotion" ? "promotion,demotion" : category);
@@ -94,6 +101,9 @@ export default function NotificationsPage() {
       setUnreadCount(data.unreadCount || 0);
       setNextOffset(data.nextOffset ?? null);
     } catch (error) {
+      if (sequence !== loadSequence.current) return;
+      setLoadError(true);
+      if (offset === 0) setNotifications([]);
       console.error("Failed to load notifications:", error);
     } finally {
       if (sequence === loadSequence.current) {
@@ -101,7 +111,7 @@ export default function NotificationsPage() {
         setLoadingMore(false);
       }
     }
-  }, [category, filter]);
+  }, [category, filter, selectedRange]);
 
   useEffect(() => {
     loadNotifications();
@@ -121,6 +131,7 @@ export default function NotificationsPage() {
 
   const markAsRead = async (id: number) => {
     if (!isAdmin) return;
+    setActionError(false);
     try {
       const response = await fetch("/api/notifications", {
         method: "PATCH",
@@ -140,12 +151,14 @@ export default function NotificationsPage() {
       );
       window.dispatchEvent(new CustomEvent("notifications-updated"));
     } catch (error) {
+      setActionError(true);
       console.error("Error marking as read:", error);
     }
   };
 
   const markAllAsRead = async () => {
     if (!isAdmin) return;
+    setActionError(false);
     try {
       const response = await fetch("/api/notifications", {
         method: "PATCH",
@@ -161,6 +174,7 @@ export default function NotificationsPage() {
       setUnreadCount(typeof data.unreadCount === "number" ? data.unreadCount : 0);
       window.dispatchEvent(new CustomEvent("notifications-updated"));
     } catch (error) {
+      setActionError(true);
       console.error("Error marking all as read:", error);
     }
   };
@@ -262,13 +276,14 @@ export default function NotificationsPage() {
             <Bell className="h-6 w-6" />
             <T text=" Notifications " /></h1>
           <p className="text-sm text-muted-foreground mt-1">
-            {unreadCount > 0 ? <T text="{value0} unread" values={{ value0: String(unreadCount) }} /> : <T text="All caught up!" />}
+            {!loading && !loadError && (unreadCount > 0 ? <T text="{value0} unread across all periods" values={{ value0: String(unreadCount) }} /> : <T text="No unread notifications." />)}
           </p>
         </div>
         <div className="flex items-center gap-2">
           {/* Filter tabs */}
           <div className="flex rounded-lg border bg-muted/30 p-0.5">
             <button
+              aria-pressed={filter === "all"}
               onClick={() => setFilter("all")}
               className={cn(
                 "px-3 py-1.5 text-sm rounded-md transition-colors",
@@ -279,6 +294,7 @@ export default function NotificationsPage() {
             >
               <T text=" All " /></button>
             <button
+              aria-pressed={filter === "unread"} title={t("Unread count includes all periods")}
               onClick={() => setFilter("unread")}
               className={cn(
                 "px-3 py-1.5 text-sm rounded-md transition-colors",
@@ -298,23 +314,25 @@ export default function NotificationsPage() {
         </div>
       </div>
 
-      <div className="flex flex-wrap gap-2">
-        <Button size="sm" variant={category === "all" ? "default" : "outline"} onClick={() => setCategory("all")}><T text="All Types" /></Button>
-        <Button size="sm" variant={category === "join" ? "default" : "outline"} onClick={() => setCategory("join")}><T text="Joined" /></Button>
-        <Button size="sm" variant={category === "leave" ? "default" : "outline"} onClick={() => setCategory("leave")}><T text="Left" /></Button>
-        <Button size="sm" variant={category === "inactive" ? "default" : "outline"} onClick={() => setCategory("inactive")}><T text="Inactive" /></Button>
-        <Button size="sm" variant={category === "promotion" ? "default" : "outline"} onClick={() => setCategory("promotion")}><T text="Promotions" /></Button>
-        <Button size="sm" variant={category === "name_change" ? "default" : "outline"} onClick={() => setCategory("name_change")}><T text="Name Changes" /></Button>
-        <Button size="sm" variant={category === "capacity" ? "default" : "outline"} onClick={() => setCategory("capacity")}><T text="Database capacity" /></Button>
-        <Button size="sm" variant={category === "battle_gap" ? "default" : "outline"} onClick={() => setCategory("battle_gap")}><T text="Battle history coverage" /></Button>
+      <div className="flex flex-col justify-between gap-3 sm:flex-row sm:items-start">
+        <TimeRangePicker value={selectedRange} onChange={range => { if (range !== selectedRange) { setLoading(true); setSelectedRange(range); } }} />
+        <select aria-label={t("Notification type")} value={category} onChange={event => setCategory(event.target.value as typeof category)} className="h-10 rounded-md border bg-background px-3 text-sm">
+          <option value="all">{t("All Types")}</option><option value="join">{t("Joined")}</option><option value="leave">{t("Left")}</option>
+          <option value="inactive">{t("Inactive")}</option><option value="promotion">{t("Promotions")}</option><option value="name_change">{t("Name Changes")}</option>
+          {isAdmin && <option value="capacity">{t("Database capacity")}</option>}
+          <option value="battle_gap">{t("Battle history coverage")}</option>
+        </select>
       </div>
+
+      {loadError && <div role="alert" className="rounded-lg border border-destructive/40 p-4 text-sm"><T text="Could not load notifications." /> <Button variant="ghost" onClick={() => loadNotifications(true, notifications.length && nextOffset !== null ? nextOffset : 0)}><T text="Retry" /></Button></div>}
+      {actionError && <p role="alert" className="text-sm text-destructive"><T text="Could not update notifications. Please try again." /></p>}
 
       {/* Notification list */}
       {loading ? (
         <div className="flex items-center justify-center py-20">
           <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
         </div>
-      ) : filtered.length === 0 ? (
+      ) : loadError && notifications.length === 0 ? null : filtered.length === 0 ? (
         <Card>
           <CardContent className="flex flex-col items-center justify-center py-16 text-muted-foreground">
             <Bell className="h-10 w-10 mb-3 opacity-40" />
@@ -323,7 +341,7 @@ export default function NotificationsPage() {
             </p>
             <p className="text-sm mt-1">
               {filter === "unread"
-                ? <T text="You've read all your notifications." />
+                ? <T text="No unread notifications match these filters." />
                 : <T text="Try changing filters or wait for new club events." />}
             </p>
           </CardContent>
@@ -336,6 +354,7 @@ export default function NotificationsPage() {
               {group.items.map((notif) => {
                 const style = getStyle(notif.type);
                 const Icon = style.icon;
+                const display = localizeNotificationForDisplay(notif, t, number);
 
                 return (
                   <Card
@@ -358,7 +377,7 @@ export default function NotificationsPage() {
                         <div className="flex-1 min-w-0">
                           <div className="flex items-center gap-2 flex-wrap">
                             <span className={cn("text-sm font-semibold", style.color)}>
-                              {<T text={notif.title} />}
+                              {display.title}
                             </span>
                             {!notif.is_read && (
                               <span className="text-[10px] uppercase tracking-wider font-bold text-primary bg-primary/10 px-1.5 py-0.5 rounded">
@@ -366,7 +385,7 @@ export default function NotificationsPage() {
                             )}
                           </div>
                           <p className="text-sm text-muted-foreground mt-1 break-words">
-                            {renderMessageWithMemberLinks(notif.message)}
+                            {renderMessageWithMemberLinks(display.message)}
                           </p>
                           <p className="text-xs text-muted-foreground/60 mt-2">
                             <LocalDate value={notif.created_at} time />

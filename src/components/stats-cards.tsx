@@ -37,7 +37,7 @@ export const StatsCards = memo(function StatsCards({
       color: "text-yellow-500",
     },
     {
-      title: "Active Players",
+      title: "Active in last 24h",
       value: activeMembers,
       icon: Activity,
       description: t("{percent}% active", {percent: totalMembers > 0 ? Math.round((activeMembers / totalMembers) * 100) : 0}),
@@ -53,15 +53,15 @@ export const StatsCards = memo(function StatsCards({
   ], [activeMembers, avgTrophies, totalMembers, totalTrophies, formatNumber, t]);
 
   return (
-    <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
+    <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
       {cards.map((card) => (
         <Card key={card.title}>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+          <CardHeader className="flex flex-row items-center justify-between gap-2 space-y-0 p-4 pb-2">
             <CardTitle className="text-sm font-medium">{<T text={card.title} />}</CardTitle>
-            <card.icon className={`h-5 w-5 ${card.color}`} />
+            <card.icon className={`h-4 w-4 shrink-0 ${card.color}`} />
           </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold"><T text={card.value} /></div>
+          <CardContent className="p-4 pt-0">
+            <div className="text-xl font-bold sm:text-2xl"><T text={card.value} /></div>
             <p className="text-xs text-muted-foreground">{<T text={card.description} />}</p>
           </CardContent>
         </Card>

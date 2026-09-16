@@ -22,7 +22,10 @@ function tables() {
 // the database fixtures so a select('*') regression exposes the real leak.
 function projectedDatabase(selections) {
   const database = readOnlyDatabase(tables());
-  return { from(table) {
+  return { async rpc(name) {
+    assert.equal(name, "report_account_trophy_trend");
+    return { data: [{ date: "2026-09-16", trophies: 1000, observed_members: 1, total_members: 1, owner_user_id: owner }], error: null };
+  }, from(table) {
     const base = database.from(table); let columns = "*", head = false;
     const query = new Proxy(base, { get(target, name) {
       if (name === "select") return (value, options = {}) => { columns = value; head = !!options.head; selections.push({table, columns, head}); return query; };

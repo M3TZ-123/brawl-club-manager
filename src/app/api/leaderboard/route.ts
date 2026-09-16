@@ -1,17 +1,13 @@
 import { NextRequest, NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabase-admin";
-import { aggregateDailyBattleStats, type DailyBattleStatsRow } from "@/lib/battle-tracking-stats";
+import { aggregateDailyBattleStats } from "@/lib/battle-tracking-stats";
 import { appendMemberActivityMetrics } from "@/lib/member-activity-metrics";
 
-const DAY_MS = 24 * 60 * 60 * 1000;
-const RANGE_CONFIG = {
-  "24h": { label: "last 24h", durationMs: DAY_MS, minWinRateBattles: 3, activeDayCap: 1 },
-  "3d": { label: "last 3 days", durationMs: 3 * DAY_MS, minWinRateBattles: 5, activeDayCap: 3 },
-  "7d": { label: "last 7 days", durationMs: 7 * DAY_MS, minWinRateBattles: 10, activeDayCap: 7 },
-  "30d": { label: "last 30 days", durationMs: 30 * DAY_MS, minWinRateBattles: 20, activeDayCap: 30 },
-} as const;
+import { parseTimeRange, TIME_RANGES } from "@/lib/time-range";
+import { getReportingPeriod, reportingPeriodMetadata } from "@/lib/reporting-period";
+import { fetchDailyStats } from "@/lib/reporting-data";
 
-type RangeKey = keyof typeof RANGE_CONFIG;
+const MIN_WIN_RATE_BATTLES = { "24h": 3, "3d": 5, "7d": 10, "30d": 20, "90d": 30 } as const;
 
 type TrackingRow = {
   player_tag: string;
@@ -27,59 +23,12 @@ type TrackingRow = {
   peak_day_battles: number | null;
 };
 
-type BattleRangeRow = {
-  player_tag: string;
-  battle_time: string;
-  result: string | null;
-  trophy_change: number | null;
-  is_star_player: boolean | null;
-};
-
-type RangeStats = {
-  battles: number;
-  wins: number;
-  losses: number;
-  starPlayer: number;
-  trophiesGained: number;
-  trophiesLost: number;
-  activeDays: number;
-  winRate: number;
-  netTrophies: number;
-};
-
-function parseRange(value: string | null): RangeKey {
-  return value === "24h" || value === "3d" || value === "30d" ? value : "7d";
-}
-
 function normalizeTimestamp(value: string | null | undefined) {
   const timestamp = value?.trim();
   if (!timestamp) return null;
 
   const parsed = new Date(timestamp);
   return Number.isNaN(parsed.getTime()) ? timestamp : parsed.toISOString();
-}
-
-async function fetchDailyStatsRows(playerTags: string[]): Promise<DailyBattleStatsRow[]> {
-  if (playerTags.length === 0) return [];
-
-  const pageSize = 1000;
-  const rows: DailyBattleStatsRow[] = [];
-
-  for (let from = 0; ; from += pageSize) {
-    const { data, error } = await supabaseAdmin
-      .from("daily_stats")
-      .select("player_tag, date, battles, wins, losses, star_player, trophies_gained, trophies_lost")
-      .in("player_tag", playerTags)
-      .order("date", { ascending: true })
-      .order("player_tag", { ascending: true })
-      .range(from, from + pageSize - 1);
-
-    if (error) throw error;
-    rows.push(...((data || []) as DailyBattleStatsRow[]));
-    if (!data || data.length < pageSize) break;
-  }
-
-  return rows;
 }
 
 async function fetchTrackingRows(playerTags: string[]): Promise<TrackingRow[]> {
@@ -94,102 +43,14 @@ async function fetchTrackingRows(playerTags: string[]): Promise<TrackingRow[]> {
   return (data || []) as TrackingRow[];
 }
 
-async function fetchBattleRangeRows(playerTags: string[], sinceISO: string): Promise<BattleRangeRow[]> {
-  if (playerTags.length === 0) return [];
-
-  const pageSize = 1000;
-  const rows: BattleRangeRow[] = [];
-
-  for (let from = 0; ; from += pageSize) {
-    const { data, error } = await supabaseAdmin
-      .from("battle_history")
-      .select("player_tag, battle_time, result, trophy_change, is_star_player")
-      .in("player_tag", playerTags)
-      .gte("battle_time", sinceISO)
-      .order("battle_time", { ascending: true })
-      .order("player_tag", { ascending: true })
-      .range(from, from + pageSize - 1);
-
-    if (error) throw error;
-    rows.push(...((data || []) as BattleRangeRow[]));
-    if (!data || data.length < pageSize) break;
-  }
-
-  return rows;
-}
-
-function buildRangeStats(playerTags: string[], rows: BattleRangeRow[], activeDayCap: number) {
-  const stats = new Map<string, RangeStats & { activeDateSet: Set<string> }>();
-
-  for (const playerTag of playerTags) {
-    stats.set(playerTag, {
-      battles: 0,
-      wins: 0,
-      losses: 0,
-      starPlayer: 0,
-      trophiesGained: 0,
-      trophiesLost: 0,
-      activeDays: 0,
-      winRate: 0,
-      netTrophies: 0,
-      activeDateSet: new Set<string>(),
-    });
-  }
-
-  for (const row of rows) {
-    const playerStats = stats.get(row.player_tag);
-    if (!playerStats) continue;
-
-    const trophyChange = row.trophy_change || 0;
-    playerStats.battles += 1;
-    if (row.result === "victory") playerStats.wins += 1;
-    if (row.result === "defeat") playerStats.losses += 1;
-    if (row.is_star_player) playerStats.starPlayer += 1;
-    if (trophyChange > 0) playerStats.trophiesGained += trophyChange;
-    if (trophyChange < 0) playerStats.trophiesLost += Math.abs(trophyChange);
-    playerStats.netTrophies += trophyChange;
-    playerStats.activeDateSet.add(row.battle_time.slice(0, 10));
-  }
-
-  const result = new Map<string, RangeStats>();
-  for (const [playerTag, playerStats] of stats) {
-    result.set(playerTag, {
-      battles: playerStats.battles,
-      wins: playerStats.wins,
-      losses: playerStats.losses,
-      starPlayer: playerStats.starPlayer,
-      trophiesGained: playerStats.trophiesGained,
-      trophiesLost: playerStats.trophiesLost,
-      activeDays: Math.min(playerStats.activeDateSet.size, activeDayCap),
-      winRate: playerStats.battles > 0 ? Math.round((playerStats.wins / playerStats.battles) * 100) : 0,
-      netTrophies: playerStats.netTrophies,
-    });
-  }
-
-  return result;
-}
-
-function getRangeProgress(
-  rangeKey: RangeKey,
-  metrics: Awaited<ReturnType<typeof appendMemberActivityMetrics>>[number] | undefined,
-  rangeStats: RangeStats | undefined
-) {
-  if (rangeKey === "24h") return metrics?.trophies_24h ?? (rangeStats?.battles ? rangeStats.netTrophies : null);
-  if (rangeKey === "3d") return metrics?.trophies_3d ?? (rangeStats?.battles ? rangeStats.netTrophies : null);
-  if (rangeKey === "7d") return metrics?.trophies_7d ?? (rangeStats?.battles ? rangeStats.netTrophies : null);
-  return rangeStats?.battles ? rangeStats.netTrophies : null;
-}
-
 export async function GET(request: NextRequest) {
   try {
     const now = new Date();
-    const rangeKey = parseRange(request.nextUrl.searchParams.get("range"));
-    const rangeConfig = RANGE_CONFIG[rangeKey];
-    const rangeStart = new Date(now.getTime() - rangeConfig.durationMs);
-    const [membersRes, currentMembersRes, settingsRes] = await Promise.all([
-      supabaseAdmin
-        .from("members")
-        .select("player_tag, player_name, trophies, highest_trophies, role, win_rate, solo_victories, duo_victories, trio_victories, brawlers_count, rank_current, rank_highest, exp_level"),
+    const rangeKey = parseTimeRange(request.nextUrl.searchParams.get("range"));
+    const period = getReportingPeriod(rangeKey, now);
+    const metric = TIME_RANGES[rangeKey].metric;
+    const minWinRateBattles = MIN_WIN_RATE_BATTLES[rangeKey];
+    const [currentMembersRes, settingsRes] = await Promise.all([
       supabaseAdmin
         .from("member_history")
         .select("player_tag")
@@ -200,19 +61,20 @@ export async function GET(request: NextRequest) {
         .in("key", ["last_sync_time"]),
     ]);
 
-    if (membersRes.error) throw membersRes.error;
     if (currentMembersRes.error) throw currentMembersRes.error;
     if (settingsRes.error) throw settingsRes.error;
 
     const currentTags = new Set((currentMembersRes.data || []).map((m) => m.player_tag));
     const currentTagList = [...currentTags];
-    const members = (membersRes.data || []).filter((m) => currentTags.has(m.player_tag));
-
-    const [dailyStatsRows, trackingRows, battleRangeRows] = await Promise.all([
-      fetchDailyStatsRows(currentTagList),
+    const [membersRes, dailyStatsRows, trackingRows] = await Promise.all([
+      supabaseAdmin.from("members")
+        .select("player_tag, player_name, trophies, highest_trophies, role, win_rate, solo_victories, duo_victories, trio_victories, brawlers_count, rank_current, rank_highest, exp_level")
+        .in("player_tag", currentTagList.length ? currentTagList : [""]),
+      fetchDailyStats(currentTagList, new Date(now.getTime() - 364 * 86_400_000).toISOString().slice(0, 10), period.dates.at(-1)!),
       fetchTrackingRows(currentTagList),
-      fetchBattleRangeRows(currentTagList, rangeStart.toISOString()),
     ]);
+    if (membersRes.error) throw membersRes.error;
+    const members = membersRes.data || [];
     const membersWithMetrics = await appendMemberActivityMetrics(members, now);
     const memberMetricsByTag = new Map(
       membersWithMetrics.map((member) => [member.player_tag, member])
@@ -220,7 +82,7 @@ export async function GET(request: NextRequest) {
 
     const trackingMap = new Map(trackingRows.map((row) => [row.player_tag, row]));
     const trackedStatsMap = aggregateDailyBattleStats(dailyStatsRows, currentTagList, now);
-    const rangeStatsMap = buildRangeStats(currentTagList, battleRangeRows, rangeConfig.activeDayCap);
+    const rangeStatsMap = aggregateDailyBattleStats(dailyStatsRows.filter(row => row.date >= period.dates[0]), currentTagList, now);
 
     const enriched = members.map((m) => {
       const tracking = trackingMap.get(m.player_tag);
@@ -263,8 +125,8 @@ export async function GET(request: NextRequest) {
           trophiesGained: rangeStats?.trophiesGained || 0,
           trophiesLost: rangeStats?.trophiesLost || 0,
           activeDays: rangeStats?.activeDays || 0,
-          winRate: rangeStats?.winRate || 0,
-          netTrophies: getRangeProgress(rangeKey, metrics, rangeStats),
+          winRate: rangeStats?.battles ? Math.round(rangeStats.wins / rangeStats.battles * 100) : 0,
+          netTrophies: metrics?.[metric] ?? null,
         },
       };
     });
@@ -276,7 +138,7 @@ export async function GET(request: NextRequest) {
         .sort((a, b) => b.weekly.battles - a.weekly.battles)
         .slice(0, 30),
       weeklyWinRate: [...enriched]
-        .filter((m) => m.weekly.battles >= rangeConfig.minWinRateBattles)
+        .filter((m) => m.weekly.battles >= minWinRateBattles)
         .sort((a, b) => b.weekly.winRate - a.weekly.winRate)
         .slice(0, 30),
       weeklyTrophyGainers: [...enriched]
@@ -304,14 +166,15 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({
       leaderboards,
       memberCount: enriched.length,
+      period: reportingPeriodMetadata(period),
       range: {
         key: rangeKey,
-        label: rangeConfig.label,
-        minWinRateBattles: rangeConfig.minWinRateBattles,
+        label: TIME_RANGES[rangeKey].label,
+        minWinRateBattles: minWinRateBattles,
       },
       generatedAt: now.toISOString(),
       lastSyncTime: normalizeTimestamp(settings.get("last_sync_time")),
-    });
+    }, { headers: { "Cache-Control": "no-store" } });
   } catch (error) {
     console.error("Error fetching leaderboard:", error);
     return NextResponse.json({ error: "Failed to fetch leaderboard" }, { status: 500 });

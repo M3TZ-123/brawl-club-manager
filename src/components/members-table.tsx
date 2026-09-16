@@ -6,6 +6,7 @@ import { memo, useEffect, useMemo, useRef, useState } from "react";
 import Image from "next/image";
 import Link from "next/link";
 import { Member } from "@/types/database";
+import { TIME_RANGES, type TimeRangeKey } from "@/lib/time-range";
 import { cn, getRankColor } from "@/lib/utils";
 import { getFallbackInitial, getProfileIconUrl, getRankIconUrl } from "@/lib/brawl-assets";
 import {
@@ -41,6 +42,8 @@ export interface MemberWithGains extends Member {
   trophies_24h?: number | null;
   trophies_3d?: number | null;
   trophies_7d?: number | null;
+  trophies_30d?: number | null;
+  trophies_90d?: number | null;
   activity_status?: ActivityStatus;
   last_battle_at?: string | null;
 }
@@ -52,9 +55,12 @@ export type MemberColumnKey =
   | "win_rate"
   | "rank_current"
   | "rank_highest"
+  | "progress"
   | "trophies_24h"
   | "trophies_3d"
   | "trophies_7d"
+  | "trophies_30d"
+  | "trophies_90d"
   | "activity"
   | "last_battle"
   | "brawlers_count"
@@ -68,9 +74,12 @@ export type MemberSortKey =
   | "win_rate"
   | "rank_current"
   | "rank_highest"
+  | "progress"
   | "trophies_24h"
   | "trophies_3d"
   | "trophies_7d"
+  | "trophies_30d"
+  | "trophies_90d"
   | "activity_status"
   | "last_battle_at"
   | "brawlers_count"
@@ -90,9 +99,12 @@ export const DEFAULT_MEMBER_COLUMNS: MemberColumnVisibility = {
   win_rate: false,
   rank_current: false,
   rank_highest: false,
-  trophies_24h: true,
-  trophies_3d: true,
+  progress: true,
+  trophies_24h: false,
+  trophies_3d: false,
   trophies_7d: false,
+  trophies_30d: false,
+  trophies_90d: false,
   activity: true,
   last_battle: true,
   brawlers_count: false,
@@ -104,6 +116,7 @@ interface MembersTableProps {
   pageSize?: number;
   showPagination?: boolean;
   columnVisibility?: MemberColumnVisibility;
+  timeRange?: TimeRangeKey;
   sortState?: MemberSortState;
   onSort?: (key: MemberSortKey) => void;
   onMemberSelect?: (member: MemberWithGains) => void;
@@ -116,9 +129,12 @@ const SORTABLE_COLUMNS: Partial<Record<MemberColumnKey, MemberSortKey>> = {
   win_rate: "win_rate",
   rank_current: "rank_current",
   rank_highest: "rank_highest",
+  progress: "progress",
   trophies_24h: "trophies_24h",
   trophies_3d: "trophies_3d",
   trophies_7d: "trophies_7d",
+  trophies_30d: "trophies_30d",
+  trophies_90d: "trophies_90d",
   activity: "activity_status",
   last_battle: "last_battle_at",
   brawlers_count: "brawlers_count",
@@ -249,6 +265,7 @@ function SortableHead({
   className?: string;
   align?: "left" | "right" | "center";
 }) {
+  const { t } = useI18n();
   const isActive = Boolean(sortKey && sortState?.key === sortKey);
   const Icon = !isActive ? ArrowUpDown : sortState?.direction === "asc" ? ArrowUp : ArrowDown;
 
@@ -264,7 +281,7 @@ function SortableHead({
             align === "center" && "justify-center"
           )}
         >
-          {label}
+          {t(label)}
           <Icon className={cn("h-3.5 w-3.5", isActive ? "text-primary" : "text-muted-foreground/70")} />
         </button>
       ) : (
@@ -275,7 +292,7 @@ function SortableHead({
             align === "center" && "text-center"
           )}
         >
-          {label}
+          {t(label)}
         </span>
       )}
     </TableHead>
@@ -296,6 +313,7 @@ export const MembersTable = memo(function MembersTable({
   pageSize = 12,
   showPagination = true,
   columnVisibility = DEFAULT_MEMBER_COLUMNS,
+  timeRange = "7d",
   sortState,
   onSort,
   onMemberSelect,
@@ -303,6 +321,10 @@ export const MembersTable = memo(function MembersTable({
   const { t, number: formatNumber, dateTime: formatDateTime, relative: formatRelativeTime, delta: formatDelta } = useI18n();
   const formatOptionalNumber = (value: number | null | undefined) => value == null ? t("Unknown") : formatNumber(value);
   const formatLastBattle = (member: MemberWithGains) => formatRelativeTime(member.last_battle_at);
+  const period = TIME_RANGES[timeRange];
+  const progressLabel = t("Progress · {period}", { period: t(period.shortLabel) });
+  const comparisonPeriods = Object.values(TIME_RANGES).filter(range => columnVisibility[range.metric] && (!columnVisibility.progress || range.metric !== period.metric));
+  const formatProgress = (value: number | null | undefined) => value == null ? t("Not enough history") : formatDelta(value);
   const [copiedTag, setCopiedTag] = useState<string | null>(null);
   const [currentPage, setCurrentPage] = useState(1);
   const copyResetTimeoutRef = useRef<number | null>(null);
@@ -315,7 +337,7 @@ export const MembersTable = memo(function MembersTable({
     () => showPagination ? members.slice(startIndex, startIndex + normalizedPageSize) : members,
     [members, normalizedPageSize, showPagination, startIndex]
   );
-  const visibleColumnCount = 2 + Object.values(columnVisibility).filter(Boolean).length;
+  const visibleColumnCount = 2 + Object.entries(columnVisibility).filter(([key, visible]) => visible && !key.startsWith("trophies_")).length + comparisonPeriods.length;
 
   useEffect(() => {
     return () => {
@@ -417,18 +439,16 @@ export const MembersTable = memo(function MembersTable({
                   <p className="text-xs text-muted-foreground"><T text="Trophies" /></p>
                   <p className="font-semibold">{formatNumber(member.trophies)}</p>
                 </div>
-                <div>
-                  <p className="text-xs text-muted-foreground"><T text="3 days" /></p>
-                  <p className={cn("font-semibold", getDeltaClass(member.trophies_3d))}>
-                    {formatDelta(member.trophies_3d)}
+                {columnVisibility.progress && <div>
+                  <p className="text-xs text-muted-foreground">{progressLabel}</p>
+                  <p className={cn("font-semibold", getDeltaClass(member[period.metric]))}>
+                    {formatProgress(member[period.metric])}
                   </p>
-                </div>
-                <div>
-                  <p className="text-xs text-muted-foreground"><T text="24h" /></p>
-                  <p className={cn("font-semibold", getDeltaClass(member.trophies_24h))}>
-                    {formatDelta(member.trophies_24h)}
-                  </p>
-                </div>
+                </div>}
+                {comparisonPeriods.map(range => <div key={range.metric}>
+                  <p className="text-xs text-muted-foreground">{t(range.shortLabel)}</p>
+                  <p className={cn("font-semibold", getDeltaClass(member[range.metric]))}>{formatProgress(member[range.metric])}</p>
+                </div>)}
                 <div>
                   <p className="text-xs text-muted-foreground"><T text="Last battle" /></p>
                   <p className="font-medium">{formatLastBattle(member)}</p>
@@ -449,7 +469,7 @@ export const MembersTable = memo(function MembersTable({
       {renderMobileCards()}
 
       <div className="hidden w-full overflow-x-auto md:block">
-        <Table className="min-w-[980px]">
+        <Table className="min-w-[760px]">
           <TableHeader>
             <TableRow>
               <TableHead className="w-12">#</TableHead>
@@ -469,17 +489,12 @@ export const MembersTable = memo(function MembersTable({
               {columnVisibility.highest_trophies && (
                 <SortableHead label="Highest" sortKey={SORTABLE_COLUMNS.highest_trophies} sortState={sortState} onSort={onSort} align="right" />
               )}
-              {columnVisibility.trophies_24h && (
-                <SortableHead label="24h" sortKey={SORTABLE_COLUMNS.trophies_24h} sortState={sortState} onSort={onSort} align="right" />
+              {columnVisibility.progress && (
+                <SortableHead label={progressLabel} sortKey="progress" sortState={sortState} onSort={onSort} align="right" />
               )}
-              {columnVisibility.trophies_3d && (
-                <SortableHead label="3 days" sortKey={SORTABLE_COLUMNS.trophies_3d} sortState={sortState} onSort={onSort} align="right" />
-              )}
-              {columnVisibility.trophies_7d && (
-                <SortableHead label="7 days" sortKey={SORTABLE_COLUMNS.trophies_7d} sortState={sortState} onSort={onSort} align="right" />
-              )}
+              {comparisonPeriods.map(range => <SortableHead key={range.metric} label={range.shortLabel} sortKey={range.metric} sortState={sortState} onSort={onSort} align="right" />)}
               {columnVisibility.activity && (
-                <SortableHead label="Activity" sortKey={SORTABLE_COLUMNS.activity} sortState={sortState} onSort={onSort} align="center" />
+                <SortableHead label="Recent activity" sortKey={SORTABLE_COLUMNS.activity} sortState={sortState} onSort={onSort} align="center" />
               )}
               {columnVisibility.last_battle && (
                 <SortableHead label="Last Battle" sortKey={SORTABLE_COLUMNS.last_battle} sortState={sortState} onSort={onSort} />
@@ -560,21 +575,12 @@ export const MembersTable = memo(function MembersTable({
                     {columnVisibility.highest_trophies && (
                       <TableCell className="text-end text-muted-foreground">{formatNumber(member.highest_trophies)}</TableCell>
                     )}
-                    {columnVisibility.trophies_24h && (
-                      <TableCell className={cn("text-right font-medium", getDeltaClass(member.trophies_24h))}>
-                        {formatDelta(member.trophies_24h)}
+                    {columnVisibility.progress && (
+                      <TableCell className={cn("text-end font-medium", getDeltaClass(member[period.metric]))}>
+                        {formatProgress(member[period.metric])}
                       </TableCell>
                     )}
-                    {columnVisibility.trophies_3d && (
-                      <TableCell className={cn("text-right font-medium", getDeltaClass(member.trophies_3d))}>
-                        {formatDelta(member.trophies_3d)}
-                      </TableCell>
-                    )}
-                    {columnVisibility.trophies_7d && (
-                      <TableCell className={cn("text-right font-medium", getDeltaClass(member.trophies_7d))}>
-                        {formatDelta(member.trophies_7d)}
-                      </TableCell>
-                    )}
+                    {comparisonPeriods.map(range => <TableCell key={range.metric} className={cn("text-end font-medium", getDeltaClass(member[range.metric]))}>{formatProgress(member[range.metric])}</TableCell>)}
                     {columnVisibility.activity && (
                       <TableCell className="text-center">
                         <ActivityBadge status={activityStatus} />

@@ -3,8 +3,10 @@ import { T, useI18n } from "@/components/locale-provider";
 
 
 import dynamic from "next/dynamic";
-import { use, useCallback, useEffect, useMemo, useState } from "react";
+import { use, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Image from "next/image";
+import { TimeRangePicker } from "@/components/time-range-picker";
+import { TIME_RANGES, type TimeRangeKey, type TrophyPeriodMetric } from "@/lib/time-range";
 import { DataConfidenceNotice } from "@/components/sync-health";
 import { MemberReviewButton } from "@/components/member-review";
 import { MembershipTimeline } from "@/components/membership-timeline";
@@ -21,7 +23,6 @@ import { getProfileIconUrl } from "@/lib/brawl-assets";
 import {
   Trophy,
   Star,
-  Gamepad2,
   Target,
   Users,
   Calendar,
@@ -71,28 +72,13 @@ function MemberDetailSkeleton() {
   );
 }
 
-const TrophyStatistics = dynamic(
-  () => import("@/components/charts").then((mod) => mod.TrophyStatistics),
-  { ssr: false, loading: () => <DetailChartSkeleton /> }
-);
-
-const ActivityCalendar = dynamic(
-  () => import("@/components/charts").then((mod) => mod.ActivityCalendar),
+const MemberPeriodOverview = dynamic(
+  () => import("@/components/member-period-overview").then((mod) => mod.MemberPeriodOverview),
   { ssr: false, loading: () => <DetailChartSkeleton /> }
 );
 
 const PowerLevelChart = dynamic(
   () => import("@/components/charts").then((mod) => mod.PowerLevelChart),
-  { ssr: false, loading: () => <DetailChartSkeleton /> }
-);
-
-const TrackingStats = dynamic(
-  () => import("@/components/charts").then((mod) => mod.TrackingStats),
-  { ssr: false, loading: () => <DetailChartSkeleton /> }
-);
-
-const EnhancedTrackingStats = dynamic(
-  () => import("@/components/charts").then((mod) => mod.EnhancedTrackingStats),
   { ssr: false, loading: () => <DetailChartSkeleton /> }
 );
 
@@ -157,11 +143,12 @@ interface PageProps {
   params: Promise<{ tag: string }>;
 }
 
-type DetailMember = Member & { activity_status: ActivityStatus };
+type DetailMember = Member & { activity_status: ActivityStatus } & Partial<Record<TrophyPeriodMetric, number | null>>;
 
 interface MemberDetailResponse {
   member: DetailMember;
   activityHistory?: ActivityLog[];
+  activityHistoryResolution?: "hourly" | "three_hourly" | "six_hourly" | "daily";
   memberHistory?: MemberHistory | null;
   lastBattleTime?: string | null;
   battleStats?: BattleStats | null;
@@ -170,11 +157,11 @@ interface MemberDetailResponse {
   calendarBattlesByDay?: Record<string, number>;
   topBrawlers?: TopBrawler[];
   recentMatches?: RecentMatch[];
-  playerTags?: string[];
+  period?: { start: string; end: string };
 }
 
 export default function MemberDetailPage({ params }: PageProps) {
-  const { locale } = useI18n();
+  const { t } = useI18n();
   const { number: formatNumber, relative: formatRelativeTime, date: formatDate } = useI18n();
   const resolvedParams = use(params);
   const [member, setMember] = useState<DetailMember | null>(null);
@@ -184,10 +171,14 @@ export default function MemberDetailPage({ params }: PageProps) {
   const [battleStats, setBattleStats] = useState<BattleStats | null>(null);
   const [powerDistribution, setPowerDistribution] = useState<PowerDistribution | null>(null);
   const [enhancedStats, setEnhancedStats] = useState<EnhancedStats | null>(null);
-  const [calendarBattlesByDay, setCalendarBattlesByDay] = useState<Record<string, number>>({});
+  const [observationIntervalMs, setObservationIntervalMs] = useState<number>();
+  const [period, setPeriod] = useState<MemberDetailResponse["period"]>();
   const [topBrawlers, setTopBrawlers] = useState<TopBrawler[]>([]);
   const [recentMatches, setRecentMatches] = useState<RecentMatch[]>([]);
-  const [playerTags, setPlayerTags] = useState<string[]>([]);
+  const [selectedRange, setSelectedRange] = useState<TimeRangeKey>("7d");
+  const [loadError, setLoadError] = useState(false);
+  const [refreshError, setRefreshError] = useState(false);
+  const loadSequence = useRef(0);
   const [avatarError, setAvatarError] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
   const [isRefreshing, setIsRefreshing] = useState(false);
@@ -197,28 +188,36 @@ export default function MemberDetailPage({ params }: PageProps) {
   const memberApiUrl = useMemo(() => `/api/members/${encodeURIComponent(playerTag)}`, [playerTag]);
 
   const loadMemberData = useCallback(async (force = false) => {
+    const sequence = ++loadSequence.current;
+    setLoadError(false);
+    if (!force) setIsLoading(true);
     try {
-      const data = await fetchJsonCached<MemberDetailResponse>(memberApiUrl, {
+      const data = await fetchJsonCached<MemberDetailResponse>(`${memberApiUrl}?range=${selectedRange}`, {
         staleMs: 30_000,
         force,
       });
+      if (sequence !== loadSequence.current) return;
       setMember(data.member);
       setActivityHistory(data.activityHistory || []);
+      const resolutionHours = { hourly: 1, three_hourly: 3, six_hourly: 6, daily: 24 };
+      setObservationIntervalMs(data.activityHistoryResolution ? resolutionHours[data.activityHistoryResolution] * 3_600_000 : undefined);
       setMemberHistory(data.memberHistory || null);
       setLastBattleTime(data.lastBattleTime || null);
       setBattleStats(data.battleStats || null);
       setPowerDistribution(data.powerDistribution || null);
       setEnhancedStats(data.enhancedStats || null);
-      setCalendarBattlesByDay(data.calendarBattlesByDay || {});
+      setPeriod(data.period);
       setTopBrawlers(data.topBrawlers || []);
       setRecentMatches(data.recentMatches || []);
-      setPlayerTags(data.playerTags || []);
     } catch (error) {
+      if (sequence !== loadSequence.current) return;
+      setLoadError(true);
+      if (!force) setMember(null);
       console.error("Error loading member:", error);
     } finally {
-      setIsLoading(false);
+      if (sequence === loadSequence.current) setIsLoading(false);
     }
-  }, [memberApiUrl]);
+  }, [memberApiUrl, selectedRange]);
 
   useEffect(() => {
     loadMemberData();
@@ -233,10 +232,8 @@ export default function MemberDetailPage({ params }: PageProps) {
   }, [loadMemberData]);
 
   const handleRefresh = async () => {
-    if (!isAdmin) {
-      alert("Admin login required to refresh player stats.");
-      return;
-    }
+    if (!isAdmin) return;
+    setRefreshError(false);
     setIsRefreshing(true);
     try {
       const response = await fetch(`/api/members/${encodeURIComponent(playerTag)}`, {
@@ -244,11 +241,11 @@ export default function MemberDetailPage({ params }: PageProps) {
         headers: { "Content-Type": "application/json" },
       });
 
-      if (response.ok) {
-        invalidateJsonCache(memberApiUrl);
-        await loadMemberData(true);
-      }
+      if (!response.ok) throw new Error("Refresh failed");
+      invalidateJsonCache(memberApiUrl);
+      await loadMemberData(true);
     } catch (error) {
+      setRefreshError(true);
       console.error("Error refreshing member:", error);
     } finally {
       setIsRefreshing(false);
@@ -258,36 +255,15 @@ export default function MemberDetailPage({ params }: PageProps) {
   const getMemberBadge = () => {
     if (!memberHistory) return null;
     
-    if (memberHistory.times_joined <= 1 && memberHistory.times_left === 0) {
+    if (typeof memberHistory.times_joined === "number" && memberHistory.times_joined <= 1 && memberHistory.times_left === 0) {
       return <Badge variant="success"><T text="No recorded departures" /></Badge>;
     } else if (memberHistory.times_joined > 1) {
       return <Badge variant="warning"><T text="Returned" /></Badge>;
     }
-    return <Badge variant="success"><T text="⭐ Original Member" /></Badge>;
+    return null;
   };
 
-  const trophyChartData = useMemo(() => activityHistory
-    .slice()
-    .reverse()
-    .map((log) => ({
-      date: new Date(log.recorded_at).toLocaleDateString(locale === "ar" ? "ar-TN" : "en-GB", {
-        month: "short",
-        day: "numeric",
-      }),
-      trophies: log.trophies,
-      recorded_at: log.recorded_at,
-    })), [activityHistory, locale]);
-
-  const totalPowerTracked = useMemo(() => powerDistribution
-    ? powerDistribution.distribution.reduce((sum, count) => sum + count, 0)
-    : 0, [powerDistribution]);
-  const dominantPower = useMemo(() => powerDistribution
-    ? powerDistribution.distribution.reduce(
-        (best, count, index) => (count > best.count ? { level: index + 1, count } : best),
-        { level: 1, count: 0 }
-      )
-    : { level: 1, count: 0 }, [powerDistribution]);
-  const hasDominantPower = totalPowerTracked > 0 && dominantPower.count / totalPowerTracked >= 0.8;
+  const trophyObservations = useMemo(() => activityHistory.map(log => ({ recordedAt: log.recorded_at, trophies: log.trophies })), [activityHistory]);
   const profileIconUrl = member ? getProfileIconUrl(member.icon_id) : null;
 
   const formatBattleResult = (result: string | null) => {
@@ -307,7 +283,8 @@ export default function MemberDetailPage({ params }: PageProps) {
         <div className="flex-1 flex items-center justify-center">
           <Card className="w-96">
             <CardContent className="pt-6 text-center">
-              <p className="text-muted-foreground"><T text="Member not found" /></p>
+              <p role={loadError ? "alert" : undefined} className="text-muted-foreground"><T text={loadError ? "Could not load this member." : "Member not found"} /></p>
+              {loadError && <Button className="mt-3" variant="outline" onClick={() => loadMemberData(true)}><T text="Retry" /></Button>}
               <Link href="/members">
                 <Button className="mt-4">
                   <ArrowLeft className="h-4 w-4 me-2" />
@@ -350,7 +327,7 @@ export default function MemberDetailPage({ params }: PageProps) {
                 <div>
                       <div className="flex items-center gap-2">
                         <h1 className="text-2xl font-bold">{member.player_name}</h1>
-                        <span className="text-lg" title={member.activity_status === "minimal" ? "Low activity" : member.activity_status}>
+                        <span className="text-lg" title={t(member.activity_status === "minimal" ? "Low activity" : member.activity_status)}>
                           {getActivityEmoji(member.activity_status)}
                         </span>
                       </div>
@@ -359,26 +336,23 @@ export default function MemberDetailPage({ params }: PageProps) {
                         <Badge>{<T text={member.role} />}</Badge>
                         {getMemberBadge()}
                       </div>
-                      {playerTags.length > 0 && (
-                        <div className="flex flex-wrap items-center gap-2 mt-2">
-                          {playerTags.map((tag) => (
-                            <Badge key={tag} variant="outline">{tag}</Badge>
-                          ))}
-                        </div>
-                      )}
+
                     </div>
                   </div>
-                  <MemberReviewButton member={member} />
-                  <Button onClick={handleRefresh} disabled={isRefreshing || !isAdmin}>
+                  <MemberReviewButton member={member} initialRange={selectedRange} />
+                  {isAdmin && <Button onClick={handleRefresh} disabled={isRefreshing}>
                     <RefreshCw className={`h-4 w-4 mr-2 ${isRefreshing ? "animate-spin" : ""}`} />
-                    {isAdmin ? <T text="Refresh Stats" /> : <T text="Admin Only" />}
-                  </Button>
+                    <T text="Refresh Stats" />
+                  </Button>}
                 </div>
               </CardContent>
             </Card>
 
+            {loadError && <div role="alert" className="rounded-lg border border-destructive/30 p-3 text-sm"><T text="Could not load this member." /> <Button variant="ghost" onClick={() => loadMemberData(true)}><T text="Retry" /></Button></div>}
+            {refreshError && <p role="alert" className="text-sm text-destructive"><T text="Could not refresh this member. Please try again." /></p>}
+            <h2 className="text-lg font-semibold"><T text="Current account" /></h2>
             {/* Stats Grid */}
-            <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
+            <div className="grid gap-4 md:grid-cols-3">
               <Card>
                 <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
                   <CardTitle className="text-sm font-medium"><T text="Trophies" /></CardTitle>
@@ -419,18 +393,17 @@ export default function MemberDetailPage({ params }: PageProps) {
                 </CardContent>
               </Card>
 
-              <Card>
-                <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                  <CardTitle className="text-sm font-medium"><T text="Victories" /></CardTitle>
-                  <Gamepad2 className="h-4 w-4 text-green-500" />
-                </CardHeader>
-                <CardContent>
-                  <div className="text-2xl font-bold">{formatNumber(member.trio_victories)}</div>
-                  <p className="text-xs text-muted-foreground"><T text="3v3 Victories" /></p>
-                </CardContent>
-              </Card>
             </div>
 
+            <DataConfidenceNotice />
+            <TimeRangePicker value={selectedRange} onChange={range => { if (range !== selectedRange) { setIsLoading(true); setSelectedRange(range); } }} dayBased />
+            <MemberPeriodOverview range={selectedRange} trophyChange={member[TIME_RANGES[selectedRange].metric] ?? null}
+              observations={trophyObservations} observationIntervalMs={observationIntervalMs} period={period}
+              stats={enhancedStats ? { battles: enhancedStats.totalBattles, wins: enhancedStats.totalWins, losses: enhancedStats.totalLosses, winRate: enhancedStats.winRate, activeDays: enhancedStats.activeDays } : battleStats} />
+
+            <details className="rounded-lg border p-4">
+              <summary className="cursor-pointer font-semibold"><T text="Lifetime victories and current brawlers" /></summary>
+              <div className="mt-4 space-y-4">
             {/* Victories Breakdown */}
             <div className="grid gap-4 md:grid-cols-3">
               <Card>
@@ -503,81 +476,9 @@ export default function MemberDetailPage({ params }: PageProps) {
               </Card>
             )}
 
-            {/* Trophy Statistics Chart */}
-            <TrophyStatistics data={trophyChartData} currentTrophies={member.trophies} />
-
-            {/* Battle Stats Row */}
-            {(battleStats || powerDistribution || enhancedStats || Object.keys(calendarBattlesByDay).length > 0) && (
-              <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-                {/* Activity Calendar */}
-                {(Object.keys(calendarBattlesByDay).length > 0 || battleStats) && (
-                  <ActivityCalendar battlesByDay={
-                    Object.keys(calendarBattlesByDay).length > 0 
-                      ? calendarBattlesByDay 
-                      : (battleStats?.battlesByDay || {})
-                  } />
-                )}
-                
-                {/* Power Level Distribution */}
-                {powerDistribution && (
-                  hasDominantPower ? (
-                    <Card>
-                      <CardHeader className="pb-2">
-                        <CardTitle className="text-sm font-medium"><T text="BY POWER LEVEL" /></CardTitle>
-                      </CardHeader>
-                      <CardContent>
-                        <div className="rounded-md border border-border/70 bg-card/50 p-4 text-center">
-                          <p className="text-lg font-semibold"><T text="Maxed Account" /></p>
-                          <p className="text-sm text-muted-foreground mt-1">
-                            {dominantPower.count}/{totalPowerTracked} <T text=" at Power " />{dominantPower.level}
-                          </p>
-                          <p className="text-xs text-muted-foreground mt-2">
-                            <T text=" Average Power: " />{powerDistribution.avgPower.toFixed(1)}
-                          </p>
-                        </div>
-                      </CardContent>
-                    </Card>
-                  ) : (
-                    <PowerLevelChart 
-                      distribution={powerDistribution.distribution}
-                      avgPower={powerDistribution.avgPower}
-                      maxedCount={powerDistribution.maxedCount}
-                    />
-                  )
-                )}
-                
-                {/* Tracking Stats - Use enhanced if available, otherwise basic */}
-                {enhancedStats ? (
-                  <EnhancedTrackingStats
-                    totalBattles={enhancedStats.totalBattles}
-                    totalWins={enhancedStats.totalWins}
-                    totalLosses={enhancedStats.totalLosses}
-                    winRate={enhancedStats.winRate}
-                    starPlayerCount={enhancedStats.starPlayerCount}
-                    trophiesGained={enhancedStats.trophiesGained}
-                    trophiesLost={enhancedStats.trophiesLost}
-                    activeDays={enhancedStats.activeDays}
-                    totalDays={enhancedStats.totalDays}
-                    currentStreak={enhancedStats.currentStreak}
-                    bestStreak={enhancedStats.bestStreak}
-                    peakDayBattles={enhancedStats.peakDayBattles}
-                    powerUps={enhancedStats.powerUps}
-                    unlocks={enhancedStats.unlocks}
-                    trackedDays={enhancedStats.trackedDays}
-                  />
-                ) : battleStats && (
-                  <TrackingStats
-                    battles={battleStats.battles}
-                    wins={battleStats.wins}
-                    losses={battleStats.losses}
-                    winRate={battleStats.winRate}
-                    starPlayer={battleStats.starPlayer}
-                    trophyChange={battleStats.trophyChange}
-                    activeDays={battleStats.activeDays}
-                  />
-                )}
+            {powerDistribution && <PowerLevelChart distribution={powerDistribution.distribution} avgPower={powerDistribution.avgPower} maxedCount={powerDistribution.maxedCount} />}
               </div>
-            )}
+            </details>
 
             {/* Recent Matches */}
             <Card>
@@ -587,7 +488,7 @@ export default function MemberDetailPage({ params }: PageProps) {
               </CardHeader>
               <CardContent>
                 {recentMatches.length === 0 ? (
-                  <p className="text-sm text-muted-foreground"><T text="No recent matches tracked yet." /></p>
+                  <p className="text-sm text-muted-foreground"><T text="No battles recorded in this period." /></p>
                 ) : (
                   <div className="space-y-2">
                     {recentMatches.map((match, index) => {
@@ -621,7 +522,6 @@ export default function MemberDetailPage({ params }: PageProps) {
               </CardContent>
             </Card>
 
-            <DataConfidenceNotice />
             <MembershipTimeline playerTag={member.player_tag} />
             {/* Member History */}
             {memberHistory && (
@@ -638,7 +538,7 @@ export default function MemberDetailPage({ params }: PageProps) {
                         <p className="text-sm text-muted-foreground">
                           {memberHistory.first_seen && new Date(memberHistory.first_seen).getFullYear() > 1970
                             ? formatDate(memberHistory.first_seen)
-                            : <T text="Since before tracking" />}
+                            : <T text="Unknown" />}
                         </p>
                       </div>
                     </div>
@@ -647,7 +547,7 @@ export default function MemberDetailPage({ params }: PageProps) {
                       <div>
                         <p className="text-sm font-medium"><T text="Times Joined" /></p>
                         <p className="text-sm text-muted-foreground">
-                          {memberHistory.times_joined ?? 0} <T text=" time(s) " /></p>
+                          {memberHistory.times_joined == null ? <T text="Unknown" /> : formatNumber(memberHistory.times_joined)}</p>
                       </div>
                     </div>
                     <div className="flex items-center gap-3">
@@ -655,13 +555,13 @@ export default function MemberDetailPage({ params }: PageProps) {
                       <div>
                         <p className="text-sm font-medium"><T text="Times Left" /></p>
                         <p className="text-sm text-muted-foreground">
-                          {memberHistory.times_left ?? 0} <T text=" time(s) " /></p>
+                          {memberHistory.times_left == null ? <T text="Unknown" /> : formatNumber(memberHistory.times_left)}</p>
                       </div>
                     </div>
                     <div className="flex items-center gap-3">
                       <Calendar className="h-5 w-5 text-muted-foreground" />
                       <div>
-                        <p className="text-sm font-medium"><T text="Last Active" /></p>
+                        <p className="text-sm font-medium"><T text="Last Battle" /></p>
                         <p className="text-sm text-muted-foreground">
                           {lastBattleTime ? formatRelativeTime(lastBattleTime) : <T text="No recent battles" />}
                         </p>

@@ -1,9 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabase-admin";
-import { calculateEnhancedStats } from "@/lib/brawl-api";
+import { aggregateDailyBattleStats } from "@/lib/battle-tracking-stats";
+import { appendMemberActivityMetrics } from "@/lib/member-activity-metrics";
+import { parseTimeRange, TIME_RANGES } from "@/lib/time-range";
+import { getReportingPeriod, reportingPeriodMetadata } from "@/lib/reporting-period";
+import { fetchDailyStats } from "@/lib/reporting-data";
 import { executeSync, SyncError } from "@/lib/sync-service";
 import { rejectUnauthorizedAdminMutation } from "@/lib/admin-auth";
-import { classifyActivity, normalizeInactivityThreshold } from "@/lib/activity-status";
 import { PUBLIC_MEMBER_COLUMNS, publicMemberSnapshot, publicAuditSnapshot } from "@/lib/sync-public-snapshots";
 
 type RecentMatch = {
@@ -26,50 +29,27 @@ type ActivityHistoryRow = {
   recorded_at: string;
 };
 
-async function fetchActivityHistorySince(playerTag: string, sinceISO: string): Promise<ActivityHistoryRow[]> {
-  const pageSize = 1000;
-  const rows: ActivityHistoryRow[] = [];
-
-  for (let from = 0; ; from += pageSize) {
-    const { data, error } = await supabaseAdmin
-      .from("activity_log")
-      .select("id,player_tag,trophies,trophy_change,activity_type,recorded_at")
-      .eq("player_tag", playerTag)
-      .gte("recorded_at", sinceISO)
-      .order("recorded_at", { ascending: false })
-      .order("id", { ascending: false })
-      .range(from, from + pageSize - 1);
-
-    if (error) throw error;
-    rows.push(...((data || []) as ActivityHistoryRow[]).map(({ id, player_tag, trophies, trophy_change, activity_type, recorded_at }) => ({ id, player_tag, trophies, trophy_change, activity_type, recorded_at })));
-    if (!data || data.length < pageSize) break;
-  }
-
-  return rows;
-}
-
-async function getInactivityThresholdHours(): Promise<number> {
-  const { data, error } = await supabaseAdmin
-    .from("settings")
-    .select("value")
-    .eq("key", "inactivity_threshold")
-    .maybeSingle();
-
+async function fetchActivityHistory(playerTag: string, days: number, now: Date): Promise<ActivityHistoryRow[]> {
+  const { data, error } = await supabaseAdmin.rpc("report_member_activity_history", {
+    p_player_tag: playerTag, p_days: days, p_now: now.toISOString(),
+  });
   if (error) throw error;
-  return normalizeInactivityThreshold(data?.value);
+  return ((data || []) as ActivityHistoryRow[]).map(({ id, player_tag, trophies, trophy_change, activity_type, recorded_at }) => ({
+    id, player_tag, trophies, trophy_change, activity_type, recorded_at,
+  }));
 }
 
 export async function GET(
-  _request: NextRequest,
+  request: NextRequest,
   { params }: { params: Promise<{ tag: string }> }
 ) {
   try {
     const { tag } = await params;
     const playerTag = decodeURIComponent(tag);
 
-    const activitySince = new Date(Date.now() - 32 * 24 * 60 * 60 * 1000).toISOString();
-    const twentyEightDaysAgo = new Date();
-    twentyEightDaysAgo.setDate(twentyEightDaysAgo.getDate() - 28);
+    const now = new Date();
+    const range = parseTimeRange(new URL(request.url).searchParams.get("range"));
+    const period = getReportingPeriod(range, now);
 
     const [
       memberRes,
@@ -77,28 +57,27 @@ export async function GET(
       firstActivityRowsRes,
       recentMatchesRes,
       memberHistoryRes,
-      dailyStatsRes,
+      dailyStats,
       playerTrackingRes,
       snapshotRowsRes,
-      inactivityThreshold,
     ] = await Promise.all([
       supabaseAdmin
         .from("members")
         .select(PUBLIC_MEMBER_COLUMNS)
         .eq("player_tag", playerTag)
         .single(),
-      fetchActivityHistorySince(playerTag, activitySince),
+      fetchActivityHistory(playerTag, period.days, now),
       supabaseAdmin
         .from("activity_log")
         .select("recorded_at")
-        .eq("player_tag", playerTag)
+        .eq("player_tag", playerTag).lte("recorded_at", now.toISOString())
         .order("recorded_at", { ascending: true })
         .limit(1),
       supabaseAdmin
         .from("battle_history")
         .select("battle_time, mode, map, result, trophy_change, is_star_player, brawler_name, brawler_power")
         .eq("player_tag", playerTag)
-        .lte("battle_time", new Date(Date.now() + 60_000).toISOString())
+        .gte("battle_time", period.start.toISOString()).lte("battle_time", now.toISOString())
         .order("battle_time", { ascending: false })
         .limit(25),
       supabaseAdmin
@@ -106,12 +85,7 @@ export async function GET(
         .select("player_tag,player_name,first_seen,last_seen,last_left_at,times_joined,times_left,is_current_member,role_at_leave,trophies_at_leave")
         .eq("player_tag", playerTag)
         .maybeSingle(),
-      supabaseAdmin
-        .from("daily_stats")
-        .select("id,player_tag,date,battles,wins,losses,star_player,trophies_gained,trophies_lost")
-        .eq("player_tag", playerTag)
-        .gte("date", twentyEightDaysAgo.toISOString().slice(0, 10))
-        .order("date", { ascending: true }),
+      fetchDailyStats([playerTag], period.dates[0], period.dates.at(-1)!),
       supabaseAdmin
         .from("player_tracking")
         .select("player_tag,total_battles,total_wins,total_losses,star_player_count,trophies_gained,trophies_lost,active_days,current_streak,best_streak,peak_day_battles,last_battle_date,power_ups,unlocks,tracking_started,last_updated")
@@ -123,7 +97,6 @@ export async function GET(
         .eq("player_tag", playerTag)
         .order("recorded_at", { ascending: false })
         .limit(500),
-      getInactivityThresholdHours(),
     ]);
 
     const { data: member, error } = memberRes;
@@ -138,40 +111,29 @@ export async function GET(
     if (firstActivityRowsRes.error) throw firstActivityRowsRes.error;
     if (recentMatchesRes.error) throw recentMatchesRes.error;
     if (memberHistoryRes.error) throw memberHistoryRes.error;
-    if (dailyStatsRes.error) throw dailyStatsRes.error;
     if (playerTrackingRes.error) throw playerTrackingRes.error;
     if (snapshotRowsRes.error) throw snapshotRowsRes.error;
 
     const firstActivityRows = firstActivityRowsRes.data;
     const recentMatches = recentMatchesRes.data || [];
     const memberHistory = memberHistoryRes.data;
-    const dailyStats = dailyStatsRes.data || [];
     const playerTracking = playerTrackingRes.data;
     const snapshotRows = snapshotRowsRes.data || [];
 
-    // Calculate enhanced stats from stored data
-    let enhancedStats = null;
-    if (dailyStats && dailyStats.length > 0) {
-      enhancedStats = calculateEnhancedStats(dailyStats, playerTracking);
-    }
-
-    const dailyRows = dailyStats || [];
-    const now = new Date();
-    const trackingBattleTime = playerTracking?.last_battle_date
-      ? new Date(`${playerTracking.last_battle_date}T00:00:00.000Z`)
-      : null;
-    const validTrackingTime = trackingBattleTime && Number.isFinite(trackingBattleTime.getTime())
-      && trackingBattleTime.getTime() <= now.getTime() + 60_000;
-    const lastBattleTime = recentMatches?.[0]?.battle_time
-      || (validTrackingTime ? trackingBattleTime.toISOString() : null);
-    let lastActivityAt = lastBattleTime ? new Date(lastBattleTime) : null;
-    for (const activity of activityHistory) {
-      const recordedAt = new Date(activity.recorded_at);
-      if (typeof activity.trophy_change === "number" && activity.trophy_change !== 0 && recordedAt <= now && (!lastActivityAt || recordedAt > lastActivityAt)) {
-        lastActivityAt = recordedAt;
-      }
-    }
-    const activityStatus = classifyActivity(lastActivityAt, now, inactivityThreshold);
+    const [memberMetrics] = await appendMemberActivityMetrics([member], now);
+    const lastBattleTime = memberMetrics.last_battle_at;
+    const dailyRows = dailyStats;
+    const aggregate = aggregateDailyBattleStats(dailyRows, [playerTag], now).get(playerTag)!;
+    const enhancedStats = dailyRows.length ? {
+      totalBattles: aggregate.battles, totalWins: aggregate.wins, totalLosses: aggregate.losses,
+      winRate: aggregate.battles ? Math.round(aggregate.wins / aggregate.battles * 100) : 0,
+      starPlayerCount: aggregate.starPlayer, trophiesGained: aggregate.trophiesGained,
+      trophiesLost: aggregate.trophiesLost, netTrophies: memberMetrics[TIME_RANGES[range].metric],
+      activeDays: aggregate.activeDays, totalDays: period.days, currentStreak: aggregate.currentStreak,
+      bestStreak: aggregate.bestStreak, peakDayBattles: aggregate.peakDayBattles,
+      powerUps: playerTracking?.power_ups || 0, unlocks: playerTracking?.unlocks || 0,
+      brawlerChangesScope: "tracked_history", trackedDays: 1,
+    } : null;
     const totalBattles = dailyRows.reduce((sum, stat) => sum + (stat.battles || 0), 0);
     const totalWins = dailyRows.reduce((sum, stat) => sum + (stat.wins || 0), 0);
     const totalLosses = dailyRows.reduce((sum, stat) => sum + (stat.losses || 0), 0);
@@ -212,8 +174,8 @@ export async function GET(
     const calendarBattlesByDay: Record<string, number> = {};
     if (dailyStats) {
       for (const stat of dailyStats) {
-        if (stat.battles > 0) {
-          calendarBattlesByDay[stat.date] = stat.battles;
+        if ((stat.battles || 0) > 0) {
+          calendarBattlesByDay[stat.date] = stat.battles || 0;
         }
       }
     }
@@ -290,7 +252,13 @@ export async function GET(
     }
 
     return NextResponse.json({
-      member: { ...publicMemberSnapshot(member), activity_status: activityStatus },
+      period: reportingPeriodMetadata(period),
+      activityHistoryResolution: period.days === 1 ? "hourly" : period.days === 3 ? "three_hourly" : period.days === 7 ? "six_hourly" : "daily",
+      member: { ...publicMemberSnapshot(member), activity_status: memberMetrics.activity_status,
+        last_battle_at: memberMetrics.last_battle_at,
+        trophies_24h: memberMetrics.trophies_24h, trophies_3d: memberMetrics.trophies_3d,
+        trophies_7d: memberMetrics.trophies_7d, trophies_30d: memberMetrics.trophies_30d,
+        trophies_90d: memberMetrics.trophies_90d, trophy_baselines: memberMetrics.trophy_baselines },
       activityHistory: activityHistory || [],
       memberHistory: publicAuditSnapshot(memberHistory),
       lastBattleTime,
@@ -302,7 +270,7 @@ export async function GET(
       recentMatches: (recentMatches || []) as RecentMatch[],
       playerTags,
       calendarBattlesByDay,
-    });
+    }, { headers: { "Cache-Control": "no-store" } });
   } catch (error) {
     console.error("Error fetching member:", error);
     return NextResponse.json(

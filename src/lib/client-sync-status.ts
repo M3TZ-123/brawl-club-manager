@@ -57,13 +57,14 @@ export interface SyncHealth {
 
 const SYNC_SIGNAL_KEY = "brawl-club-manager-sync-updated";
 const listeners = new Set<() => void>();
-let health: SyncHealth | null = null;
+// Undefined means the first request has not settled; null means a failed read.
+let health: SyncHealth | null | undefined;
 let inFlight: Promise<void> | null = null;
 let refreshQueued = false;
 let stopMonitoring: (() => void) | null = null;
 
 export const getSyncHealth = () => health;
-export const getServerSyncHealth = () => null;
+export const getServerSyncHealth = () => undefined;
 
 function broadcastSyncChange() {
   try { window.localStorage.setItem(SYNC_SIGNAL_KEY, JSON.stringify([

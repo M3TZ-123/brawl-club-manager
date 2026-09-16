@@ -213,6 +213,20 @@ test("sync health displays backend attempt and outcome rather than inferring a n
 });
 
 
+test("confidence notices hide initial loading while preserving failed, stale and gap warnings",()=>{
+  let health;
+  const components=syncHealthComponents(()=>health);
+  assert.equal(components.DataConfidenceNotice(),null);
+  health=null;
+  assert.match(textContent(components.DataConfidenceNotice()),/Sync health: Unavailable/);
+  health={freshness:"stale",fullFreshness:"stale",battleFreshness:"fresh"};
+  assert.match(textContent(components.DataConfidenceNotice()),/incomplete or stale/);
+  health={...health,freshness:"fresh",fullFreshness:"fresh"};
+  assert.equal(components.DataConfidenceNotice(),null);
+  health={...health,battleCoverage:{status:"possible_gap"}};
+  assert.match(textContent(components.DataConfidenceNotice()),/possible gap remains/);
+});
+
 test("activity confidence ignores roster freshness and requires full profiles plus complete battle data",async()=>{
  let health={freshness:"stale",fullFreshness:"stale",rosterFreshness:"fresh",battleFreshness:"never"};
  const {DataConfidenceNotice}=loadTypeScript("src/components/sync-health.tsx",{...componentMocks,react:{useSyncExternalStore:(_subscribe,getSnapshot)=>getSnapshot()},"@/lib/client-sync-status":{subscribeSyncHealth(){},getServerSyncHealth:()=>null,getSyncHealth:()=>health}});

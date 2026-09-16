@@ -18,7 +18,7 @@ type AdminGateProps = {
 export function AdminGate({
   children,
   title = "Admin Access",
-  description = "Sign in to manage sync, settings, API keys, webhooks, and destructive data actions.",
+  description = "Sign in to manage your club settings and member reviews.",
 }: AdminGateProps) {
   const { t } = useI18n();
   const { configured, isAdmin, isLoading, login } = useAdminSession();
@@ -43,7 +43,7 @@ export function AdminGate({
 
   if (isLoading) {
     return (
-      <div className="flex min-h-[60vh] items-center justify-center">
+      <div role="status" aria-label={t("Loading...")} className="flex min-h-[60vh] items-center justify-center">
         <div className="h-10 w-10 animate-spin rounded-full border-b-2 border-primary" />
       </div>
     );
@@ -52,25 +52,15 @@ export function AdminGate({
   if (!configured) {
     return (
       <div className="flex min-h-[60vh] items-center justify-center p-4">
-        <div className="absolute end-4 top-4"><LanguageSelector /></div>
         <Card className="w-full max-w-lg border-amber-500/30 bg-amber-500/5">
           <CardHeader>
+            <div className="mb-2 self-end"><LanguageSelector /></div>
             <CardTitle className="flex items-center gap-2">
               <ShieldAlert className="h-5 w-5 text-amber-500" />
-              <T text=" Admin Not Configured " /></CardTitle>
+              <T text="Admin access unavailable" /></CardTitle>
             <CardDescription>
-              <T text=" Add server-only admin environment variables before managing this app. " /></CardDescription>
+              <T text="Ask the app owner to finish administrator setup." /></CardDescription>
           </CardHeader>
-          <CardContent className="space-y-3 text-sm text-muted-foreground">
-            <p>
-              <T text=" Set " /><code className="rounded bg-muted px-1.5 py-0.5"><T text="ADMIN_PASSWORD" /></code> <T text=" in Vercel. For stronger cookie signing, also set" />{" "}
-              <code className="rounded bg-muted px-1.5 py-0.5"><T text="ADMIN_SESSION_SECRET" /></code>.
-            </p>
-            <p>
-              <T text=" These values must stay private. Do not prefix them with" />{" "}
-              <code className="rounded bg-muted px-1.5 py-0.5"><T text="NEXT_PUBLIC_" /></code>.
-            </p>
-          </CardContent>
         </Card>
       </div>
     );
@@ -104,8 +94,8 @@ export function AdminGate({
               </div>
 
               {error && (
-                <p className="rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive">
-                  {error}
+                <p role="alert" className="rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive">
+                  {t(error)}
                 </p>
               )}
 

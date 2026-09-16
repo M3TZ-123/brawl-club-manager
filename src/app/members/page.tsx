@@ -7,6 +7,8 @@ import Link from "next/link";
 import { DataConfidenceNotice } from "@/components/sync-health";
 import { MemberReviewButton } from "@/components/member-review";
 import { LayoutWrapper } from "@/components/layout-wrapper";
+import { TimeRangePicker } from "@/components/time-range-picker";
+import { TIME_RANGES, type TimeRangeKey } from "@/lib/time-range";
 import {
   DEFAULT_MEMBER_COLUMNS,
   MembersTable,
@@ -34,7 +36,6 @@ import {
   SheetTitle,
 } from "@/components/ui/sheet";
 import {
-  Activity,
   AlertTriangle,
   Check,
   CircleMinus,
@@ -49,11 +50,10 @@ import {
   SlidersHorizontal,
   Trophy,
   TrendingUp,
-  UserX,
   Users,
 } from "lucide-react";
 
-type QuickFilter = "all" | "attention" | "top-gainers" | "no-progress" | "low-activity" | "inactive";
+type QuickFilter = "all" | "attention" | "top-gainers" | "no-progress";
 type RoleFilter = "all" | "president" | "vicepresident" | "senior" | "member";
 type ActivityFilter = "all" | ActivityStatus | "unknown";
 type MovementFilter = "all" | "positive" | "flat" | "unknown";
@@ -71,9 +71,12 @@ const ACTIVITY_ORDER: Record<ActivityFilter, number> = {
 const COLUMN_OPTIONS: Array<{ key: MemberColumnKey; label: string; description: string }> = [
   { key: "role", label: "Role", description: "Club permission level" },
   { key: "trophies", label: "Trophies", description: "Current trophy count" },
+  { key: "progress", label: "Trophy progress", description: "Follows the selected period" },
   { key: "trophies_24h", label: "24h", description: "One-day trophy progress" },
   { key: "trophies_3d", label: "3 days", description: "Short-term trophy progress" },
   { key: "trophies_7d", label: "7 days", description: "Weekly trophy progress" },
+  { key: "trophies_30d", label: "1 month", description: "30-day comparison" },
+  { key: "trophies_90d", label: "3 months", description: "90-day comparison" },
   { key: "activity", label: "Activity", description: "Readable status badge" },
   { key: "last_battle", label: "Last Battle", description: "Most recent tracked battle" },
   { key: "highest_trophies", label: "Highest", description: "Personal best trophies" },
@@ -103,26 +106,22 @@ function getActivityClass(status: ActivityFilter) {
   return "border-border bg-muted/40 text-muted-foreground";
 }
 
-function getThreeDayChange(member: MemberWithGains) {
-  return member.trophies_3d;
+function getProgress(member: MemberWithGains, timeRange: TimeRangeKey) {
+  return member[TIME_RANGES[timeRange].metric];
 }
 
-function hasThreeDayGain(member: MemberWithGains) {
-  const threeDayChange = getThreeDayChange(member);
-  return threeDayChange != null && threeDayChange > 0;
+function hasGain(member: MemberWithGains, timeRange: TimeRangeKey) {
+  const change = getProgress(member, timeRange);
+  return change != null && change > 0;
 }
 
-function hasNoThreeDayProgress(member: MemberWithGains) {
-  return getThreeDayChange(member) === 0;
+function hasNoProgress(member: MemberWithGains, timeRange: TimeRangeKey) {
+  return getProgress(member, timeRange) === 0;
 }
 
-function hasMissingThreeDayData(member: MemberWithGains) {
-  return getThreeDayChange(member) == null;
-}
-
-function needsAttention(member: MemberWithGains) {
+function needsAttention(member: MemberWithGains, timeRange: TimeRangeKey) {
   const status = getActivityStatus(member);
-  return status === "minimal" || status === "inactive" || hasNoThreeDayProgress(member);
+  return status === "minimal" || status === "inactive" || hasNoProgress(member, timeRange);
 }
 
 function rankMatches(rank: string | null, filter: RankFilter) {
@@ -135,7 +134,7 @@ function rankMatches(rank: string | null, filter: RankFilter) {
   return value.includes(filter);
 }
 
-function getSortValue(member: MemberWithGains, key: MemberSortKey): string | number | null {
+function getSortValue(member: MemberWithGains, key: MemberSortKey, timeRange: TimeRangeKey): string | number | null {
   switch (key) {
     case "player_name":
       return member.player_name.toLowerCase();
@@ -159,6 +158,12 @@ function getSortValue(member: MemberWithGains, key: MemberSortKey): string | num
       return member.trophies_3d ?? null;
     case "trophies_7d":
       return member.trophies_7d ?? null;
+    case "trophies_30d":
+      return member.trophies_30d ?? null;
+    case "trophies_90d":
+      return member.trophies_90d ?? null;
+    case "progress":
+      return getProgress(member, timeRange) ?? null;
     case "activity_status":
       return ACTIVITY_ORDER[getActivityStatus(member)];
     case "last_battle_at":
@@ -170,9 +175,9 @@ function getSortValue(member: MemberWithGains, key: MemberSortKey): string | num
   }
 }
 
-function compareMembers(a: MemberWithGains, b: MemberWithGains, sort: MemberSortState) {
-  const aValue = getSortValue(a, sort.key);
-  const bValue = getSortValue(b, sort.key);
+function compareMembers(a: MemberWithGains, b: MemberWithGains, sort: MemberSortState, timeRange: TimeRangeKey) {
+  const aValue = getSortValue(a, sort.key, timeRange);
+  const bValue = getSortValue(b, sort.key, timeRange);
 
   if (aValue == null && bValue == null) return 0;
   if (aValue == null) return 1;
@@ -219,23 +224,25 @@ function SummaryCard({
   description,
   icon: Icon,
   tone,
+  className,
 }: {
   title: string;
   value: string | number;
   description: string;
   icon: React.ElementType;
   tone: string;
+  className?: string;
 }) {
   return (
-    <Card>
-      <CardContent className="p-4">
-        <div className="flex items-center justify-between gap-3">
-          <div>
-            <p className="text-sm font-medium text-muted-foreground">{title}</p>
-            <p className="mt-2 text-2xl font-bold">{value}</p>
+    <Card className={className}>
+      <CardContent className="p-3 sm:p-4">
+        <div className="flex items-center justify-between gap-2 sm:gap-3">
+          <div className="min-w-0">
+            <p className="text-xs font-medium text-muted-foreground sm:text-sm">{title}</p>
+            <p className="mt-1 text-lg font-bold sm:mt-2 sm:text-2xl">{value}</p>
             <p className="mt-1 text-xs text-muted-foreground">{description}</p>
           </div>
-          <Icon className={cn("h-5 w-5", tone)} />
+          <Icon className={cn("h-4 w-4 shrink-0 sm:h-5 sm:w-5", tone)} />
         </div>
       </CardContent>
     </Card>
@@ -257,7 +264,6 @@ export default function MembersPage() {
   const { number: formatNumber, delta: formatDelta, relative: formatRelativeTime, dateTime: formatDateTime } = useI18n();
   const { t, direction } = useI18n();
   const {
-    lastSyncTime,
     setLastSyncTime,
     clubTag,
     apiKeyConfigured,
@@ -270,6 +276,9 @@ export default function MembersPage() {
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
+  const [timeRange, setTimeRange] = useState<TimeRangeKey>("7d");
+  const period = TIME_RANGES[timeRange];
+  const progressLabel = t("Progress · {period}", { period: t(period.shortLabel) });
   const [quickFilter, setQuickFilter] = useState<QuickFilter>("all");
   const [roleFilter, setRoleFilter] = useState<RoleFilter>("all");
   const [activityFilter, setActivityFilter] = useState<ActivityFilter>("all");
@@ -280,7 +289,7 @@ export default function MembersPage() {
   const [showFilters, setShowFilters] = useState(false);
   const [showColumns, setShowColumns] = useState(false);
   const [columnVisibility, setColumnVisibility] = useState<MemberColumnVisibility>(DEFAULT_MEMBER_COLUMNS);
-  const [sortState, setSortState] = useState<MemberSortState>({ key: "trophies", direction: "desc" });
+  const [sortState, setSortState] = useState<MemberSortState>({ key: "progress", direction: "desc" });
   const [selectedMember, setSelectedMember] = useState<MemberWithGains | null>(null);
   const [copied, setCopied] = useState<"tag" | null>(null);
   const copyResetTimeoutRef = useRef<number | null>(null);
@@ -330,27 +339,12 @@ export default function MembersPage() {
     };
   }, []);
 
-  const summary = useMemo(() => {
-    const totalTrophies = members.reduce((sum, member) => sum + (member.trophies || 0), 0);
-    const active = members.filter((member) => getActivityStatus(member) === "active").length;
-    const inactive = members.filter((member) => getActivityStatus(member) === "inactive").length;
-    return {
-      total: members.length,
-      active,
-      inactive,
-      averageTrophies: members.length > 0 ? Math.round(totalTrophies / members.length) : 0,
-      attention: members.filter(needsAttention).length,
-    };
-  }, [members]);
-
   const quickFilters = useMemo(() => [
     { id: "all" as const, label: "All", count: members.length, icon: Users },
-    { id: "attention" as const, label: "Needs Attention", count: members.filter(needsAttention).length, icon: AlertTriangle },
-    { id: "top-gainers" as const, label: "Top Gainers", count: members.filter(hasThreeDayGain).length, icon: TrendingUp },
-    { id: "no-progress" as const, label: "No Progress", count: members.filter(hasNoThreeDayProgress).length, icon: CircleMinus },
-    { id: "low-activity" as const, label: "Low Activity", count: members.filter((member) => getActivityStatus(member) === "minimal").length, icon: Activity },
-    { id: "inactive" as const, label: "Inactive", count: members.filter((member) => getActivityStatus(member) === "inactive").length, icon: UserX },
-  ], [members]);
+    { id: "top-gainers" as const, label: "Gained trophies", count: members.filter(member => hasGain(member, timeRange)).length, icon: TrendingUp },
+    { id: "no-progress" as const, label: "No Progress", count: members.filter(member => hasNoProgress(member, timeRange)).length, icon: CircleMinus },
+    { id: "attention" as const, label: "Needs Attention", count: members.filter(member => needsAttention(member, timeRange)).length, icon: AlertTriangle },
+  ], [members, timeRange]);
 
   const filteredMembers = useMemo(() => {
     const normalizedSearch = searchQuery.trim().toLowerCase();
@@ -367,26 +361,24 @@ export default function MembersPage() {
           }
         }
 
-        if (quickFilter === "attention" && !needsAttention(member)) return false;
-        if (quickFilter === "top-gainers" && !hasThreeDayGain(member)) return false;
-        if (quickFilter === "no-progress" && !hasNoThreeDayProgress(member)) return false;
-        if (quickFilter === "low-activity" && getActivityStatus(member) !== "minimal") return false;
-        if (quickFilter === "inactive" && getActivityStatus(member) !== "inactive") return false;
+        if (quickFilter === "attention" && !needsAttention(member, timeRange)) return false;
+        if (quickFilter === "top-gainers" && !hasGain(member, timeRange)) return false;
+        if (quickFilter === "no-progress" && !hasNoProgress(member, timeRange)) return false;
 
         if (roleFilter !== "all" && member.role.toLowerCase() !== roleFilter) return false;
         if (activityFilter !== "all" && getActivityStatus(member) !== activityFilter) return false;
         if (!rankMatches(member.rank_current, rankFilter)) return false;
 
-        if (movementFilter === "positive" && !hasThreeDayGain(member)) return false;
-        if (movementFilter === "flat" && !hasNoThreeDayProgress(member)) return false;
-        if (movementFilter === "unknown" && !hasMissingThreeDayData(member)) return false;
+        if (movementFilter === "positive" && !hasGain(member, timeRange)) return false;
+        if (movementFilter === "flat" && !hasNoProgress(member, timeRange)) return false;
+        if (movementFilter === "unknown" && getProgress(member, timeRange) != null) return false;
 
         if (min != null && Number.isFinite(min) && member.trophies < min) return false;
         if (max != null && Number.isFinite(max) && member.trophies > max) return false;
 
         return true;
       })
-      .sort((a, b) => compareMembers(a, b, sortState));
+      .sort((a, b) => compareMembers(a, b, sortState, timeRange));
   }, [
     activityFilter,
     maxTrophies,
@@ -398,7 +390,17 @@ export default function MembersPage() {
     roleFilter,
     searchQuery,
     sortState,
+    timeRange,
   ]);
+
+  const summary = useMemo(() => {
+    const known = filteredMembers.filter(member => getProgress(member, timeRange) != null);
+    return {
+      progress: known.length ? known.reduce((sum, member) => sum + getProgress(member, timeRange)!, 0) : null,
+      known: known.length,
+      gained: filteredMembers.filter(member => hasGain(member, timeRange)).length,
+    };
+  }, [filteredMembers, timeRange]);
 
   const hasAdvancedFilters = roleFilter !== "all"
     || activityFilter !== "all"
@@ -420,10 +422,10 @@ export default function MembersPage() {
   const handleQuickFilter = (filter: QuickFilter) => {
     setQuickFilter(filter);
     if (filter === "top-gainers") {
-      setSortState({ key: "trophies_3d", direction: "desc" });
+      setSortState({ key: "progress", direction: "desc" });
     } else if (filter === "no-progress") {
-      setSortState({ key: "trophies_3d", direction: "asc" });
-    } else if (filter === "inactive" || filter === "low-activity" || filter === "attention") {
+      setSortState({ key: "progress", direction: "asc" });
+    } else if (filter === "attention") {
       setSortState({ key: "activity_status", direction: "asc" });
     }
   };
@@ -461,6 +463,7 @@ export default function MembersPage() {
   };
 
   const handleSyncNow = async () => {
+    if (!isAdmin) return;
     if (!clubTag || !apiKeyConfigured) {
       setErrorMessage("Club tag and API key must be configured before syncing.");
       return;
@@ -496,6 +499,7 @@ export default function MembersPage() {
   };
 
   const handleExport = () => {
+    const comparisons = Object.values(TIME_RANGES).filter(range => columnVisibility[range.metric] && range.metric !== period.metric);
     const csv = [
       [
         "Tag",
@@ -503,9 +507,8 @@ export default function MembersPage() {
         "Role",
         "Trophies",
         "Highest",
-        "24h",
-        "3 Days",
-        "7 Days",
+        t("Trophy progress · {period}", { period: t(period.label) }),
+        ...comparisons.map(range => t("Trophy progress · {period}", { period: t(range.label) })),
         "Activity",
         "Last Battle",
         "Win Rate",
@@ -513,17 +516,16 @@ export default function MembersPage() {
         "Best Rank",
         "Brawlers",
         "3v3 Wins",
-      ].join(","),
+      ].map(header => sanitizeCsvValue(t(header))).join(","),
       ...filteredMembers.map((member) => [
         sanitizeCsvValue(member.player_tag),
         sanitizeCsvValue(member.player_name),
         sanitizeCsvValue(member.role),
         sanitizeCsvValue(member.trophies),
         sanitizeCsvValue(member.highest_trophies),
-        sanitizeCsvValue(member.trophies_24h),
-        sanitizeCsvValue(member.trophies_3d),
-        sanitizeCsvValue(member.trophies_7d),
-        sanitizeCsvValue(getActivityLabel(getActivityStatus(member))),
+        sanitizeCsvValue(getProgress(member, timeRange)),
+        ...comparisons.map(range => sanitizeCsvValue(member[range.metric])),
+        sanitizeCsvValue(t(getActivityLabel(getActivityStatus(member)))),
         sanitizeCsvValue(member.last_battle_at || ""),
         sanitizeCsvValue(member.win_rate),
         sanitizeCsvValue(member.rank_current),
@@ -537,7 +539,7 @@ export default function MembersPage() {
     const url = URL.createObjectURL(blob);
     const anchor = document.createElement("a");
     anchor.href = url;
-    anchor.download = `club-members-${new Date().toISOString().slice(0, 10)}.csv`;
+    anchor.download = `club-members-${timeRange}-${new Date().toISOString().slice(0, 10)}.csv`;
     anchor.click();
     URL.revokeObjectURL(url);
   };
@@ -545,81 +547,55 @@ export default function MembersPage() {
   return (
     <LayoutWrapper>
       <div className="space-y-6"><DataConfidenceNotice />
-        <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-5">
-          <SummaryCard
-            title={t("Total Members")}
-            value={summary.total}
-            description={`${filteredMembers.length} currently visible`}
-            icon={Users}
-            tone="text-blue-500"
-          />
-          <SummaryCard
-            title={t("Active")}
-            value={summary.active}
-            description="Played in last 24h"
-            icon={Activity}
-            tone="text-green-500"
-          />
-          <SummaryCard
-            title={t("Inactive")}
-            value={summary.inactive}
-            description={`${summary.attention} need review`}
-            icon={UserX}
-            tone="text-red-400"
-          />
-          <SummaryCard
-            title={t("Avg Trophies")}
-            value={formatNumber(summary.averageTrophies)}
-            description="Per current member"
-            icon={Trophy}
-            tone="text-yellow-500"
-          />
-          <SummaryCard
-            title={t("Last Sync")}
-            value={formatRelativeTime(lastSyncTime)}
-            description={formatDateTime(lastSyncTime)}
-            icon={RefreshCw}
-            tone="text-primary"
-          />
-        </div>
-
         <Card>
           <CardHeader>
-            <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
+            <div className="space-y-4">
               <div>
                 <CardTitle><T text="Members" /></CardTitle>
                 <p className="mt-1 text-sm text-muted-foreground">
-                  <T text=" Full roster with activity, 3-day progress, filters, and quick review. " /></p>
+                  <T text="Choose a period to compare trophy progress." /></p>
               </div>
 
-              <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap xl:justify-end">{isAdmin && <Button asChild variant="outline"><Link href="/reviews"><T text="Member reviews" /></Link></Button>}
-                <div className="relative min-w-0 sm:w-72">
+              <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+                <div className="relative min-w-0 lg:w-72">
                   <Search className="absolute start-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
                   <Input
                     placeholder={t("Search name or tag...")}
+                    aria-label={t("Search name or tag...")}
                     value={searchQuery}
                     onChange={(event) => setSearchQuery(event.target.value)}
                     className="ps-10"
                   />
                 </div>
+                <TimeRangePicker value={timeRange} onChange={setTimeRange} />
+              </div>
+              <div className="flex flex-wrap gap-2 border-t border-border pt-3">
                 <Button
                   variant={showFilters || hasAdvancedFilters ? "default" : "outline"}
                   onClick={() => setShowFilters((value) => !value)}
+                  aria-expanded={showFilters}
+                  aria-controls="member-advanced-filters"
+                  size="sm"
                   className="gap-2"
                 >
                   <SlidersHorizontal className="h-4 w-4" />
-                  <T text=" Filters " /></Button>
+                  <T text="Advanced Filters" /></Button>
                 <Button
                   variant={showColumns ? "default" : "outline"}
                   onClick={() => setShowColumns((value) => !value)}
+                  aria-expanded={showColumns}
+                  aria-controls="member-visible-columns"
+                  size="sm"
                   className="gap-2"
                 >
                   <Columns3 className="h-4 w-4" />
                   <T text=" Columns " /></Button>
+                {isAdmin && <Button asChild variant="outline" size="sm"><Link href="/reviews"><T text="Member reviews" /></Link></Button>}
                 {isAdmin && (
                   <Button
                     variant="outline"
                     onClick={handleSyncNow}
+                    size="sm"
                     disabled={isSyncing || isRefreshing || isAdminLoading || !clubTag || !apiKeyConfigured}
                     className="gap-2"
                   >
@@ -630,6 +606,7 @@ export default function MembersPage() {
                 <Button
                   variant="outline"
                   onClick={handleExport}
+                  size="sm"
                   disabled={filteredMembers.length === 0}
                   className="gap-2"
                 >
@@ -640,6 +617,30 @@ export default function MembersPage() {
           </CardHeader>
 
           <CardContent className="space-y-4">
+            <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 sm:gap-3">
+              <SummaryCard
+                title={t("Members shown")}
+                value={formatNumber(filteredMembers.length)}
+                description={t("{count} members in the club", { count: formatNumber(members.length) })}
+                icon={Users}
+                tone="text-blue-500"
+              />
+              <SummaryCard
+                title={progressLabel}
+                className="order-last col-span-2 sm:order-none sm:col-span-1"
+                value={summary.progress == null ? t("Not enough history") : formatDelta(summary.progress)}
+                description={t("{known} of {total} members have period data", { known: formatNumber(summary.known), total: formatNumber(filteredMembers.length) })}
+                icon={Trophy}
+                tone="text-yellow-500"
+              />
+              <SummaryCard
+                title={t("Gained trophies")}
+                value={formatNumber(summary.gained)}
+                description={t(period.label)}
+                icon={TrendingUp}
+                tone="text-green-500"
+              />
+            </div>
             <div className="flex gap-2 overflow-x-auto pb-1">
               {quickFilters.map((filter) => {
                 const Icon = filter.icon;
@@ -659,7 +660,7 @@ export default function MembersPage() {
                     <Icon className="h-4 w-4" />
                     {<T text={filter.label} />}
                     <span className={cn("rounded-full px-2 py-0.5 text-xs", isActive ? "bg-primary-foreground/20" : "bg-muted")}>
-                      {filter.count}
+                      {formatNumber(filter.count)}
                     </span>
                   </button>
                 );
@@ -667,7 +668,7 @@ export default function MembersPage() {
             </div>
 
             {showFilters && (
-              <div className="rounded-lg border border-border bg-muted/20 p-4">
+              <div id="member-advanced-filters" className="rounded-lg border border-border bg-muted/20 p-4">
                 <div className="mb-4 flex items-center justify-between gap-3">
                   <div className="flex items-center gap-2">
                     <Filter className="h-4 w-4 text-primary" />
@@ -695,7 +696,7 @@ export default function MembersPage() {
                   </label>
 
                   <label className="space-y-1.5 text-sm">
-                    <span className="text-muted-foreground"><T text="Activity" /></span>
+                    <span className="text-muted-foreground"><T text="Recent activity" /></span>
                     <select
                       value={activityFilter}
                       onChange={(event) => setActivityFilter(event.target.value as ActivityFilter)}
@@ -710,7 +711,7 @@ export default function MembersPage() {
                   </label>
 
                   <label className="space-y-1.5 text-sm">
-                    <span className="text-muted-foreground"><T text="3-day progress" /></span>
+                    <span className="text-muted-foreground">{progressLabel}</span>
                     <select
                       value={movementFilter}
                       onChange={(event) => setMovementFilter(event.target.value as MovementFilter)}
@@ -760,7 +761,7 @@ export default function MembersPage() {
             )}
 
             {showColumns && (
-              <div className="rounded-lg border border-border bg-muted/20 p-4">
+              <div id="member-visible-columns" className="rounded-lg border border-border bg-muted/20 p-4">
                 <div className="mb-4 flex items-center justify-between gap-3">
                   <div className="flex items-center gap-2">
                     <Columns3 className="h-4 w-4 text-primary" />
@@ -775,6 +776,7 @@ export default function MembersPage() {
                     <RotateCcw className="h-4 w-4" />
                     <T text=" Default " /></Button>
                 </div>
+                <p className="mb-3 text-xs text-muted-foreground"><T text="Extra period columns are optional comparisons." /></p>
 
                 <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
                   {COLUMN_OPTIONS.map((column) => (
@@ -786,7 +788,7 @@ export default function MembersPage() {
                       <Switch
                         checked={columnVisibility[column.key]}
                         onCheckedChange={(checked) => toggleColumn(column.key, checked)}
-                        aria-label={`Toggle ${column.label} column`}
+                        aria-label={t("Toggle {column} column", { column: t(column.label) })}
                       />
                     </div>
                   ))}
@@ -806,10 +808,8 @@ export default function MembersPage() {
 
             <div className="flex flex-wrap items-center justify-between gap-3 border-t border-border pt-4">
               <div className="flex flex-wrap items-center gap-2 text-sm text-muted-foreground">
-                <span>
-                  <T text=" Showing " /><span className="font-semibold text-foreground">{filteredMembers.length}</span> <T text=" of" />{" "}
-                  <span className="font-semibold text-foreground">{members.length}</span>
-                </span>
+                <span>{t("Showing {shown} of {total}", { shown: formatNumber(filteredMembers.length), total: formatNumber(members.length) })}</span>
+                <Badge variant="outline">{t(period.label)}</Badge>
                 {quickFilter !== "all" && (
                   <Badge variant="secondary">{<T text={quickFilters.find((filter) => filter.id === quickFilter)?.label} />}</Badge>
                 )}
@@ -832,7 +832,9 @@ export default function MembersPage() {
               </>
             ) : (
               <MembersTable
+                key={`${timeRange}:${quickFilter}:${searchQuery}:${roleFilter}:${activityFilter}:${movementFilter}:${rankFilter}:${minTrophies}:${maxTrophies}`}
                 members={filteredMembers}
+                timeRange={timeRange}
                 columnVisibility={columnVisibility}
                 sortState={sortState}
                 onSort={handleSort}
@@ -869,16 +871,10 @@ export default function MembersPage() {
                     <p className="text-xs text-muted-foreground"><T text="Highest" /></p>
                     <p className="mt-1 text-xl font-bold">{formatNumber(selectedMember.highest_trophies)}</p>
                   </div>
-                  <div className="rounded-lg border border-border bg-muted/20 p-3">
-                    <p className="text-xs text-muted-foreground"><T text="24h" /></p>
-                    <p className={cn("mt-1 text-xl font-bold", getDeltaClass(selectedMember.trophies_24h))}>
-                      {formatDelta(selectedMember.trophies_24h)}
-                    </p>
-                  </div>
-                  <div className="rounded-lg border border-border bg-muted/20 p-3">
-                    <p className="text-xs text-muted-foreground"><T text="3 days" /></p>
-                    <p className={cn("mt-1 text-xl font-bold", getDeltaClass(selectedMember.trophies_3d))}>
-                      {formatDelta(selectedMember.trophies_3d)}
+                  <div className="col-span-2 rounded-lg border border-border bg-muted/20 p-3">
+                    <p className="text-xs text-muted-foreground">{t("Trophy progress · {period}", { period: t(period.label) })}</p>
+                    <p className={cn("mt-1 text-xl font-bold", getDeltaClass(getProgress(selectedMember, timeRange)))}>
+                      {getProgress(selectedMember, timeRange) == null ? t("Not enough history") : formatDelta(getProgress(selectedMember, timeRange))}
                     </p>
                   </div>
                 </div>
@@ -912,7 +908,7 @@ export default function MembersPage() {
                   </div>
                 </div>
 
-                <div className="grid gap-2 sm:grid-cols-2"><MemberReviewButton member={selectedMember} />
+                <div className="grid gap-2 sm:grid-cols-2">{isAdmin && <MemberReviewButton member={selectedMember} initialRange={timeRange} />}
                   <Button
                     variant="outline"
                     onClick={() => copyText(selectedMember.player_tag, "tag")}

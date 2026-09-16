@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabase-admin";
 import { rejectUnauthorizedAdminMutation } from "@/lib/admin-auth";
+import { parseTimeRange, TIME_RANGES } from "@/lib/time-range";
 
 const ALLOWED_NOTIFICATION_TYPES = new Set([
   "join",
@@ -58,6 +59,8 @@ export async function GET(request: NextRequest) {
     const unreadOnly = searchParams.get("unreadOnly") === "true";
     const limit = parseBoundedInt(searchParams.get("limit"), 50, 1, 100);
     const offset = parseBoundedInt(searchParams.get("offset"), 0, 0, Number.MAX_SAFE_INTEGER);
+    const range = searchParams.get("range");
+    const now = Date.now();
     const typesParam = searchParams.get("types");
     const hasTypeFilter = typesParam != null && typesParam.trim().length > 0;
     const types = hasTypeFilter
@@ -90,6 +93,11 @@ export async function GET(request: NextRequest) {
 
     if (types.length > 0) {
       query = query.in("type", types);
+    }
+    if (range != null) {
+      const days = TIME_RANGES[parseTimeRange(range)].days;
+      query = query.gte("created_at", new Date(now - days * 86_400_000).toISOString())
+        .lte("created_at", new Date(now).toISOString());
     }
 
     const [notificationsRes, unreadCountRes] = await Promise.all([

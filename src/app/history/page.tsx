@@ -2,8 +2,10 @@
 import { T, useI18n, LocalDate } from "@/components/locale-provider";
 
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { LayoutWrapper } from "@/components/layout-wrapper";
+import { TimeRangePicker } from "@/components/time-range-picker";
+import { type TimeRangeKey } from "@/lib/time-range";
 import { fetchJsonCached, invalidateJsonCache } from "@/lib/client-data-cache";
 import { useAdminSession } from "@/hooks/use-admin-session";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
@@ -32,24 +34,34 @@ export default function HistoryPage() {
   const [isLoading, setIsLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState("");
   const [filter, setFilter] = useState<"all" | "current" | "former">("all");
-  const [timeRange, setTimeRange] = useState<"all" | "7" | "30" | "90">("30");
+  const [timeRange, setTimeRange] = useState<TimeRangeKey | "all">("7d");
+  const [loadError, setLoadError] = useState(false);
+  const [noteError, setNoteError] = useState(false);
+  const loadSequence = useRef(0);
   const [editingTag, setEditingTag] = useState<string | null>(null);
   const [editingNote, setEditingNote] = useState("");
   const [savingNote, setSavingNote] = useState(false);
   const [reviewMember, setReviewMember] = useState<MemberHistory | null>(null);
 
   const loadHistory = useCallback(async (force = false) => {
+    const sequence = ++loadSequence.current;
+    setIsLoading(true);
+    setLoadError(false);
     try {
-      const query = timeRange === "all" ? "" : `?days=${timeRange}`;
+      const query = `?range=${timeRange}`;
       const data = await fetchJsonCached<{ history?: MemberHistory[] }>(`/api/history${query}`, {
         staleMs: 30_000,
         force,
       });
+      if (sequence !== loadSequence.current) return;
       setHistory(data.history || []);
     } catch (error) {
+      if (sequence !== loadSequence.current) return;
+      setLoadError(true);
+      setHistory([]);
       console.error("Error loading history:", error);
     } finally {
-      setIsLoading(false);
+      if (sequence === loadSequence.current) setIsLoading(false);
     }
   }, [timeRange]);
 
@@ -109,26 +121,29 @@ export default function HistoryPage() {
     setEditingNote("");
   };
 
-  const saveNote = async (playerTag: string) => {
+  const saveNote = async (playerTag: string, value = editingNote) => {
     if (!isAdmin) return;
+    setNoteError(false);
     try {
       setSavingNote(true);
       const response = await fetch("/api/history", {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ player_tag: playerTag, notes: editingNote.trim() }),
+        body: JSON.stringify({ player_tag: playerTag, notes: value.trim() }),
       });
+      if (!response.ok) throw new Error("Note update failed");
       if (response.ok) {
         invalidateJsonCache("/api/history");
         setHistory((prev) =>
           prev.map((h) =>
-            h.player_tag === playerTag ? { ...h, notes: editingNote.trim() || null } : h
+            h.player_tag === playerTag ? { ...h, notes: value.trim() || null } : h
           )
         );
         setEditingTag(null);
         setEditingNote("");
       }
     } catch (error) {
+      setNoteError(true);
       console.error("Error saving note:", error);
     } finally {
       setSavingNote(false);
@@ -142,14 +157,20 @@ export default function HistoryPage() {
   return (
     <LayoutWrapper>
       <div className="space-y-6">
+        <div className="flex flex-col justify-between gap-4 sm:flex-row sm:items-start">
+          <div><h1 className="text-2xl font-bold"><T text="Member History" /></h1><p className="mt-1 text-sm text-muted-foreground"><T text="Membership records matching this period" /></p></div>
+          <TimeRangePicker value={timeRange} onChange={range => { if (range !== timeRange) { setIsLoading(true); setTimeRange(range); } }} includeAll />
+        </div>
+        {loadError && <div role="alert" className="rounded-lg border border-destructive/40 p-4 text-sm"><T text="Could not load member history." /> <Button variant="ghost" onClick={() => loadHistory(true)}><T text="Retry" /></Button></div>}
+        {noteError && <p role="alert" className="text-sm text-destructive"><T text="Could not save the note. Your changes are still available to retry." /></p>}
         {/* Stats */}
-        <div className="grid gap-4 md:grid-cols-4">
+        <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
           <Card>
             <CardHeader className="pb-2">
               <CardTitle className="text-sm font-medium"><T text="Total Records" /></CardTitle>
             </CardHeader>
             <CardContent>
-              <div className="text-2xl font-bold">{history.length}</div>
+              <div className="text-2xl font-bold">{isLoading || loadError ? "—" : history.length}</div>
                 </CardContent>
               </Card>
               <Card>
@@ -157,7 +178,7 @@ export default function HistoryPage() {
                   <CardTitle className="text-sm font-medium"><T text="Current Members" /></CardTitle>
                 </CardHeader>
                 <CardContent>
-                  <div className="text-2xl font-bold text-green-500">{currentCount}</div>
+                  <div className="text-2xl font-bold text-green-500">{isLoading || loadError ? "—" : currentCount}</div>
                 </CardContent>
               </Card>
               <Card>
@@ -165,7 +186,7 @@ export default function HistoryPage() {
                   <CardTitle className="text-sm font-medium"><T text="Former Members" /></CardTitle>
                 </CardHeader>
                 <CardContent>
-                  <div className="text-2xl font-bold text-red-500">{formerCount}</div>
+                  <div className="text-2xl font-bold text-red-500">{isLoading || loadError ? "—" : formerCount}</div>
                 </CardContent>
               </Card>
               <Card>
@@ -173,7 +194,7 @@ export default function HistoryPage() {
                   <CardTitle className="text-sm font-medium"><T text="Returning Members" /></CardTitle>
                 </CardHeader>
                 <CardContent>
-                  <div className="text-2xl font-bold text-yellow-500">{returningCount}</div>
+                  <div className="text-2xl font-bold text-yellow-500">{isLoading || loadError ? "—" : returningCount}</div>
                 </CardContent>
               </Card>
             </div>
@@ -183,7 +204,7 @@ export default function HistoryPage() {
               <CardHeader>
                 <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
                   <div>
-                    <CardTitle><T text="Member History" /></CardTitle>
+                    <CardTitle><T text="Members" /></CardTitle>
                     <CardDescription>
                       <T text=" Track who has been in your club and identify returning members " /></CardDescription>
                   </div>
@@ -191,13 +212,14 @@ export default function HistoryPage() {
                     <div className="relative">
                       <Search className="absolute start-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
                       <Input
-                        placeholder={t("Search players...")}
+                        placeholder={t("Search players...")} aria-label={t("Search players...")}
                         value={searchQuery}
                         onChange={(e) => setSearchQuery(e.target.value)}
                         className="ps-10 w-full sm:w-64"
                       />
                     </div>
                     <select
+                      aria-label={t("Membership status")}
                       value={filter}
                       onChange={(e) => setFilter(e.target.value as typeof filter)}
                       className="h-10 rounded-md border border-input bg-background px-3 text-sm"
@@ -205,16 +227,6 @@ export default function HistoryPage() {
                       <option value="all"><T text="All Members" /></option>
                       <option value="current"><T text="Current Members" /></option>
                       <option value="former"><T text="Former Members" /></option>
-                    </select>
-                    <select
-                      value={timeRange}
-                      onChange={(e) => setTimeRange(e.target.value as typeof timeRange)}
-                      className="h-10 rounded-md border border-input bg-background px-3 text-sm"
-                    >
-                      <option value="all"><T text="All Time" /></option>
-                      <option value="7"><T text="Last 7 Days" /></option>
-                      <option value="30"><T text="Last 30 Days" /></option>
-                      <option value="90"><T text="Last 90 Days" /></option>
                     </select>
                   </div>
                 </div>
@@ -224,7 +236,7 @@ export default function HistoryPage() {
                   <div className="flex items-center justify-center py-12">
                     <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
                   </div>
-                ) : (
+                ) : loadError ? null : (
                   <>
                   <p className="mb-4 text-sm text-muted-foreground"><T text="First observed is the earliest retained evidence, not the actual join date. Counts cover the tracked history only." /></p>
                   <div className="space-y-3 md:hidden">{filteredHistory.length ? filteredHistory.map(member => <HistoryMemberCard key={member.player_tag} member={member} isAdmin={isAdmin} onReview={() => setReviewMember(member)} />) : <p><T text="No member history found" /></p>}</div>
@@ -240,13 +252,13 @@ export default function HistoryPage() {
                         <TableHead className="hidden lg:table-cell"><T text="Trophies At Leave" /></TableHead>
                         <TableHead className="text-center"><T text="Joined" /></TableHead>
                         <TableHead className="text-center"><T text="Left" /></TableHead>
-                        <TableHead className="hidden md:table-cell"><T text="Notes" /></TableHead>
+                        {isAdmin && <TableHead className="hidden md:table-cell"><T text="Notes" /></TableHead>}
                       </TableRow>
                     </TableHeader>
                     <TableBody>
                       {filteredHistory.length === 0 ? (
                         <TableRow>
-                          <TableCell colSpan={9} className="text-center py-8 text-muted-foreground">
+                          <TableCell colSpan={isAdmin ? 9 : 8} className="text-center py-8 text-muted-foreground">
                             <T text=" No member history found " /></TableCell>
                         </TableRow>
                       ) : (
@@ -266,26 +278,26 @@ export default function HistoryPage() {
                               <LocalDate value={h.last_left_at} time />
                             </TableCell>
                             <TableCell className="hidden lg:table-cell text-muted-foreground">
-                              {!h.is_current_member ? (h.role_at_leave || "Unknown") : "-"}
+                              {!h.is_current_member ? t(h.role_at_leave || "Unknown") : "-"}
                             </TableCell>
                             <TableCell className="hidden lg:table-cell text-muted-foreground">
                               {!h.is_current_member
-                                ? (typeof h.trophies_at_leave === "number" ? number(h.trophies_at_leave) : "Unknown")
+                                ? (typeof h.trophies_at_leave === "number" ? number(h.trophies_at_leave) : t("Unknown"))
                                 : "-"}
                             </TableCell>
                             <TableCell className="text-center">
                               <span className="inline-flex items-center gap-1 text-green-500">
                                 <UserPlus className="h-3 w-3" />
-                                {h.times_joined}
+                                {h.times_joined == null ? t("Unknown") : number(h.times_joined)}
                               </span>
                             </TableCell>
                             <TableCell className="text-center">
                               <span className="inline-flex items-center gap-1 text-red-500">
                                 <UserMinus className="h-3 w-3" />
-                                {h.times_left}
+                                {h.times_left == null ? t("Unknown") : number(h.times_left)}
                               </span>
                             </TableCell>
-                            <TableCell className="hidden md:table-cell max-w-[200px]">
+                            {isAdmin && <TableCell className="hidden md:table-cell max-w-[200px]">
                               {editingTag === h.player_tag ? (
                                 <div className="flex items-center gap-1">
                                   <Input
@@ -302,6 +314,7 @@ export default function HistoryPage() {
                                   <Button
                                     variant="ghost"
                                     size="icon"
+                                    aria-label={t("Save note")}
                                     className="h-7 w-7 shrink-0"
                                     onClick={() => saveNote(h.player_tag)}
                                     disabled={savingNote}
@@ -311,6 +324,7 @@ export default function HistoryPage() {
                                   <Button
                                     variant="ghost"
                                     size="icon"
+                                    aria-label={t("Cancel")}
                                     className="h-7 w-7 shrink-0"
                                     onClick={cancelEditingNote}
                                   >
@@ -321,7 +335,7 @@ export default function HistoryPage() {
                                 <div
                                   className={`flex items-center gap-1 group ${isAdmin ? "cursor-pointer" : ""}`}
                                   onClick={() => startEditingNote(h.player_tag, h.notes)}
-                                  title={isAdmin ? "Click to edit note" : "Admin login required to edit notes"}
+                                  title={t("Click to edit note")}
                                 >
                                   <span className="text-muted-foreground truncate">
                                     {isAdmin ? h.notes || "-" : "-"}
@@ -336,22 +350,7 @@ export default function HistoryPage() {
                                       onClick={(e) => {
                                         e.stopPropagation();
                                         if (!isAdmin) return;
-                                        setEditingNote("");
-                                        setSavingNote(true);
-                                        fetch("/api/history", {
-                                          method: "PATCH",
-                                          headers: { "Content-Type": "application/json" },
-                                          body: JSON.stringify({ player_tag: h.player_tag, notes: "" }),
-                                        }).then((res) => {
-                                          if (res.ok) {
-                                            invalidateJsonCache("/api/history");
-                                            setHistory((prev) =>
-                                              prev.map((item) =>
-                                                item.player_tag === h.player_tag ? { ...item, notes: null } : item
-                                              )
-                                            );
-                                          }
-                                        }).finally(() => setSavingNote(false));
+                                        void saveNote(h.player_tag, "");
                                       }}
                                     >
                                       <Trash2 className="h-3 w-3 text-red-500" />
@@ -359,7 +358,7 @@ export default function HistoryPage() {
                                   )}
                                 </div>
                               )}
-                            </TableCell>
+                            </TableCell>}
                           </TableRow>
                         ))
                       )}
@@ -380,7 +379,7 @@ export default function HistoryPage() {
                   <div className="flex items-center gap-2">
                     <Badge variant="success"><T text="Current" /></Badge>
                     <span className="text-sm text-muted-foreground">
-                      <T text=" No recorded departures during tracking " /></span>
+                      <T text=" Currently in the club " /></span>
                   </div>
                   <div className="flex items-center gap-2">
                     <Badge variant="warning"><T text="🔄 Returned" /></Badge>

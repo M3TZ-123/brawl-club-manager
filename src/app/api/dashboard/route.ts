@@ -5,6 +5,8 @@ import {
   appendMemberActivityMetrics,
   MemberActivityMetrics,
 } from "@/lib/member-activity-metrics";
+import { parseTimeRange, TIME_RANGES, type TrophyPeriodMetric } from "@/lib/time-range";
+import { getReportingPeriod, reportingPeriodMetadata } from "@/lib/reporting-period";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -14,6 +16,7 @@ interface DashboardSummary {
   totalTrophies: number;
   activeMembers: number;
   avgTrophies: number;
+  trophyProgressKnownMembers: number;
 }
 
 type DashboardMember = Member & MemberActivityMetrics;
@@ -26,33 +29,19 @@ interface ChangeSummary {
   since: string;
 }
 
-const MS_PER_DAY = 24 * 60 * 60 * 1000;
-
 function getNumberMetric(value: number | null | undefined) {
   return typeof value === "number" && Number.isFinite(value) ? value : 0;
-}
-
-function hasSevenDayGain(member: DashboardMember) {
-  return member.trophies_7d != null && member.trophies_7d > 0;
-}
-
-function hasNoThreeDayProgress(member: DashboardMember) {
-  return member.trophies_3d === 0;
 }
 
 function sortByTrophiesDesc(a: Member, b: Member) {
   return getNumberMetric(b.trophies) - getNumberMetric(a.trophies);
 }
 
-function sortBySevenDayGainDesc(a: DashboardMember, b: DashboardMember) {
-  return getNumberMetric(b.trophies_7d) - getNumberMetric(a.trophies_7d);
-}
-
-function sortByRisk(a: DashboardMember, b: DashboardMember) {
+function sortByRisk(a: DashboardMember, b: DashboardMember, metric: TrophyPeriodMetric) {
   const statusWeight = { inactive: 0, minimal: 1, active: 2 };
   const statusDiff = statusWeight[a.activity_status] - statusWeight[b.activity_status];
   if (statusDiff !== 0) return statusDiff;
-  return getNumberMetric(a.trophies_3d) - getNumberMetric(b.trophies_3d);
+  return getNumberMetric(a[metric]) - getNumberMetric(b[metric]);
 }
 
 function normalizeTimestamp(value: string | null | undefined) {
@@ -63,10 +52,14 @@ function normalizeTimestamp(value: string | null | undefined) {
   return Number.isNaN(parsed.getTime()) ? timestamp : parsed.toISOString();
 }
 
-export async function GET() {
+export async function GET(request?: Request) {
   try {
     const now = new Date();
-    const sevenDaysAgo = new Date(now.getTime() - 7 * MS_PER_DAY).toISOString();
+    const range = parseTimeRange(request ? new URL(request.url).searchParams.get("range") : null);
+    const period = getReportingPeriod(range, now);
+    const metric = TIME_RANGES[range].metric;
+    const since = period.start.toISOString();
+    const until = now.toISOString();
 
     const [currentMembersRes, eventsRes] = await Promise.all([
       supabaseAdmin
@@ -76,6 +69,7 @@ export async function GET() {
       supabaseAdmin
         .from("club_events")
         .select("id, event_type, player_tag, player_name, event_time")
+        .gte("event_time", since).lte("event_time", until)
         .order("event_time", { ascending: false })
         .limit(5),
     ]);
@@ -90,8 +84,10 @@ export async function GET() {
 
     const [
       membersRes,
-      recentChangeEventsRes,
-      recentChangeNotificationsRes,
+      joinsRes,
+      leavesRes,
+      namesRes,
+      rolesRes,
       settingsRes,
     ] = await Promise.all([
       currentTagList.length > 0
@@ -101,15 +97,14 @@ export async function GET() {
             .in("player_tag", currentTagList)
             .order("trophies", { ascending: false })
         : Promise.resolve({ data: [], error: null }),
-      supabaseAdmin
-        .from("club_events")
-        .select("event_type")
-        .gte("event_time", sevenDaysAgo),
-      supabaseAdmin
-        .from("notifications")
-        .select("type")
-        .in("type", ["name_change", "promotion", "demotion", "role_change"])
-        .gte("created_at", sevenDaysAgo),
+      supabaseAdmin.from("club_events").select("id", { count: "exact", head: true })
+        .eq("event_type", "join").gte("event_time", since).lte("event_time", until),
+      supabaseAdmin.from("club_events").select("id", { count: "exact", head: true })
+        .eq("event_type", "leave").gte("event_time", since).lte("event_time", until),
+      supabaseAdmin.from("notifications").select("id", { count: "exact", head: true })
+        .eq("type", "name_change").gte("created_at", since).lte("created_at", until),
+      supabaseAdmin.from("notifications").select("id", { count: "exact", head: true })
+        .in("type", ["promotion", "demotion", "role_change"]).gte("created_at", since).lte("created_at", until),
       supabaseAdmin
         .from("settings")
         .select("key, value")
@@ -117,8 +112,7 @@ export async function GET() {
     ]);
 
     if (membersRes.error) throw membersRes.error;
-    if (recentChangeEventsRes.error) throw recentChangeEventsRes.error;
-    if (recentChangeNotificationsRes.error) throw recentChangeNotificationsRes.error;
+    for (const result of [joinsRes, leavesRes, namesRes, rolesRes]) { if (result.error) throw result.error; }
     if (settingsRes.error) throw settingsRes.error;
 
     const members = ((membersRes.data || []) as Member[]).sort(sortByTrophiesDesc);
@@ -132,31 +126,28 @@ export async function GET() {
       totalTrophies,
       activeMembers,
       avgTrophies: members.length > 0 ? Math.round(totalTrophies / members.length) : 0,
+      trophyProgressKnownMembers: membersWithMetrics.filter(member => member[metric] != null).length,
     };
     const topMembers = membersWithMetrics.slice(0, 6);
     const topGainers = membersWithMetrics
-      .filter(hasSevenDayGain)
-      .sort(sortBySevenDayGainDesc)
+      .filter(member => member[metric] != null && member[metric]! > 0)
+      .sort((a, b) => getNumberMetric(b[metric]) - getNumberMetric(a[metric]))
       .slice(0, 5);
     const noProgressMembers = membersWithMetrics
-      .filter(hasNoThreeDayProgress)
-      .sort(sortByRisk)
+      .filter(member => member[metric] === 0)
+      .sort((a, b) => sortByRisk(a, b, metric))
       .slice(0, 5);
     const attentionMembers = membersWithMetrics
-      .filter((member) => member.activity_status !== "active" || hasNoThreeDayProgress(member))
-      .sort(sortByRisk)
+      .filter((member) => member.activity_status !== "active" || member[metric] === 0)
+      .sort((a, b) => sortByRisk(a, b, metric))
       .slice(0, 6);
 
-    const recentChangeEvents = (recentChangeEventsRes.data || []) as Array<{ event_type: string }>;
-    const recentChangeNotifications = (recentChangeNotificationsRes.data || []) as Array<{ type: string }>;
     const changeSummary: ChangeSummary = {
-      joins: recentChangeEvents.filter((event) => event.event_type === "join").length,
-      leaves: recentChangeEvents.filter((event) => event.event_type === "leave").length,
-      nameChanges: recentChangeNotifications.filter((notification) => notification.type === "name_change").length,
-      roleChanges: recentChangeNotifications.filter((notification) =>
-        ["promotion", "demotion", "role_change"].includes(notification.type)
-      ).length,
-      since: sevenDaysAgo,
+      joins: joinsRes.count ?? 0,
+      leaves: leavesRes.count ?? 0,
+      nameChanges: namesRes.count ?? 0,
+      roleChanges: rolesRes.count ?? 0,
+      since,
     };
 
     const settings = new Map(
@@ -165,6 +156,7 @@ export async function GET() {
 
     return NextResponse.json(
       {
+        period: reportingPeriodMetadata(period),
         summary,
         topMembers,
         topGainers,
@@ -173,8 +165,6 @@ export async function GET() {
         changeSummary,
         syncStatus: {
           lastSyncTime: normalizeTimestamp(settings.get("last_sync_time")),
-          source: "cron-job.org",
-          intervalMinutes: 30,
         },
         recentEvents: (eventsRes.data || []).map(({ id, event_type, player_tag, player_name, event_time }) => ({
           id, event_type, player_tag, player_name, event_time,

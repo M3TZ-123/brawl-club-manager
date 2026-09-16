@@ -15,11 +15,12 @@ const warningMessages: Record<string, string> = {
   ranked_rate_limited: "The ranked provider limited requests. Previously recorded ranks remain unchanged.",
 };
 const freshnessLabel = (freshness: string | undefined) => freshness === "fresh" ? "Fresh" : freshness === "stale" ? "Stale" : "No complete refresh recorded";
-const completedFullRun = (health: SyncHealth | null) => health?.latestFullRun ?? (health?.latestRun?.scope === "full" && health.latestRun.status !== "running" ? health.latestRun : null);
+const completedFullRun = (health: SyncHealth | null | undefined) => health?.latestFullRun ?? (health?.latestRun?.scope === "full" && health.latestRun.status !== "running" ? health.latestRun : null);
 
 export function DataConfidenceNotice() {
   const health = useSyncHealth();
   const { t } = useI18n();
+  if (health === undefined) return null;
   const fullRun = completedFullRun(health);
   const battleWarning = fullRun?.warnings?.some(code => code === "battle_logs_incomplete" || code === "battle_logs_rate_limited");
   const fullFailed = fullRun && fullRun.status !== "succeeded";

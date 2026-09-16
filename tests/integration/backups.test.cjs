@@ -78,6 +78,9 @@ test("encrypted backup restores actual schema, rows and private permissions into
     } finally { await client.query("RESET ROLE"); }
     manifest = (await client.query("SELECT manifest FROM public.backup_snapshots WHERE id=$1", [snapshotId])).rows[0].manifest;
     assert.equal(manifest.tables.find(table => table.name === "activity_log").row_count, process.env.BACKUP_LARGE_TEST === "1" ? 307000 : 1501);
+    for (const name of ["sync_activity_summary_v2", "report_account_trophy_trend", "report_member_activity_history"]) {
+      assert.ok(manifest.functions.some(fn => fn.name === name), `Range function ${name} must be captured`);
+    }
     assert.equal(manifest.tables.find(table => table.name === "backup_chunks").row_count, 0);
     for (const name of ["sync_battle_coverage", "sync_battle_gaps", "capacity_samples"]) assert.equal(manifest.tables.find(table => table.name === name).row_count, 1);
     assert.ok(manifest.tables.find(table => table.name === "profiles").columns.some(column => column.name === "owner_user_id"));
@@ -133,6 +136,14 @@ test("encrypted backup restores actual schema, rows and private permissions into
     assert.equal((await client.query("SELECT normalized_owner FROM public.profiles")).rows[0].normalized_owner, "OWNER-A");
     assert.equal((await client.query("SELECT id::text FROM public.user_clubs")).rows[0].id, "9007199254740993");
     assert.equal((await client.query("SELECT trophies FROM public.members WHERE player_tag='#PLAYER'")).rows[0].trophies, 30000);
+    const restoredMetrics = (await client.query("SELECT * FROM public.sync_activity_summary_v2(ARRAY['#PLAYER'],'2026-09-16T00:25:00Z')")).rows[0];
+    assert.equal(restoredMetrics.trophies_24h, 0);
+    assert.equal(restoredMetrics.trophies_30d, null);
+    assert.equal(restoredMetrics.trophies_90d, null);
+    assert.equal((await client.query("SELECT * FROM public.report_account_trophy_trend(ARRAY['#PLAYER'],90,'2026-09-16T00:25:00Z')")).rowCount, 90);
+    const restoredObservations = (await client.query("SELECT * FROM public.report_member_activity_history('#PLAYER',7,'2026-09-16T00:25:00Z')")).rows;
+    assert.ok(restoredObservations.length > 0 && restoredObservations.length <= 28);
+    assert.ok(restoredObservations.every(row => !Object.hasOwn(row, "owner_user_id")));
     assert.equal((await client.query("SELECT owner_user_id FROM public.members WHERE player_tag='#PLAYER'")).rows[0].owner_user_id, "private-member-owner");
     const publication = (await client.query("SELECT attnames FROM pg_publication_tables WHERE pubname='supabase_realtime' AND tablename='battle_history'")).rows[0];
     assert.equal(publication.attnames.includes("owner_user_id"), false);
@@ -147,6 +158,9 @@ test("encrypted backup restores actual schema, rows and private permissions into
         await assert.rejects(client.query("SELECT * FROM public.member_reviews"), error => error.code === "42501");
         for (const name of ["sync_battle_coverage", "sync_battle_gaps", "capacity_samples"]) await assert.rejects(client.query(`SELECT * FROM public.${name}`), error => error.code === "42501");
         await assert.rejects(client.query("SELECT public.sample_database_capacity()"), error => error.code === "42501");
+        for (const query of ["SELECT * FROM public.sync_activity_summary_v2(ARRAY['#PLAYER'])", "SELECT * FROM public.report_account_trophy_trend(ARRAY['#PLAYER'],90)", "SELECT * FROM public.report_member_activity_history('#PLAYER',90)"]) {
+          await assert.rejects(client.query(query), error => error.code === "42501");
+        }
         await assert.rejects(client.query("SELECT public.create_backup_snapshot($1)", [randomUUID()]), error => error.code === "42501");
       } finally { await client.query("RESET ROLE"); }
     }
@@ -157,5 +171,17 @@ test("encrypted backup restores actual schema, rows and private permissions into
       await assert.rejects(client.query("SELECT public.sample_database_capacity()"), error => error.code === "42501");
     }
     finally { await client.query("RESET ROLE"); }
+  });
+
+  await t.test("restored maintenance definitions keep the extra day required by90-day comparisons", async () => {
+    for (const cleanup of ["run_sync_maintenance", "cleanup_old_activity_logs"]) {
+      await client.query("BEGIN");
+      try {
+        await client.query("INSERT INTO activity_log(player_tag,trophies,recorded_at) VALUES('#PLAYER',29000,now()-interval '90 days 12 hours'),('#PLAYER',28000,now()-interval '92 days')");
+        await client.query(`SELECT public.${cleanup}()`);
+        assert.equal((await client.query("SELECT trophies_90d FROM public.sync_activity_summary_v2(ARRAY['#PLAYER'],now())")).rows[0].trophies_90d,1000);
+        assert.equal((await client.query("SELECT count(*)::int n FROM activity_log WHERE recorded_at<now()-interval '91 days'")).rows[0].n,0);
+      } finally { await client.query("ROLLBACK"); }
+    }
   });
 });

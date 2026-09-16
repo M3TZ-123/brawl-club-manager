@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabase-admin";
 import { rejectUnauthorizedAdminMutation, verifyAdminSession } from "@/lib/admin-auth";
 import { loadMemberReviews, ReviewInputError, saveMemberReview } from "@/lib/member-reviews";
+import { parseTimeRange, TIME_RANGES } from "@/lib/time-range";
 
 export const dynamic = "force-dynamic";
 const PUBLIC_HISTORY_COLUMNS = "player_tag, player_name, first_seen, last_seen, last_left_at, times_joined, times_left, is_current_member, role_at_leave, trophies_at_leave";
@@ -47,7 +48,7 @@ async function fetchAllMemberHistory(): Promise<MemberHistoryRow[]> {
   return rows;
 }
 
-async function fetchRecentMembershipTags(cutoffDate: Date): Promise<Set<string>> {
+async function fetchRecentMembershipTags(cutoffDate: Date, now: Date): Promise<Set<string>> {
   const pageSize = 1000;
   const tags = new Set<string>();
 
@@ -57,6 +58,7 @@ async function fetchRecentMembershipTags(cutoffDate: Date): Promise<Set<string>>
       .select("player_tag")
       .in("event_type", ["join", "leave"])
       .gte("event_time", cutoffDate.toISOString())
+      .lte("event_time", now.toISOString())
       .order("event_time", { ascending: false })
       .order("id", { ascending: false })
       .range(from, from + pageSize - 1);
@@ -74,14 +76,17 @@ export async function GET(request: NextRequest) {
     const { searchParams } = new URL(request.url);
     const daysParam = searchParams.get("days");
     const parsedDays = daysParam && daysParam !== "all" ? Number(daysParam) : null;
-    const days = parsedDays != null && Number.isFinite(parsedDays) && parsedDays > 0 ? parsedDays : null;
+    const range = searchParams.get("range");
+    const days = range === "all" ? null : range != null ? TIME_RANGES[parseTimeRange(range)].days
+      : parsedDays != null && Number.isFinite(parsedDays) && parsedDays > 0 ? Math.min(parsedDays, 365) : null;
+    const now = new Date();
     const cutoffDate = days
-      ? new Date(Date.now() - days * 24 * 60 * 60 * 1000)
+      ? new Date(now.getTime() - days * 24 * 60 * 60 * 1000)
       : null;
 
     const [history, recentMembershipTags] = await Promise.all([
       fetchAllMemberHistory(),
-      cutoffDate ? fetchRecentMembershipTags(cutoffDate) : Promise.resolve(new Set<string>()),
+      cutoffDate ? fetchRecentMembershipTags(cutoffDate, now) : Promise.resolve(new Set<string>()),
     ]);
 
     let filteredHistory = history;
@@ -96,8 +101,8 @@ export async function GET(request: NextRequest) {
         const leftAt = parseDate(record.last_left_at)
           || (!record.is_current_member ? parseDate(record.last_seen) : null);
 
-        const joinedInRange = !!joinedAt && joinedAt >= cutoffDate;
-        const leftInRange = !!leftAt && leftAt >= cutoffDate;
+        const joinedInRange = !!joinedAt && joinedAt >= cutoffDate && joinedAt <= now;
+        const leftInRange = !!leftAt && leftAt >= cutoffDate && leftAt <= now;
 
         return joinedInRange || leftInRange;
       });

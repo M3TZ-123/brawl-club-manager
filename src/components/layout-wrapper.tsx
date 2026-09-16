@@ -1,5 +1,5 @@
 "use client";
-import { T, LanguageSelector, LocalDate } from "@/components/locale-provider";
+import { T, useI18n, LanguageSelector, LocalDate } from "@/components/locale-provider";
 
 
 import { ReactNode, createContext, useContext, useCallback, useEffect, useRef, useState } from "react";
@@ -10,6 +10,7 @@ import { useAdminSession } from "@/hooks/use-admin-session";
 import { cn } from "@/lib/utils";
 import { fetchJsonCached, invalidateJsonCache } from "@/lib/client-data-cache";
 import { useSyncHealth } from "@/components/sync-health";
+import { localizeNotificationForDisplay } from "@/lib/notification-display";
 import {
   LayoutDashboard,
   Users,
@@ -66,7 +67,8 @@ export function useSidebarContext() {
 }
 
 function SimpleSidebar() {
-  const syncHealth = useSyncHealth();
+  const { t } = useI18n();
+  useSyncHealth();
   const pathname = usePathname();
   const { clubName, lastSyncTime, isSyncing, clubTag, apiKeyConfigured, notificationsEnabled } = useAppStore();
   const { isOpen, close } = useSidebarContext();
@@ -80,7 +82,7 @@ function SimpleSidebar() {
   const handleSync = useCallback(async () => {
     if (!clubTag || !apiKeyConfigured) return;
     if (!isAdmin) {
-      alert("Admin login required to sync club data.");
+      alert(t("Admin login required to sync club data."));
       return;
     }
     
@@ -94,7 +96,7 @@ function SimpleSidebar() {
       const data = await response.json();
       if (!response.ok) {
         console.error("Sync error:", data.error);
-        alert(`Sync failed: ${data.error}`);
+        alert(t("Sync failed. Please try again."));
       } else {
         const syncTime = typeof data.timestamp === "string" ? data.timestamp : null;
         invalidateJsonCache();
@@ -119,11 +121,11 @@ function SimpleSidebar() {
       }
     } catch (error) {
       console.error("Sync failed:", error);
-      alert("Sync failed. Check the console for details.");
+      alert(t("Sync failed. Please try again."));
     } finally {
       useAppStore.getState().setIsSyncing(false);
     }
-  }, [apiKeyConfigured, clubTag, isAdmin, notificationsEnabled]);
+  }, [apiKeyConfigured, clubTag, isAdmin, notificationsEnabled, t]);
 
   return (
     <>
@@ -158,6 +160,7 @@ function SimpleSidebar() {
             </Link>
             <Button variant="ghost" size="icon" className="md:hidden" onClick={close}>
               <X className="h-5 w-5" />
+              <span className="sr-only"><T text="Close menu" /></span>
             </Button>
           </div>
 
@@ -193,7 +196,7 @@ function SimpleSidebar() {
 
           {/* Sync */}
           <div className="border-t border-border px-3 py-4">
-            <Button
+            {isAdmin && <Button
               onClick={handleSync}
               disabled={isSyncing || !clubTag || !apiKeyConfigured || !isAdmin || isAdminLoading}
               variant="outline"
@@ -201,13 +204,13 @@ function SimpleSidebar() {
             >
               <RefreshCw className={cn("size-4", isSyncing && "animate-spin")} />
               <span>{isSyncing ? <T text="Syncing..." /> : <T text="Sync Now" />}</span>
-            </Button>
-            {(lastSyncTime || syncHealth?.lastRosterSuccessAt) && (
+            </Button>}
+            {lastSyncTime && (
               <dl className="mt-2 space-y-1 text-xs text-muted-foreground">
-                <div className="flex flex-wrap justify-between gap-x-2"><dt><T text="Last full sync:" /></dt><dd><LocalDate value={lastSyncTime} time /></dd></div>
-                <div className="flex flex-wrap justify-between gap-x-2"><dt><T text="Last roster check:" /></dt><dd><LocalDate value={syncHealth?.lastRosterSuccessAt} time /></dd></div>
+                <div className="flex flex-wrap justify-between gap-x-2"><dt><T text="Stats updated" /></dt><dd><LocalDate value={lastSyncTime} time /></dd></div>
               </dl>
             )}
+            {!isAdmin && !isAdminLoading && <Link href="/admin" className="mt-3 block text-xs text-muted-foreground hover:text-foreground"><T text="Admin sign in" /></Link>}
           </div>
         </div>
       </aside>
@@ -232,15 +235,24 @@ type NotificationMutationResponse = {
 };
 
 function SimpleHeader() {
+  const { t, number } = useI18n();
   const { clubName, theme, setTheme } = useAppStore();
   const { toggle } = useSidebarContext();
   const { isAdmin } = useAdminSession();
   const [notifications, setNotifications] = useState<NotificationItem[]>([]);
   const [showNotifications, setShowNotifications] = useState(false);
   const [unreadCount, setUnreadCount] = useState(0);
+  const [notificationsLoaded, setNotificationsLoaded] = useState(false);
+  const [notificationError, setNotificationError] = useState<string | null>(null);
+  const [updatingNotifications, setUpdatingNotifications] = useState(false);
   const panelRef = useRef<HTMLDivElement>(null);
+  const notificationGeneration = useRef(0);
+  const notificationMutation = useRef(false);
+  const invalidateNotifications = useCallback(() => { notificationGeneration.current++; }, []);
 
   const loadNotifications = useCallback(async (force = false) => {
+    if (notificationMutation.current) return;
+    const request = ++notificationGeneration.current;
     try {
       const data = await fetchJsonCached<{
         notifications: NotificationItem[];
@@ -249,10 +261,16 @@ function SimpleHeader() {
         staleMs: 30_000,
         force,
       });
+      if (request !== notificationGeneration.current) return;
+      setNotificationError(null);
       setNotifications(data.notifications || []);
       setUnreadCount(data.unreadCount || 0);
     } catch (error) {
+      if (request !== notificationGeneration.current) return;
+      setNotificationError("Could not load notifications.");
       console.error("Error loading notifications:", error);
+    } finally {
+      if (request === notificationGeneration.current) setNotificationsLoaded(true);
     }
   }, []);
 
@@ -261,10 +279,11 @@ function SimpleHeader() {
     window.addEventListener("club-data-updated", handleUpdate);
     window.addEventListener("notifications-updated", handleUpdate);
     return () => {
+      invalidateNotifications();
       window.removeEventListener("club-data-updated", handleUpdate);
       window.removeEventListener("notifications-updated", handleUpdate);
     };
-  }, [loadNotifications]);
+  }, [loadNotifications, invalidateNotifications]);
 
   useEffect(() => {
     const timer = window.setTimeout(() => {
@@ -295,7 +314,10 @@ function SimpleHeader() {
   }, [showNotifications]);
 
   const markAsRead = async (id: number) => {
-    if (!isAdmin) return;
+    if (!isAdmin || notificationMutation.current) return;
+    notificationMutation.current = true;
+    notificationGeneration.current++;
+    setUpdatingNotifications(true);
     try {
       const response = await fetch("/api/notifications", {
         method: "PATCH",
@@ -313,14 +335,23 @@ function SimpleHeader() {
       setUnreadCount((c) =>
         typeof data.unreadCount === "number" ? data.unreadCount : Math.max(0, c - 1)
       );
+      setNotificationError(null);
+      notificationMutation.current = false;
       window.dispatchEvent(new CustomEvent("notifications-updated"));
     } catch (error) {
+      setNotificationError("Could not update notifications. Please try again.");
       console.error("Error marking notification as read:", error);
+    } finally {
+      notificationMutation.current = false;
+      setUpdatingNotifications(false);
     }
   };
 
   const markAllAsRead = async () => {
-    if (!isAdmin) return;
+    if (!isAdmin || notificationMutation.current) return;
+    notificationMutation.current = true;
+    notificationGeneration.current++;
+    setUpdatingNotifications(true);
     try {
       const response = await fetch("/api/notifications", {
         method: "PATCH",
@@ -334,9 +365,15 @@ function SimpleHeader() {
       invalidateJsonCache("/api/notifications");
       setNotifications((prev) => prev.map((n) => ({ ...n, is_read: true })));
       setUnreadCount(typeof data.unreadCount === "number" ? data.unreadCount : 0);
+      setNotificationError(null);
+      notificationMutation.current = false;
       window.dispatchEvent(new CustomEvent("notifications-updated"));
     } catch (error) {
+      setNotificationError("Could not update notifications. Please try again.");
       console.error("Error marking all as read:", error);
+    } finally {
+      notificationMutation.current = false;
+      setUpdatingNotifications(false);
     }
   };
 
@@ -399,7 +436,7 @@ function SimpleHeader() {
 
   return (
     <header className="h-16 border-b bg-card flex items-center justify-between px-4 md:px-6 gap-4">
-      <div className="flex items-center gap-3">
+      <div className="flex min-w-0 items-center gap-3">
         <Button
           variant="ghost"
           size="icon"
@@ -409,14 +446,15 @@ function SimpleHeader() {
           <PanelLeft className="h-5 w-5" />
           <span className="sr-only"><T text="Toggle Sidebar" /></span>
         </Button>
-        <h1 className="text-lg md:text-xl font-semibold truncate">{clubName || "Brawl Stars Club Manager"}</h1>
+        <p className="truncate text-lg font-semibold md:text-xl">{clubName || "Brawl Stars Club Manager"}</p>
       </div>
-      <div className="flex items-center gap-2">
+      <div className="flex shrink-0 items-center gap-2">
         <LanguageSelector />
         <Button
           variant="ghost"
           size="icon"
           onClick={() => setTheme(theme === "dark" ? "light" : "dark")}
+          aria-label={t(theme === "dark" ? "Switch to light mode" : "Switch to dark mode")}
         >
           {theme === "dark" ? (
             <span className="h-5 w-5">☀️</span>
@@ -431,6 +469,8 @@ function SimpleHeader() {
             variant="ghost"
             size="icon"
             onClick={() => setShowNotifications(!showNotifications)}
+            aria-label={t("Notifications")}
+            aria-expanded={showNotifications}
           >
             <Bell className="h-5 w-5" />
             {unreadCount > 0 && (
@@ -448,17 +488,20 @@ function SimpleHeader() {
                   {unreadCount > 0 && isAdmin && (
                     <button
                       onClick={markAllAsRead}
+                      disabled={updatingNotifications}
                       className="text-xs text-primary hover:underline"
                     >
                       <T text=" Mark all as read " /></button>
                   )}
                 </div>
-                {notifications.length === 0 ? (
+                {notificationError && <div role="alert" className="p-3 text-sm text-destructive"><p>{t(notificationError)}</p><Button variant="ghost" size="sm" onClick={() => loadNotifications(true)}>{t("Retry")}</Button></div>}
+                {!notificationsLoaded ? <p role="status" className="p-6 text-sm text-muted-foreground">{t("Loading...")}</p> : notifications.length === 0 ? (!notificationError &&
                   <p className="p-6 text-sm text-muted-foreground text-center">
                     <T text=" No notifications yet " /></p>
                 ) : (
                   <div className="max-h-80 overflow-y-auto">
                     {notifications.map((notif) => {
+                      const display = localizeNotificationForDisplay(notif, t, number);
                       const style = getNotifIcon(notif.type);
                       const Icon = style.icon;
                       return (
@@ -480,14 +523,14 @@ function SimpleHeader() {
                             <div className="flex-1 min-w-0">
                               <div className="flex items-center gap-2">
                                 <span className={cn("text-xs font-semibold", style.color)}>
-                                  {<T text={notif.title} />}
+                                  {display.title}
                                 </span>
                                 {!notif.is_read && (
                                   <span className="w-1.5 h-1.5 rounded-full bg-primary shrink-0" />
                                 )}
                               </div>
                               <p className="text-sm text-muted-foreground mt-0.5 break-words">
-                                {renderMessageWithMemberLinks(notif.message)}
+                                {renderMessageWithMemberLinks(display.message)}
                               </p>
                               <p className="text-xs text-muted-foreground/70 mt-1">
                                 <LocalDate value={notif.created_at} time />

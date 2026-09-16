@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabase-admin";
+import { parseTimeRange, TIME_RANGES } from "@/lib/time-range";
 
 function parseBoundedInt(value: string | null, fallback: number, min: number, max: number): number {
   const parsed = Number.parseInt(value || "", 10);
@@ -72,6 +73,11 @@ export async function GET(request: Request) {
     const mode = searchParams.get("mode") || null;
     const player = searchParams.get("player") || null;
     const date = searchParams.get("date") || null; // YYYY-MM-DD
+    const range = searchParams.get("range");
+    const now = Date.now();
+    if (date && (!/^\d{4}-\d{2}-\d{2}$/.test(date) || !Number.isFinite(Date.parse(date)) || new Date(date).toISOString().slice(0, 10) !== date)) {
+      return NextResponse.json({ error: "Invalid date" }, { status: 400 });
+    }
 
     // Get only current club member tags from member_history
     const { data: currentMemberHistory, error: historyError } = await supabaseAdmin
@@ -110,7 +116,10 @@ export async function GET(request: Request) {
         const dayStart = `${date}T00:00:00.000Z`;
         const dayEnd = `${date}T23:59:59.999Z`;
         query = query.gte("battle_time", dayStart).lte("battle_time", dayEnd);
+      } else if (range != null) {
+        query = query.gte("battle_time", new Date(now - TIME_RANGES[parseTimeRange(range)].days * 86_400_000).toISOString());
       }
+      query = query.lte("battle_time", new Date(now + 60_000).toISOString());
       return query;
     };
 
@@ -338,20 +347,6 @@ export async function GET(request: Request) {
         isShowdown,
       };
     });
-
-    // Fix timezone offset for existing data: if battles appear in the future, adjust them
-    const serverNow = Date.now();
-    const matchBattleTimes = enrichedMatches.map(m => new Date(m.battle_time).getTime());
-    const maxMatchTime = matchBattleTimes.length > 0 ? matchBattleTimes.reduce((max, t) => t > max ? t : max, 0) : 0;
-    
-    if (maxMatchTime > serverNow + 60000) { // More than 1 minute in the future
-      const rawOffsetMs = maxMatchTime - serverNow;
-      const offsetHours = Math.ceil(rawOffsetMs / 3600000);
-      const offsetMs = offsetHours * 3600000;
-      for (const match of enrichedMatches) {
-        match.battle_time = new Date(new Date(match.battle_time).getTime() - offsetMs).toISOString();
-      }
-    }
 
     // Get distinct modes for filter
     const modes = await fetchRecentBattleModes(currentMemberTags);

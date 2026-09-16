@@ -334,7 +334,7 @@ test("realtime insert bypasses a fresh battle cache and uses the server paginati
       ? { matches: [row], total: 70, nextOffset: 52 }
       : { members: [], list: [] });
   } });
-  const channel = { on(_type, _filter, callback) { onInsert = callback; return channel; }, subscribe(callback) { callback("SUBSCRIBED"); return channel; } };
+  const channel = { on(_type, _filter, callback) { onInsert = callback; return channel; }, subscribe(callback) { callback?.("SUBSCRIBED"); return channel; } };
   const component = loadTypeScript("src/app/battle-feed/page.tsx", {
     ...componentMocks, react: renderer.react,
     "@/lib/client-data-cache": cache,
@@ -389,7 +389,7 @@ test("notification UI requests unread/category filters and follows nextOffset", 
   let tree = await renderer.render(component);
   action(tree, "Unread (105)")();
   tree = await renderer.render(component);
-  action(tree, "Promotions")();
+  elements(tree).find(element => element.type === "select" && element.props["aria-label"] === "Notification type").props.onChange({ target: { value: "promotion" } });
   tree = await renderer.render(component);
   assert.equal(requests.at(-1).searchParams.get("unreadOnly"), "true");
   assert.equal(requests.at(-1).searchParams.get("types"), "promotion,demotion");
@@ -399,11 +399,11 @@ test("notification UI requests unread/category filters and follows nextOffset", 
   assert.equal(elements(tree).filter(element => element.type === "Card" && element.key === "1").length, 1);
 });
 
-test("new notification categories use translated labels, server filters and distinct alert icons",async()=>{
+test("admin notification categories use translated labels, server filters and distinct alert icons",async()=>{
   const renderer=hookRenderer(),requests=[];
   const component=loadTypeScript("src/app/notifications/page.tsx",{
     ...componentMocks,react:renderer.react,
-    "@/hooks/use-admin-session":{useAdminSession:()=>({isAdmin:false})},
+    "@/hooks/use-admin-session":{useAdminSession:()=>({isAdmin:true})},
     "@/lib/client-data-cache":{fetchJsonCached:async url=>{
       const query=new URL(url,"http://fixture");requests.push(query);
       const type=query.searchParams.get("types")||"capacity";
@@ -412,7 +412,9 @@ test("new notification categories use translated labels, server filters and dist
   },{window:windowMock}).default;
   let tree=await renderer.render(component);
   for(const [label,type,icon] of [["Database capacity","capacity","Database"],["Battle history coverage","battle_gap","TriangleAlert"]]){
-    await action(tree,label)();tree=await renderer.render(component);
+    const menu=elements(tree).find(element=>element.type==="select" && element.props["aria-label"]==="Notification type");
+    assert.ok(elements(menu).some(element=>element.type==="option" && textContent(element)===label));
+    menu.props.onChange({target:{value:type}});tree=await renderer.render(component);
     assert.equal(requests.at(-1).searchParams.get("types"),type);assert.ok(elements(tree).some(element=>element.type===icon));
   }
   const {translate}=loadTypeScript("src/lib/i18n/messages.ts");

@@ -10,6 +10,9 @@ import { fetchJsonCached } from "@/lib/client-data-cache";
 import { getBrawlerIconFromMap, normalizeBrawlerName } from "@/lib/brawl-assets";
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetDescription } from "@/components/ui/sheet";
 import { LayoutWrapper } from "@/components/layout-wrapper";
+import { DataConfidenceNotice } from "@/components/sync-health";
+import { TimeRangePicker } from "@/components/time-range-picker";
+import { type TimeRangeKey } from "@/lib/time-range";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -21,7 +24,6 @@ import {
   Shield,
   ShieldAlert,
   Users,
-  Radio,
   X,
 } from "lucide-react";
 
@@ -442,7 +444,7 @@ function MatchCard({ match, clubTags, clockDelta, brawlerIconByName }: {
 
 export default function BattleFeedPage() {
   const { number } = useI18n();
-  const { t, locale } = useI18n();
+  const { t } = useI18n();
   const [matches, setMatches] = useState<Match[]>([]);
   const [total, setTotal] = useState(0);
   const [modes, setModes] = useState<string[]>([]);
@@ -453,11 +455,11 @@ export default function BattleFeedPage() {
   const [filtersOpen, setFiltersOpen] = useState(false);
   const [filterMode, setFilterMode] = useState<string>("");
   const [filterPlayer, setFilterPlayer] = useState<string>("");
-  const [filterDate, setFilterDate] = useState<string>("");
+  const [selectedRange, setSelectedRange] = useState<TimeRangeKey>("7d");
   const [memberSearch, setMemberSearch] = useState<string>("");
   const [showMemberDropdown, setShowMemberDropdown] = useState(false);
   const [rawOffset, setRawOffset] = useState<number | null>(0);
-  const [isLive, setIsLive] = useState(false);
+  const [loadError, setLoadError] = useState(false);
   const [clockDelta, setClockDelta] = useState(0);
   const [brawlerIconByName, setBrawlerIconByName] = useState<Record<string, string>>({});
   const loadSequence = useRef(0);
@@ -467,6 +469,7 @@ export default function BattleFeedPage() {
   const loadMatches = useCallback(
     async (offset = 0, append = false, force = false) => {
       const sequence = ++loadSequence.current;
+      setLoadError(false);
       try {
         if (append || force) setIsLoadingMore(true);
         else if (!force) setIsLoading(true);
@@ -474,10 +477,10 @@ export default function BattleFeedPage() {
         const params = new URLSearchParams({
           limit: PAGE_SIZE.toString(),
           offset: offset.toString(),
+          range: selectedRange,
         });
         if (filterMode) params.set("mode", filterMode);
         if (filterPlayer) params.set("player", filterPlayer);
-        if (filterDate) params.set("date", filterDate);
 
         const [data, membersData] = await Promise.all([
           fetchJsonCached<BattleFeedResponse>(`/api/battles/feed?${params}`, {
@@ -494,7 +497,7 @@ export default function BattleFeedPage() {
         if (sequence !== loadSequence.current) return;
 
         // Compute clock delta: difference between client clock and server clock.
-        // This corrects any timezone or clock discrepancy.
+        // Relative ages use the server clock; battle timestamps remain unchanged.
         if (data.serverTime) {
           const delta = Date.now() - new Date(data.serverTime).getTime();
           setClockDelta(delta);
@@ -530,6 +533,9 @@ export default function BattleFeedPage() {
           setClubTags(tags);
         }
       } catch (err) {
+        if (sequence !== loadSequence.current) return;
+        setLoadError(true);
+        if (!append) setMatches([]);
         console.error("Error loading matches:", err);
       } finally {
         if (sequence === loadSequence.current) {
@@ -538,7 +544,7 @@ export default function BattleFeedPage() {
         }
       }
     },
-    [filterMode, filterPlayer, filterDate]
+    [filterMode, filterPlayer, selectedRange]
   );
 
   useEffect(() => {
@@ -596,14 +602,11 @@ export default function BattleFeedPage() {
           refreshTimer = setTimeout(() => loadMatchesRef.current(0, false, true), 250);
         }
       )
-      .subscribe((status) => {
-        setIsLive(status === "SUBSCRIBED");
-      });
+      .subscribe();
 
     return () => {
       clearTimeout(refreshTimer);
       supabase.removeChannel(channel);
-      setIsLive(false);
     };
   }, []);
 
@@ -640,22 +643,6 @@ export default function BattleFeedPage() {
     [filterPlayer, memberList]
   );
 
-  const dateOptions = useMemo(() => {
-    const days: { label: string; value: string }[] = [];
-    const now = new Date();
-    for (let i = 0; i < 14; i++) {
-      const d = new Date(now);
-      d.setUTCDate(d.getUTCDate() - i);
-      const value = d.toISOString().slice(0, 10);
-      let label: string;
-      if (i === 0) label = "Today";
-      else if (i === 1) label = "Yesterday";
-      else label = d.toLocaleDateString(locale === "ar" ? "ar-TN" : "en-GB", { month: "short", day: "numeric", timeZone: "UTC" });
-      days.push({ label, value });
-    }
-    return days;
-  }, [locale]);
-
   const filterControls = (<div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:gap-2">
             <select
               aria-label={t("Game mode")} value={filterMode}
@@ -673,6 +660,7 @@ export default function BattleFeedPage() {
               <div className="relative">
                 <input
                   type="text"
+                  aria-label={t("All Members / Search...")}
                   value={filterPlayer ? selectedMemberName : memberSearch}
                   onChange={(e) => {
                     setMemberSearch(e.target.value);
@@ -685,6 +673,7 @@ export default function BattleFeedPage() {
                 />
                 {filterPlayer && (
                   <button
+                    aria-label={t("Clear member filter")}
                     onClick={() => { setFilterPlayer(""); setMemberSearch(""); }}
                     className="absolute end-1.5 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
                   >
@@ -726,18 +715,8 @@ export default function BattleFeedPage() {
                 )}
               </div>
             </div>
-            <select
-              aria-label={t("Date (UTC)")} value={filterDate}
-              onChange={(e) => setFilterDate(e.target.value)}
-              className="h-9 rounded-md border border-border bg-background px-2 text-sm"
-            >
-              <option value=""><T text="All Days" /></option>
-              {dateOptions.map((d) => (
-                <option key={d.value} value={d.value}>{<T text={d.label} />}</option>
-              ))}
-            </select>
-            {(filterMode || filterPlayer || filterDate) && (
-              <Button variant="ghost" size="sm" className="h-9 px-2" aria-label={t("Clear filters")} onClick={() => { setFilterMode(""); setFilterPlayer(""); setFilterDate(""); setMemberSearch(""); }}>
+            {(filterMode || filterPlayer) && (
+              <Button variant="ghost" size="sm" className="h-9 px-2" aria-label={t("Clear filters")} onClick={() => { setFilterMode(""); setFilterPlayer(""); setMemberSearch(""); }}>
                 <X className="h-3.5 w-3.5" />
               </Button>
             )}
@@ -754,30 +733,29 @@ export default function BattleFeedPage() {
               <T text=" Battle Feed " /></h1>
             <div className="flex items-center gap-3">
               <p className="text-sm text-muted-foreground">
-                {number(total)} <T text=" battles tracked " /></p>
-              {isLive && (
-                <span className="flex items-center gap-1.5 text-xs font-medium text-green-500">
-                  <Radio className="h-3 w-3 animate-pulse" />
-                  <T text=" Live " /></span>
-              )}
+                {!loadError && !isLoading && <>{number(total)} <T text="recorded player results" /></>}</p>
             </div>
           </div>
 
           <div className="hidden sm:block">{filterControls}</div>
-          <div className="sm:hidden"><Button variant="outline" onClick={() => setFiltersOpen(true)}>{t("Filters")}</Button><Sheet open={filtersOpen} onOpenChange={setFiltersOpen}><SheetContent side="bottom" className="max-h-[85dvh] overflow-y-auto"><SheetHeader><SheetTitle>{t("Filters")}</SheetTitle><SheetDescription>{t("Choose mode, member and UTC day.")}</SheetDescription></SheetHeader><div className="mt-5">{filterControls}</div><Button className="mt-5 w-full" onClick={() => setFiltersOpen(false)}>{t("Apply filters")}</Button></SheetContent></Sheet></div>
+          <div className="sm:hidden"><Button variant="outline" onClick={() => setFiltersOpen(true)}>{t("Filters")}</Button><Sheet open={filtersOpen} onOpenChange={setFiltersOpen}><SheetContent side="bottom" className="max-h-[85dvh] overflow-y-auto"><SheetHeader><SheetTitle>{t("Filters")}</SheetTitle><SheetDescription>{t("Choose a game mode or member.")}</SheetDescription></SheetHeader><div className="mt-5">{filterControls}</div><Button className="mt-5 w-full" onClick={() => setFiltersOpen(false)}>{t("Done")}</Button></SheetContent></Sheet></div>
         </div>
+
+        <TimeRangePicker value={selectedRange} onChange={range => { if (range !== selectedRange) { setIsLoading(true); setSelectedRange(range); } }} />
+        <DataConfidenceNotice />
+        {loadError && <div role="alert" className="rounded-lg border border-destructive/40 p-4 text-sm"><T text="Could not load the battles." /> <Button variant="ghost" onClick={() => loadMatches(rawOffset && matches.length ? rawOffset : 0, matches.length > 0, true)}><T text="Retry" /></Button></div>}
 
         {/* Matches */}
         {isLoading ? (
           <div className="flex items-center justify-center py-16">
             <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary" />
           </div>
-        ) : matches.length === 0 ? (
+        ) : loadError && matches.length === 0 ? null : matches.length === 0 ? (
           <Card>
             <CardContent className="py-12 text-center text-muted-foreground">
               <Swords className="h-12 w-12 mx-auto mb-3 opacity-30" />
-              <p className="font-medium"><T text="No matches recorded yet" /></p>
-              <p className="text-sm mt-1"><T text="Matches will appear here after syncing your club." /></p>
+              <p className="font-medium"><T text="No battles match this period." /></p>
+              <p className="text-sm mt-1"><T text="Try another period or clear the filters." /></p>
             </CardContent>
           </Card>
         ) : (

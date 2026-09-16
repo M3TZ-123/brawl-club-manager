@@ -2,12 +2,13 @@
 import { T, useI18n } from "@/components/locale-provider";
 
 
-import { memo, useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
+import { memo, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import Link from "next/link";
 import { DataConfidenceNotice } from "@/components/sync-health";
 import { LayoutWrapper } from "@/components/layout-wrapper";
 import { fetchJsonCached } from "@/lib/client-data-cache";
-import { useAppStore } from "@/lib/store";
+import { TimeRangePicker } from "@/components/time-range-picker";
+import { TIME_RANGES, type TimeRangeKey } from "@/lib/time-range";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
@@ -28,13 +29,10 @@ import {
   Flame,
   Crown,
   Medal,
-  Zap,
   Search,
   Filter,
-  Clock3,
 } from "lucide-react";
 
-type RangeKey = "24h" | "3d" | "7d" | "30d";
 type ActivityFilter = "all" | "active" | "minimal" | "inactive";
 type RoleFilter = "all" | "president" | "vicepresident" | "senior" | "member";
 
@@ -88,10 +86,11 @@ interface Leaderboards {
 }
 
 interface LeaderboardResponse {
+  period?: { start: string; end: string };
   leaderboards: Leaderboards;
   memberCount?: number;
   range?: {
-    key: RangeKey;
+    key: TimeRangeKey;
     label: string;
     minWinRateBattles: number;
   };
@@ -115,13 +114,6 @@ const RANK_BADGES = [
   "bg-yellow-500/20 text-yellow-500 border-yellow-500/30",
   "bg-slate-400/20 text-slate-300 border-slate-400/30",
   "bg-amber-700/20 text-amber-600 border-amber-700/30",
-];
-
-const rangeOptions: Array<{ key: RangeKey; label: string }> = [
-  { key: "24h", label: "24h" },
-  { key: "3d", label: "3d" },
-  { key: "7d", label: "7d" },
-  { key: "30d", label: "30d" },
 ];
 
 const roleOptions: Array<{ value: RoleFilter; label: string }> = [
@@ -339,11 +331,13 @@ function useCategories() {
     label: "Battles",
     icon: Swords,
     description: (rangeLabel: string) => t("Most battles played in the {value0}", { value0: rangeLabel }),
-    help: () => t("Counts tracked battles stored by BrawlStatz syncs for the selected range."),
+    help: () => t("Based on recorded battles in this period."),
     formatValue: (m: LeaderboardMember) => m.weekly.battles.toString(),
     subtitle: (m: LeaderboardMember) => {
       const draws = m.weekly.battles - m.weekly.wins - m.weekly.losses;
-      return draws > 0 ? `${m.weekly.wins}W / ${m.weekly.losses}L / ${draws}D` : `${m.weekly.wins}W / ${m.weekly.losses}L`;
+      return t(draws > 0 ? "{wins} wins · {losses} losses · {draws} draws" : "{wins} wins · {losses} losses", {
+        wins: formatNumber(m.weekly.wins), losses: formatNumber(m.weekly.losses), draws: formatNumber(draws),
+      });
     },
     columns: [
       { header: "Battles", value: (m: LeaderboardMember) => m.weekly.battles, className: "text-right" },
@@ -370,7 +364,7 @@ function useCategories() {
     label: "Stars",
     icon: Star,
     description: (rangeLabel: string) => t("Most Star Player awards in the {value0}", { value0: rangeLabel }),
-    help: () => t("Counts tracked Star Player awards from stored battle history."),
+    help: () => t("Based on recorded battles in this period."),
     formatValue: (m: LeaderboardMember) => t("{value0}", { value0: m.weekly.starPlayer }),
     subtitle: (m: LeaderboardMember) => t("{value0} battles", { value0: m.weekly.battles }),
     columns: [
@@ -391,7 +385,7 @@ function useCategories() {
     label: "Activity",
     icon: Flame,
     description: (rangeLabel: string) => t("Most active members in the {value0}", { value0: rangeLabel }),
-    help: () => t("Activity means days with at least one tracked battle. It is capped by the selected range, so 24h maxes at 1 day, 3d at 3 days, and 7d at 7 days."),
+    help: () => t("Days with at least one recorded battle in this period."),
     formatValue: (m: LeaderboardMember) => t("{value0}d", { value0: m.weekly.activeDays }),
     subtitle: (m: LeaderboardMember) => t("{value0} battles", { value0: m.weekly.battles }),
     columns: [
@@ -400,30 +394,14 @@ function useCategories() {
       { header: "Last Battle", value: (m: LeaderboardMember) => formatRelativeTime(m.lastBattleAt), className: "text-right" },
     ],
   },
-  {
-    key: "allTimeBattlers" as const,
-    label: "Battle Records",
-    icon: Zap,
-    description: () => t("Battle totals recorded by BrawlStatz syncs"),
-    help: () => t("This is app-recorded history, not the player's full lifetime Brawl Stars history."),
-    formatValue: (m: LeaderboardMember) => formatNumber(m.allTime.battles),
-    subtitle: (m: LeaderboardMember) => {
-      const draws = m.allTime.battles - m.allTime.wins - m.allTime.losses;
-      return draws > 0 ? `${m.allTime.wins}W / ${m.allTime.losses}L / ${draws}D` : `${m.allTime.wins}W / ${m.allTime.losses}L`;
-    },
-    columns: [
-      { header: "Battles", value: (m: LeaderboardMember) => formatNumber(m.allTime.battles), className: "text-right" },
-      { header: "Wins", value: (m: LeaderboardMember) => formatNumber(m.allTime.wins), className: "text-right" },
-      { header: "Stars", value: (m: LeaderboardMember) => <span className="text-yellow-500">{m.allTime.starPlayer}</span>, className: "text-right" },
-    ],
-  },
+
 ];
 }
 
 export default function LeaderboardPage() {
   const categories = useCategories();
-  const { relative } = useI18n();
-  const { t } = useI18n();
+  const { t, reportDate } = useI18n();
+  const [period, setPeriod] = useState<LeaderboardResponse["period"]>();
   const [leaderboards, setLeaderboards] = useState<Leaderboards | null>(null);
   const [memberCount, setMemberCount] = useState(0);
   const [rangeMeta, setRangeMeta] = useState<LeaderboardResponse["range"]>({
@@ -431,28 +409,37 @@ export default function LeaderboardPage() {
     label: "last 7 days",
     minWinRateBattles: 10,
   });
-  const lastSyncTime = useAppStore(state => state.lastSyncTime);
   const [isLoading, setIsLoading] = useState(true);
-  const [activeTab, setActiveTab] = useState("trophyLeaders");
-  const [selectedRange, setSelectedRange] = useState<RangeKey>("7d");
+  const [activeTab, setActiveTab] = useState("weeklyTrophyGainers");
+  const [selectedRange, setSelectedRange] = useState<TimeRangeKey>("7d");
+  const [loadError, setLoadError] = useState(false);
+  const loadSequence = useRef(0);
   const [searchQuery, setSearchQuery] = useState("");
   const [roleFilter, setRoleFilter] = useState<RoleFilter>("all");
   const [activityFilter, setActivityFilter] = useState<ActivityFilter>("all");
   const [minBattles, setMinBattles] = useState("");
 
   const loadLeaderboard = useCallback(async (force = false) => {
+    const sequence = ++loadSequence.current;
+    setLoadError(false);
+    setIsLoading(true);
     try {
       const data = await fetchJsonCached<LeaderboardResponse>(
         `/api/leaderboard?range=${selectedRange}`,
         { staleMs: 60_000, force }
       );
+      if (sequence !== loadSequence.current) return;
       setLeaderboards(data.leaderboards);
+      setPeriod(data.period);
       setMemberCount(data.memberCount || 0);
       if (data.range) setRangeMeta(data.range);
     } catch (err) {
+      if (sequence !== loadSequence.current) return;
+      setLoadError(true);
+      setLeaderboards(null);
       console.error("Error loading leaderboard:", err);
     } finally {
-      setIsLoading(false);
+      if (sequence === loadSequence.current) setIsLoading(false);
     }
   }, [selectedRange]);
 
@@ -498,7 +485,8 @@ export default function LeaderboardPage() {
     setMinBattles("");
   };
 
-  const rangeLabel = rangeMeta?.label || "selected range";
+  const battleCategory = activeTab !== "weeklyTrophyGainers" && activeTab !== "trophyLeaders";
+  const rangeLabel = selectedRange === "24h" && battleCategory ? "Today (UTC)" : TIME_RANGES[selectedRange].label;
   const minWinRateBattles = rangeMeta?.minWinRateBattles || 10;
 
   return (
@@ -510,30 +498,11 @@ export default function LeaderboardPage() {
               <Trophy className="h-6 w-6 text-yellow-500" />
               <T text=" Club Leaderboard " /></h1>
             <p className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-sm text-muted-foreground">
-              <span>{memberCount} <T text=" members tracked" /></span>
-              <span className="inline-flex items-center gap-1.5">
-                <Clock3 className="h-3.5 w-3.5" />
-                <T text="Last sync {time}" values={{time:relative(lastSyncTime)}} />
-              </span>
+              {!isLoading && !loadError && <span>{memberCount} <T text="Members" /></span>}
             </p>
           </div>
 
-          <div className="flex w-full flex-wrap gap-2 lg:w-auto lg:justify-end">
-            {rangeOptions.map((option) => (
-              <button
-                key={option.key}
-                type="button"
-                onClick={() => setSelectedRange(option.key)}
-                className={`h-9 rounded-lg border px-3 text-sm font-semibold transition-colors ${
-                  selectedRange === option.key
-                    ? "border-primary bg-primary text-primary-foreground"
-                    : "border-border bg-background text-muted-foreground hover:bg-muted hover:text-foreground"
-                }`}
-              >
-                {<T text={option.label} />}
-              </button>
-            ))}
-          </div>
+          <TimeRangePicker value={selectedRange} onChange={range => { if (range !== selectedRange) { setIsLoading(true); setSelectedRange(range); } }} dayBased={battleCategory} />
         </div>
 
         <div className="rounded-lg border border-border bg-card/40 p-3">
@@ -596,10 +565,12 @@ export default function LeaderboardPage() {
           <div className="flex items-center justify-center py-16">
             <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary" />
           </div>
-        ) : !leaderboards ? (
+        ) : loadError || !leaderboards ? (
           <Card>
             <CardContent className="py-12 text-center text-muted-foreground">
-              <T text=" Failed to load leaderboard data. Try syncing your club first. " /></CardContent>
+              <p role="alert"><T text="Could not load the leaderboard." /></p>
+              <Button variant="outline" className="mt-3" onClick={() => loadLeaderboard(true)}><T text="Retry" /></Button>
+            </CardContent>
           </Card>
         ) : (
           <Tabs value={activeTab} onValueChange={setActiveTab}>
@@ -613,7 +584,7 @@ export default function LeaderboardPage() {
                     className="flex items-center gap-1.5 px-3 py-2 data-[state=active]:bg-accent rounded-lg border border-border/60 data-[state=active]:border-border text-xs sm:text-sm"
                   >
                     <Icon className="h-3.5 w-3.5" />
-                    <span className="hidden sm:inline">{<T text={cat.label} />}</span>
+                    <span>{<T text={cat.label} />}</span>
                   </TabsTrigger>
                 );
               })}
@@ -639,8 +610,8 @@ export default function LeaderboardPage() {
                           <p>
                             <span className="font-semibold text-foreground">{data.length}</span> <T text=" shown " />{data.length !== rawData.length && ` / ${rawData.length}`}
                           </p>
-                          {cat.key !== "trophyLeaders" && cat.key !== "allTimeBattlers" && (
-                            <p><T text={rangeLabel} /></p>
+                          {cat.key !== "trophyLeaders" && (
+                            <p><T text={rangeLabel} />{battleCategory && period && <span className="block">{reportDate(period.start)} – {reportDate(period.end)} (UTC)</span>}</p>
                           )}
                         </div>
                       </div>

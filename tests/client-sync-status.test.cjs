@@ -79,6 +79,26 @@ test("failed reads preserve the last known success; an authoritative reset clear
   assert.equal(f.state.lastSyncTime,null);assert.equal(f.module.getSyncHealth().lastSuccessAt,null);stop();
 });
 
+test("initial health loading is distinct from a failed read and does not reset on navigation",async()=>{
+  const f=fixture();
+  assert.equal(f.module.getServerSyncHealth(),undefined);
+  assert.equal(f.module.getSyncHealth(),undefined);
+  f.setResponse(new Error("Offline"));
+  const stop=f.module.subscribeSyncHealth(()=>{});
+  assert.equal(f.module.getSyncHealth(),undefined,"A pending first request is not a failure");
+  await settle();
+  assert.equal(f.module.getSyncHealth(),null,"A completed failed read must remain distinguishable");
+  const pending=deferred();f.setResponse(pending.promise);
+  const retry=f.module.refreshSyncHealth();
+  assert.equal(f.module.getSyncHealth(),null,"Retrying does not erase the recorded failure");
+  pending.resolve({...status(timestamp),fullFreshness:"fresh",battleFreshness:"fresh"});await retry;
+  assert.equal(f.module.getSyncHealth().lastSuccessAt,timestamp);
+  stop();
+  const remount=f.module.subscribeSyncHealth(()=>{});
+  assert.equal(f.module.getSyncHealth().lastSuccessAt,timestamp,"A new route uses the shared accepted snapshot");
+  await settle();remount();
+});
+
 test("the shared monitor retains a full partial outcome separately from the latest roster success",async()=>{
   const f=fixture();
   const latestFullRun={source:"cron",scope:"full",status:"succeeded",finishedAt:timestamp,warnings:["battle_logs_incomplete"]};

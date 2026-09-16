@@ -107,28 +107,31 @@ export function SetupWizard() {
             <Trophy className="h-12 w-12 text-yellow-500" />
           </div>
           <CardTitle className="text-2xl"><T text="Brawl Stars Club Manager" /></CardTitle>
-          <CardDescription>
-            {step === 1 && "Step 1: Enter your Brawl Stars API key"}
-            {step === 2 && "Step 2: Enter your club tag"}
-            {step === 3 && "Step 3: Sync your club"}
+          <CardDescription role="status" aria-live="polite">
+            {step === 1 && t("Step 1: Enter your Brawl Stars API key")}
+            {step === 2 && t("Step 2: Enter your club tag")}
+            {step === 3 && t("Step 3: Sync your club")}
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
           {step === 1 && (
             <>
               <div className="space-y-2">
-                <label className="text-sm font-medium"><T text="API Key" /></label>
-                <div className="relative">
-                  <Key className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                <label htmlFor="setup-api-key" className="text-sm font-medium"><T text="API Key" /></label>
+                <div className="relative" dir="ltr">
+                  <Key className="absolute start-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
                   <Input
+                    id="setup-api-key"
+                    aria-describedby="setup-api-key-hint"
+                    dir="ltr"
                     type="password"
                     placeholder={t("Enter your Brawl Stars API key")}
                     value={apiKey}
                     onChange={(e) => setApiKey(e.target.value)}
-                    className="pl-10"
+                    className="ps-10"
                   />
                 </div>
-                <p className="text-xs text-muted-foreground">
+                <p id="setup-api-key-hint" className="text-xs text-muted-foreground">
                   <T text=" Get your API key from" />{" "}
                   <a
                     href="https://developer.brawlstars.com"
@@ -151,21 +154,25 @@ export function SetupWizard() {
           {step === 2 && (
             <>
               <div className="space-y-2">
-                <label className="text-sm font-medium"><T text="Club Tag" /></label>
-                <div className="relative">
-                  <Trophy className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                <label htmlFor="setup-club-tag" className="text-sm font-medium"><T text="Club Tag" /></label>
+                <div className="relative" dir="ltr">
+                  <Trophy className="absolute start-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
                   <Input
+                    id="setup-club-tag"
+                    aria-describedby="setup-club-tag-hint"
+                    dir="ltr"
+                    spellCheck={false}
                     placeholder="#ABC123"
                     value={clubTag}
                     onChange={(e) => setClubTag(e.target.value.toUpperCase())}
-                    className="pl-10"
+                    className="ps-10"
                   />
                 </div>
-                <p className="text-xs text-muted-foreground">
+                <p id="setup-club-tag-hint" className="text-xs text-muted-foreground">
                   <T text=" Find your club tag in-game under Club Info " /></p>
               </div>
               {error && (
-                <p className="text-sm text-destructive">{error}</p>
+                <p role="alert" className="text-sm text-destructive">{t(error)}</p>
               )}
               <div className="flex gap-2">
                 <Button variant="outline" onClick={() => setStep(1)}>
@@ -200,13 +207,13 @@ export function SetupWizard() {
                 <Link href="/settings"><T text="Edit Configuration" /></Link>
               </Button>
               {error && (
-                <p className="text-sm text-destructive text-center">{error}</p>
+                <p role="alert" className="text-sm text-destructive text-center">{t(error)}</p>
               )}
             </>
           )}
 
           {/* Progress indicator */}
-          <div className="flex justify-center gap-2 pt-4">
+          <div aria-hidden="true" className="flex justify-center gap-2 pt-4">
             {[1, 2, 3].map((s) => (
               <div
                 key={s}

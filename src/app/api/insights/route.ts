@@ -1,7 +1,9 @@
 import { NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabase-admin";
 import { appendMemberActivityMetrics } from "@/lib/member-activity-metrics";
-import { getWeeklyReportingPeriod } from "@/lib/reporting-period";
+import { getReportingPeriod, reportingPeriodMetadata } from "@/lib/reporting-period";
+import { fetchDailyStats } from "@/lib/reporting-data";
+import { parseTimeRange, TIME_RANGES } from "@/lib/time-range";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -12,7 +14,7 @@ type BattleSummary = {
   result: string | null;
 };
 
-async function fetchMegaBossBattleSummaries(playerTags: string[], sinceDate: string): Promise<BattleSummary[]> {
+async function fetchMegaBossBattleSummaries(playerTags: string[], sinceDate: string, untilDate: string): Promise<BattleSummary[]> {
   if (playerTags.length === 0) return [];
 
   const pageSize = 1000;
@@ -24,9 +26,11 @@ async function fetchMegaBossBattleSummaries(playerTags: string[], sinceDate: str
       .select("battle_time, mode, result")
       .in("player_tag", playerTags)
       .gte("battle_time", sinceDate)
+      .lte("battle_time", untilDate)
       .eq("mode", "megaBoss")
       .order("battle_time", { ascending: true })
       .order("player_tag", { ascending: true })
+      .order("id", { ascending: true })
       .range(from, from + pageSize - 1);
 
     if (error) throw error;
@@ -37,10 +41,12 @@ async function fetchMegaBossBattleSummaries(playerTags: string[], sinceDate: str
   return rows;
 }
 
-export async function GET() {
+export async function GET(request?: Request) {
   try {
     const now = new Date();
-    const period = getWeeklyReportingPeriod(now);
+    const range = parseTimeRange(request ? new URL(request.url).searchParams.get("range") : null);
+    const period = getReportingPeriod(range, now);
+    const metric = TIME_RANGES[range].metric;
     const weekStartStr = period.dates[0];
     const previousWeekStartStr = period.previousStart.toISOString().slice(0, 10);
     const currentMembersRes = await supabaseAdmin.from("member_history")
@@ -48,36 +54,21 @@ export async function GET() {
     if (currentMembersRes.error) throw currentMembersRes.error;
     const currentTags = new Set<string>((currentMembersRes.data || []).map(h => h.player_tag));
     const memberFilter = currentTags.size ? [...currentTags] : [""];
-    // Parallel data fetches
-    const [membersRes, thisWeekStatsRes, prevWeekStatsRes] = await Promise.all([
+    const [membersRes, thisWeekStats, prevWeekStats] = await Promise.all([
       supabaseAdmin.from("members").select("player_tag, player_name, trophies, is_active, last_updated").in("player_tag", memberFilter),
-      supabaseAdmin.from("daily_stats").select("player_tag, date, battles, wins, trophies_gained, trophies_lost")
-        .in("player_tag", memberFilter).gte("date", weekStartStr).lte("date", period.dates[6]),
-      supabaseAdmin.from("daily_stats").select("player_tag, battles")
-        .in("player_tag", memberFilter).gte("date", previousWeekStartStr).lt("date", weekStartStr),
+      fetchDailyStats([...currentTags], weekStartStr, period.dates.at(-1)!),
+      fetchDailyStats([...currentTags], previousWeekStartStr, new Date(period.start.getTime() - 86_400_000).toISOString().slice(0, 10)),
     ]);
-
     if (membersRes.error) throw membersRes.error;
-    if (thisWeekStatsRes.error) throw thisWeekStatsRes.error;
-    if (prevWeekStatsRes.error) throw prevWeekStatsRes.error;
-
     const members = (membersRes.data || []).filter(m => currentTags.has(m.player_tag));
-    // Build name lookup — normalize tags to handle any format differences
-    const nameMap = new Map<string, string>();
-    for (const m of members) {
-      nameMap.set(m.player_tag, m.player_name);
-      nameMap.set(m.player_tag.replace("#", ""), m.player_name);
-      if (!m.player_tag.startsWith("#")) nameMap.set(`#${m.player_tag}`, m.player_name);
-    }
-    const thisWeekStats = (thisWeekStatsRes.data || []).filter((s) => currentTags.has(s.player_tag));
-    const prevWeekStats = (prevWeekStatsRes.data || []).filter((s) => currentTags.has(s.player_tag));
 
     // ============================
     // 0. MEGA BOSS STATUS — derived from exact tracked battle_history mode.
     // ============================
     const megaBossBattles = await fetchMegaBossBattleSummaries(
       members.map((m) => m.player_tag),
-      weekStartStr
+      period.start.toISOString(),
+      period.end.toISOString()
     );
 
     const megaBossWins = megaBossBattles.reduce((sum, battle) => {
@@ -109,35 +100,12 @@ export async function GET() {
     // 2. INACTIVE MEMBERS — use the same computed activity status as Members/Dashboard.
     // ============================
     const membersWithActivity = await appendMemberActivityMetrics(members, now);
-    const inactiveTags = membersWithActivity
-      .filter((member) => member.activity_status === "inactive")
-      .map((member) => member.player_tag);
-
-    // Get last battle date from daily_stats (actual activity, not sync timestamp)
-    const lastBattleDateMap = new Map<string, string>();
-    if (inactiveTags.length > 0) {
-      const { data: lastBattles, error: lastBattlesError } = await supabaseAdmin
-        .from("daily_stats")
-        .select("player_tag, date")
-        .in("player_tag", inactiveTags)
-        .gt("battles", 0)
-        .order("date", { ascending: false });
-
-      if (lastBattlesError) throw lastBattlesError;
-
-      for (const row of lastBattles || []) {
-        if (!lastBattleDateMap.has(row.player_tag)) {
-          lastBattleDateMap.set(row.player_tag, row.date);
-        }
-      }
-    }
-
     const kickCandidates = membersWithActivity
       .filter((member) => member.activity_status === "inactive")
       .map((member) => ({
         tag: member.player_tag,
         name: member.player_name,
-        lastActive: member.last_battle_at || lastBattleDateMap.get(member.player_tag) || null,
+        lastActive: member.last_battle_at || null,
       }))
       .sort((a, b) => {
         // Sort by longest inactive first (null = never played = first)
@@ -159,56 +127,15 @@ export async function GET() {
     // ============================
     // 4. MVP OF THE WEEK — Best net trophy progress this week
     // ============================
-    const netTrophyChangeByPlayer = new Map<string, number>();
-    for (const s of thisWeekStats) {
-      netTrophyChangeByPlayer.set(
-        s.player_tag,
-        (netTrophyChangeByPlayer.get(s.player_tag) || 0)
-          + (s.trophies_gained || 0)
-          - (s.trophies_lost || 0)
-      );
-    }
-
-    let mvpTag = "";
-    let mvpTrophies = Number.NEGATIVE_INFINITY;
-    for (const [tag, trophies] of netTrophyChangeByPlayer) {
-      if (trophies > mvpTrophies) {
-        mvpTag = tag;
-        mvpTrophies = trophies;
-      }
-    }
-    if (mvpTrophies === Number.NEGATIVE_INFINITY) {
-      mvpTrophies = 0;
-    }
-
-    // Try all possible tag formats for name lookup
-    let mvpName: string | null = null;
-    if (mvpTag) {
-      mvpName = nameMap.get(mvpTag)
-        || nameMap.get(mvpTag.replace("#", ""))
-        || nameMap.get(`#${mvpTag}`)
-        || null;
-      
-      // If still not found, query directly
-      if (!mvpName) {
-        const tagCandidates = Array.from(new Set([
-          mvpTag,
-          mvpTag.replace("#", ""),
-          `#${mvpTag.replace("#", "")}`,
-        ]));
-        const { data: mvpMember, error: mvpLookupError } = await supabaseAdmin
-          .from("members")
-          .select("player_name")
-          .in("player_tag", tagCandidates)
-          .limit(1)
-          .maybeSingle();
-        if (mvpLookupError) throw mvpLookupError;
-        mvpName = mvpMember?.player_name || mvpTag;
-      }
-    }
+    const mvp = membersWithActivity
+      .filter(member => member[metric] != null)
+      .sort((a, b) => (b[metric] ?? 0) - (a[metric] ?? 0))[0];
+    const mvpName = mvp?.player_name ?? null;
+    const mvpTrophies = mvp?.[metric] ?? null;
 
     return NextResponse.json(
       {
+        period: reportingPeriodMetadata(period),
         insights: {
           // Mega Boss
           megaBoss: {
