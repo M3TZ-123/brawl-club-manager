@@ -1,4 +1,6 @@
 export const arClubRivals:Record<string,string>={
+  "Preview the image, then save it to share.": "عاين الصورة ثم احفظها لمشاركتها.",
+  "Download PNG": "تنزيل PNG",
   "Top observed gain: {name} · +{count}": "أعلى تقدم مرصود: {name} · +{count}",
   "No positive trophy gain recorded for this period.": "لم تُسجل زيادة كؤوس موجبة لهذه الفترة.",
   "Trophy progress coverage: {known}/{total} members": "تغطية تقدم الكؤوس: {known}/{total} عضوًا",

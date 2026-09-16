@@ -1,17 +1,21 @@
 "use client";
-import { useState } from "react";
+import { useEffect, useState } from "react";
+import Image from "next/image";
 import { ImageDown } from "lucide-react";
 import { useI18n } from "@/components/locale-provider";
 import { Button } from "@/components/ui/button";
 import { useAppStore } from "@/lib/store";
 import { useFeatureResource } from "@/components/use-feature-resource";
 import type { PlanningResponse } from "@/lib/club-planning-types";
+import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 
 export type ReportCardData={generatedAt:string;period:{start:string;end:string};summary:{totalMembers:number;totalTrophies:number;weeklyBattles:number;weeklyWins:number;weeklyWinRate:number;trophyProgressKnownMembers?:number};topGainers?:{playerName:string;trophyChange:number}[]};
 export function ClubReportCard({report}:{report:ReportCardData}){
   const {t,number,reportDate,locale,direction}=useI18n(),name=useAppStore(s=>s.clubName);
   const planning=useFeatureResource<PlanningResponse>("/api/club-planning?overview=1&public=1","roster,battles");
   const [error,setError]=useState(false),[busy,setBusy]=useState(false);
+  const [preview,setPreview]=useState<{url:string;filename:string}|null>(null);
+  useEffect(()=>()=>{if(preview)URL.revokeObjectURL(preview.url);},[preview]);
   async function download(){
     setBusy(true);setError(false);
     try{
@@ -45,8 +49,13 @@ export function ClubReportCard({report}:{report:ReportCardData}){
       line(t("Public report · no private notes"),812,20,"#acbad0");
       line(`${t("Updated")}: ${reportDate(report.generatedAt)} · brawlstatz.vercel.app`,850,18,"#8397b4");
       const blob=await new Promise<Blob|null>(resolve=>canvas.toBlob(resolve,"image/png"));if(!blob)throw new Error("image");
-      const url=URL.createObjectURL(blob),link=document.createElement("a");link.href=url;link.download=`club-report-${locale}-${report.period.end.slice(0,10)}.png`;link.click();setTimeout(()=>URL.revokeObjectURL(url),1000);
+      setPreview({url:URL.createObjectURL(blob),filename:`club-report-${locale}-${report.period.end.slice(0,10)}.png`});
     }catch{setError(true);}finally{setBusy(false);}
   }
-  return <div><Button variant="outline" disabled={busy} onClick={()=>void download()}><ImageDown className="w-4 h-4 me-2"/>{t("Download report image")}</Button>{error&&<p role="alert" className="text-sm text-amber-500">{t("Report image could not be created")}</p>}</div>;
+  return <div><Button variant="outline" disabled={busy} onClick={()=>void download()}><ImageDown className="w-4 h-4 me-2"/>{t("Download report image")}</Button>{error&&<p role="alert" className="text-sm text-amber-500">{t("Report image could not be created")}</p>}
+    <Sheet open={preview!==null} onOpenChange={open=>{if(!open)setPreview(null);}}><SheetContent className="w-full overflow-y-auto sm:max-w-4xl">
+      <SheetHeader><SheetTitle>{t("Club report card")}</SheetTitle><SheetDescription>{t("Preview the image, then save it to share.")}</SheetDescription></SheetHeader>
+      {preview&&<div className="mt-5 space-y-4"><Image src={preview.url} alt={t("Club report card")} width={1200} height={900} unoptimized className="h-auto w-full rounded-lg border"/><a href={preview.url} download={preview.filename} className="inline-flex items-center rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground">{t("Download PNG")}</a></div>}
+    </SheetContent></Sheet>
+  </div>;
 }

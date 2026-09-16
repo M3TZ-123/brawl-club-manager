@@ -3,15 +3,16 @@ import Link from "next/link";
 import { useI18n } from "@/components/locale-provider";
 import { ClubIntelligencePanel, useClubIntelligence } from "@/components/club-intelligence-panel";
 import type { ClubMetadata } from "@/lib/club-intelligence-types";
+import { stripBrawlColorTags } from "@/lib/brawl-text";
 const fields: Record<keyof ClubMetadata, string> = { name: "Club name", description: "Club description", type: "Admission type", badgeId: "Badge", requiredTrophies: "Required trophies" };
 
 export function ClubIdentity({ showHistory = false }: { showHistory?: boolean }) {
   const resource = useClubIntelligence(), data = resource.data;
   const { t, number, dateTime } = useI18n();
   const metadataValue = (key: keyof ClubMetadata, value: ClubMetadata[keyof ClubMetadata]) => value === undefined ? t("Unknown")
-    : typeof value === "number" ? number(value) : value === "" ? t("Empty") : key === "type" ? t(value) : value;
+    : typeof value === "number" ? number(value) : value === "" ? t("Empty") : key === "type" ? t(value) : key === "description" ? stripBrawlColorTags(value) || t("Empty") : value;
   return <ClubIntelligencePanel title="About the club" resource={resource}>{data && <>
-    {data.club.metadata ? <><div><p className="text-xl font-semibold">{data.club.metadata.name || data.club.tag}</p><p className="text-xs text-muted-foreground" dir="ltr">{data.club.tag}</p>{data.club.metadata.description !== undefined && <p className="mt-2 whitespace-pre-wrap break-words text-sm">{data.club.metadata.description || t("No club description")}</p>}</div>
+    {data.club.metadata ? <><div><p className="text-xl font-semibold">{data.club.metadata.name || data.club.tag}</p><p className="text-xs text-muted-foreground" dir="ltr">{data.club.tag}</p>{data.club.metadata.description !== undefined && <p className="mt-2 whitespace-pre-wrap break-words text-sm">{stripBrawlColorTags(data.club.metadata.description) || t("No club description")}</p>}</div>
       <dl className="grid grid-cols-2 gap-3 text-sm"><div><dt className="text-muted-foreground">{t("Admission type")}</dt><dd>{t(data.club.metadata.type || "Unknown")}</dd></div><div><dt className="text-muted-foreground">{t("Required trophies")}</dt><dd>{data.club.metadata.requiredTrophies === undefined ? t("Unknown") : number(data.club.metadata.requiredTrophies)}</dd></div><div><dt className="text-muted-foreground">{t("Members")}</dt><dd>{number(data.club.memberCount)} / {number(30)}</dd></div><div><dt className="text-muted-foreground">{t("Open seats")}</dt><dd>{number(data.club.openSeats)}</dd></div></dl>
       <ul className="flex flex-wrap gap-2 text-sm">{data.club.leaders.map(member => <li key={member.tag}><Link href={`/members/${encodeURIComponent(member.tag)}`} className="hover:text-primary">{member.name}</Link> <span className="text-xs text-muted-foreground">{t(member.role)}</span></li>)}</ul>
       <p className="text-xs text-muted-foreground">{t("Club profile observed")}: {dateTime(data.club.observedAt)}</p>
