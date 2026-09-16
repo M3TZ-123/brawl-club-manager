@@ -16,7 +16,7 @@ export function normalizeSyncTag(value: unknown): string {
 export async function readSyncSettings() {
   const { data, error } = await supabaseAdmin.from("settings").select("key,value")
     .in("key", ["club_tag", "api_key", "discord_webhook", "notifications_enabled", "sync_expected_interval_minutes", "sync_roster_interval_minutes", "sync_ranked_interval_minutes",
-      "last_sync_time", "last_full_sync_time", "last_roster_sync_time", "last_battle_sync_time", "last_ranked_sync_time", "sync_upstream_cooldown_until", "sync_ranked_cooldown_until"]);
+      "last_sync_time", "last_full_sync_time", "last_roster_sync_time", "last_battle_sync_time", "last_ranked_sync_time", "last_ranked_attempt_time", "sync_upstream_cooldown_until", "sync_ranked_cooldown_until"]);
   if (error) throw new SyncError("database_unavailable", "Sync settings could not be loaded.");
   return Object.fromEntries((data || []).map((row) => [row.key, row.value])) as Record<string, string>;
 }
@@ -138,14 +138,25 @@ export async function executeSync(options: {
         members: club.members.map(member => ({ player_tag: normalizeSyncTag(member.tag), player_name: member.name, role: member.role, trophies: member.trophies, icon_id: member.icon?.id ?? null })),
         required_trophies: club.requiredTrophies ?? null, initial_setup: options.initialSetup === true,
       } });
-      if (result.error) throw new SyncError(result.error.code ? "snapshot_rejected" : "database_unavailable", "The roster snapshot could not be committed.", result.error.code ? 409 : 503);
+      if (result.error) {
+        console.error("Roster snapshot rejected", { runId, sqlstate: /^[0-9A-Z]{5}$/.test(result.error.code || "") ? result.error.code : "unavailable" });
+        throw new SyncError(result.error.code ? "snapshot_rejected" : "database_unavailable", "The roster snapshot could not be committed.", result.error.code ? 409 : 503);
+      }
       return publicSyncResult(result.data as SyncResult);
     }
     const warnings = new Set<string>();
-    const rankedAt = Date.parse(settings.last_ranked_sync_time || "");
+    const rankedAt = Date.parse(settings.last_ranked_attempt_time || settings.last_ranked_sync_time || "");
     const rankDue = Boolean(playerTag) || !Number.isFinite(rankedAt) || Date.now() - rankedAt >= intervalMinutes(settings.sync_ranked_interval_minutes, 30, 10) * 60_000 - 60_000;
     const rankCooling = remainingCooldown(settings.sync_ranked_cooldown_until) > 0;
-    const fetchRanks = rankDue && !rankCooling;
+    let fetchRanks = rankDue && !rankCooling;
+    if (fetchRanks && scope === "full") {
+      // Persist the attempt before network work, independently of the snapshot.
+      // A later profile/commit failure must not trigger another rank batch at
+      // every two-minute scheduler tick. The RPC rechecks cadence under the lease.
+      const attempt = await supabaseAdmin.rpc("begin_sync_ranked_attempt", { p_run_id: runId, p_fence: fence });
+      fetchRanks = !attempt.error && attempt.data === true;
+      if (attempt.error) warnings.add("ranked_unavailable");
+    }
     let rankedComplete = fetchRanks;
     let battleLogsComplete = true;
     if (rankDue && rankCooling) warnings.add("ranked_rate_limited");
@@ -191,8 +202,9 @@ export async function executeSync(options: {
     phase = "commit";
     const { data, error } = await supabaseAdmin.rpc("commit_sync_snapshot", { p_run_id: runId, p_fence: fence,
       p_payload: { members, battles, brawlers, initial_setup: options.initialSetup === true, required_trophies: club?.requiredTrophies ?? null,
-        battle_logs_complete: battleLogsComplete, ranked_complete: rankedComplete, warnings: [...warnings] } });
+        battle_logs_complete: battleLogsComplete, ranked_complete: rankedComplete, ranked_attempted: fetchRanks, warnings: [...warnings] } });
     if (error) {
+      console.error("Full snapshot rejected", { runId, sqlstate: /^[0-9A-Z]{5}$/.test(error.code || "") ? error.code : "unavailable" });
       const code = ["stale_sync_fence", "club_configuration_changed", "member_not_found"].includes(error.message) ? error.message
         : /^[0-9A-Z]{5}$/.test(error.code || "") ? "snapshot_rejected" : "database_unavailable";
       // A transport failure can hide a successful commit. Keep the request key so

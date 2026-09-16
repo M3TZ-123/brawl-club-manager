@@ -141,7 +141,7 @@ export async function POST(request: NextRequest) {
       requiresSync = normalizeTag(newClubTag) !== normalizeTag(currentClub?.value || process.env.CLUB_TAG || "");
       if (requiresSync) {
         // A successful sync belongs to the configured club, not its replacement.
-        for (const key of ["last_sync_time", "last_full_sync_time", "last_roster_sync_time", "last_battle_sync_time", "last_ranked_sync_time"]) upserts.push({ key, value: "" });
+        for (const key of ["last_sync_time", "last_full_sync_time", "last_roster_sync_time", "last_battle_sync_time", "last_ranked_sync_time", "last_ranked_attempt_time"]) upserts.push({ key, value: "" });
       }
     }
 

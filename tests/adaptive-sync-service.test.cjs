@@ -16,6 +16,12 @@ function fixture(options = {}) {
     async rpc(name,args) {
       calls.push({name,args});
       if (name === 'acquire_sync_run') return {data: options.replay || {acquired:true,run_id:'run-1',fence:2},error:null};
+      if (name === 'begin_sync_ranked_attempt') {
+        if (options.attemptError) return {data:null,error:{code:'test'}};
+        if (options.attemptAllowed === false) return {data:false,error:null};
+        settings.last_ranked_attempt_time = new Date().toISOString();
+        return {data:true,error:null};
+      }
       if (name === 'commit_roster_snapshot' || name === 'commit_sync_snapshot') return {data:{success:true,runId:'run-1',timestamp:new Date(now).toISOString(),synced:1,scope:name === 'commit_roster_snapshot'?'roster':'full',warnings:args.p_payload.warnings||[]},error:null};
       if (name === 'defer_sync_upstream' || name === 'fail_sync_run') return {data:true,error:null};
       throw new Error('Unexpected RPC ' + name);
@@ -70,6 +76,37 @@ test('ranked completion time does not delay a thirty-minute refresh until minute
   assert.equal(f.calls.filter(call=>call.name==='ranked').length,1);
   const payload=f.calls.find(call=>call.name==='commit_sync_snapshot').args.p_payload;
   assert.equal(payload.ranked_complete,true);assert.equal(payload.members[0].rank_available,true);
+});
+
+test('a partial ranked attempt is throttled without pretending the ranked data succeeded',async()=>{
+  const f=fixture({settings:{last_ranked_attempt_time:new Date().toISOString()}});
+  await f.service.executeSync({source:'cron'});
+  assert.equal(f.calls.some(call=>call.name==='ranked'),false);
+  const payload=f.calls.find(call=>call.name==='commit_sync_snapshot').args.p_payload;
+  assert.equal(payload.ranked_complete,false);assert.equal(payload.ranked_attempted,false);
+});
+
+test('a failed full sync keeps its ranked attempt cadence for the next automatic retry',async()=>{
+  const options={profileError:new Error('Profile unavailable')};
+  const f=fixture(options);
+  await assert.rejects(f.service.executeSync({source:'cron',scope:'auto'}));
+  assert.ok(f.calls.findIndex(call=>call.name==='begin_sync_ranked_attempt')<f.calls.findIndex(call=>call.name==='ranked'));
+  assert.equal(f.calls.some(call=>call.name==='commit_sync_snapshot'),false);
+  assert.equal(f.calls.filter(call=>call.name==='ranked').length,1);
+  options.profileError=null;
+  await f.service.executeSync({source:'cron',scope:'auto'});
+  assert.equal(f.calls.filter(call=>call.name==='ranked').length,1);
+  assert.equal(f.calls.find(call=>call.name==='commit_sync_snapshot').args.p_payload.ranked_complete,false);
+});
+
+test('the durable ranked gate can reject a stale cadence read or fail without starting RNT',async()=>{
+  for(const options of [{attemptAllowed:false},{attemptError:true}]) {
+    const f=fixture(options);
+    const result=await f.service.executeSync({source:'cron'});
+    assert.equal(f.calls.some(call=>call.name==='ranked'),false);
+    assert.equal(f.calls.find(call=>call.name==='commit_sync_snapshot').args.p_payload.ranked_attempted,false);
+    assert.deepEqual([...result.warnings],options.attemptError?['ranked_unavailable']:[]);
+  }
 });
 
 test('a partial battle update saves the shared cooldown and reports reduced completeness',async()=>{

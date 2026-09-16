@@ -7,6 +7,9 @@ async function runAdaptiveSyncChecks(t, db) {
   const previous = (await db.query("SELECT value FROM settings WHERE key='last_sync_time'")).rows[0]?.value;
   await db.query(migration);
   await db.query(fs.readFileSync(path.resolve(__dirname, "../../../supabase/migrations/202609160006_upstream_cooldowns.sql"), "utf8"));
+  const portableMigration = fs.readFileSync(path.resolve(__dirname, "../../../supabase/migrations/202609160007_portable_brawler_snapshots.sql"), "utf8");
+  await db.query(portableMigration);
+  await db.query(fs.readFileSync(path.resolve(__dirname, "../../../supabase/migrations/202609160008_ranked_attempt_gate.sql"), "utf8"));
   const markers = async () => Object.fromEntries((await db.query("SELECT key,value FROM settings WHERE key LIKE 'last_%sync_time'")).rows.map(row => [row.key, row.value]));
   const initial = await markers();
   assert.equal(initial.last_full_sync_time, previous); assert.equal(initial.last_roster_sync_time, previous);
@@ -191,6 +194,181 @@ async function runAdaptiveSyncChecks(t, db) {
     } finally { client.release(); }
     const permissions = (await db.query("SELECT has_function_privilege('authenticated','public.defer_sync_upstream(text,timestamptz)','EXECUTE') authenticated,has_function_privilege('service_role','public.defer_sync_upstream(text,timestamptz)','EXECUTE') service")).rows[0];
     assert.equal(permissions.authenticated, false); assert.equal(permissions.service, true);
+  });
+
+  await t.test("portable brawler writes support the restored production recorded_day index without rewriting unchanged rows", async () => {
+    await reset(); const body = fullPayload(); await full(body);
+    await db.query("DROP INDEX idx_brawler_snapshots_player_brawler_day; ALTER TABLE brawler_snapshots ADD COLUMN recorded_day date; UPDATE brawler_snapshots SET recorded_day=(recorded_at AT TIME ZONE 'UTC')::date; CREATE UNIQUE INDEX idx_brawler_snapshots_player_brawler_day ON brawler_snapshots(player_tag,brawler_id,recorded_day)");
+    await db.query("CREATE FUNCTION set_brawler_recorded_day() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN NEW.recorded_day := (NEW.recorded_at AT TIME ZONE 'UTC')::date; RETURN NEW; END $$; CREATE TRIGGER trg_set_brawler_recorded_day BEFORE INSERT OR UPDATE OF recorded_at ON brawler_snapshots FOR EACH ROW EXECUTE FUNCTION set_brawler_recorded_day()");
+    // Reproduce the real failure with the previous function, then install007.
+    await db.query(migration);
+    const old = await acquire("full"); const before = await snapshot();
+    await assert.rejects(commit(old, body, "full"), error => error.code === "42P10");
+    assert.deepEqual(await snapshot(), before);
+    await db.query("SELECT fail_sync_run($1,$2,'snapshot_rejected','Test rollback')", [old.run_id, old.fence]);
+    await db.query(portableMigration);
+    const unchanged = await tableRows("brawler_snapshots", true);
+    await full(body); assert.deepEqual(await tableRows("brawler_snapshots", true), unchanged);
+    body.brawlers[0].power_level = 5;
+    body.brawlers.push({ ...body.brawlers[0], brawler_id: 2, brawler_name: "NITA", power_level: 1 });
+    await full(body);
+    const rows = await tableRows("brawler_snapshots", true);
+    assert.equal(rows.length, 2); assert.equal(rows.find(row => row.brawler_id === 1).id, unchanged[0].id);
+    assert.equal(rows.find(row => row.brawler_id === 1).power_level, 5);
+    assert.equal((await db.query("SELECT count(*)::int n FROM brawler_snapshots WHERE recorded_day IS DISTINCT FROM (recorded_at AT TIME ZONE 'UTC')::date")).rows[0].n, 0);
+    assert.equal((await db.query("SELECT count(*)::int n FROM pg_indexes WHERE tablename='brawler_snapshots' AND indexname='idx_brawler_snapshots_player_brawler_day' AND indexdef LIKE '%recorded_day%'")).rows[0].n, 1);
+    const duplicate = fullPayload(); duplicate.brawlers.push({ ...duplicate.brawlers[0] });
+    const run = await acquire("full"); await assert.rejects(commit(run, duplicate, "full"), /invalid_snapshot_brawlers/);
+    await db.query("SELECT fail_sync_run($1,$2,'snapshot_rejected','Test duplicate')", [run.run_id, run.fence]);
+  });
+
+  await t.test("partial ranked attempts advance cadence without claiming ranked freshness and roll back with failed full sync", async () => {
+    await reset();
+    await full(fullPayload(undefined, { ranked_attempted: true, ranked_complete: false }));
+    const attempt = async () => (await db.query("SELECT value FROM settings WHERE key='last_ranked_attempt_time'")).rows[0]?.value;
+    assert.ok(await attempt()); assert.equal((await markers()).last_ranked_sync_time, undefined);
+    await db.query("UPDATE settings SET value='2000-01-01T00:00:00Z' WHERE key='last_ranked_attempt_time'");
+    await roster(rosterPayload(undefined, { ranked_attempted: true }));
+    await commit(await acquire("member"), fullPayload(undefined, { ranked_attempted: true, ranked_complete: true }), "full");
+    await full(fullPayload(undefined, { ranked_attempted: false, ranked_complete: false }));
+    assert.equal(await attempt(), "2000-01-01T00:00:00Z");
+    const broken = fullPayload(undefined, { ranked_attempted: true, ranked_complete: false }); broken.brawlers[0].brawler_name = "X".repeat(100);
+    const run = await acquire("full"); await assert.rejects(commit(run, broken, "full"), /value too long/);
+    assert.equal(await attempt(), "2000-01-01T00:00:00Z");
+    await db.query("SELECT fail_sync_run($1,$2,'snapshot_rejected','Test ranked rollback')", [run.run_id, run.fence]);
+    await full(fullPayload(undefined, { ranked_attempted: true, ranked_complete: true }));
+    assert.equal(await attempt(), (await markers()).last_ranked_sync_time);
+  });
+
+  const beginRanked = async (run) => (await db.query("SELECT begin_sync_ranked_attempt($1,$2) allowed", [run.run_id, run.fence])).rows[0].allowed;
+  const attemptMarker = async () => (await db.query("SELECT value FROM settings WHERE key='last_ranked_attempt_time'")).rows[0]?.value;
+  const setRanked = async (key, value) => db.query("INSERT INTO settings(key,value) VALUES($1,$2) ON CONFLICT(key) DO UPDATE SET value=excluded.value", [key, value]);
+
+  await t.test("ranked attempt reservation survives a rejected snapshot and failed run without changing freshness", async () => {
+    await reset(); await full();
+    const freshness = await markers(); const before = await snapshot(); const run = await acquire("full");
+    assert.equal(await beginRanked(run), true);
+    const marker = await attemptMarker(); assert.ok(marker);
+    assert.deepEqual(await markers(), freshness);
+    const reserved = await snapshot();
+    assert.deepEqual({ ...reserved, settings: before.settings }, before);
+    const broken = fullPayload(); broken.brawlers[0].brawler_name = "X".repeat(100);
+    await assert.rejects(commit(run, broken, "full"), /value too long/);
+    assert.deepEqual(await snapshot(), reserved);
+    await db.query("SELECT fail_sync_run($1,$2,'snapshot_rejected','Test reserved attempt survives')", [run.run_id, run.fence]);
+    assert.equal(await attemptMarker(), marker); assert.deepEqual(await markers(), freshness);
+    const retry = await acquire("full"); assert.equal(await beginRanked(retry), false);
+    assert.equal(await attemptMarker(), marker);
+    await db.query("SELECT fail_sync_run($1,$2,'upstream_failure','Test mandatory profile failure')", [retry.run_id, retry.fence]);
+    assert.equal((await db.query("SELECT status FROM sync_runs WHERE id=$1", [run.run_id])).rows[0].status, "failed");
+  });
+
+  await t.test("concurrent ranked reservations grant one request batch and leave success markers absent", async () => {
+    await reset(); const run = await acquire("full");
+    const results = await Promise.all(Array.from({ length: 8 }, () => beginRanked(run)));
+    assert.equal(results.filter(Boolean).length, 1); assert.equal(results.filter(value => !value).length, 7);
+    assert.deepEqual(await markers(), {});
+    assert.equal((await db.query("SELECT status FROM sync_runs WHERE id=$1", [run.run_id])).rows[0].status, "running");
+  });
+
+  await t.test("ranked reservation rejects expired, replaced, completed and null fences plus non-full scopes", async () => {
+    await reset(); const expired = await acquire("full");
+    await db.query("UPDATE sync_leases SET expires_at=now()-interval '1 second'");
+    await assert.rejects(beginRanked(expired), /stale_sync_fence/);
+    const replacement = await acquire("full");
+    await assert.rejects(beginRanked(expired), /stale_sync_fence/);
+    await assert.rejects(beginRanked({ ...replacement, fence: null }), /stale_sync_fence/);
+    await assert.rejects(beginRanked({ ...replacement, fence: replacement.fence + 1 }), /stale_sync_fence/);
+    assert.equal(await attemptMarker(), undefined);
+    await commit(replacement, fullPayload(), "full");
+    await assert.rejects(beginRanked(replacement), /stale_sync_fence/);
+    for (const scope of ["member", "roster"]) {
+      await reset(); await assert.rejects(beginRanked(await acquire(scope)), /sync_scope_mismatch/);
+      assert.equal(await attemptMarker(), undefined);
+    }
+    await assert.rejects(beginRanked({ run_id: null, fence: 1 }), /stale_sync_fence/);
+  });
+
+  await t.test("ranked reservation rereads club configuration, provider cooldown and configured cadence", async () => {
+    await reset(); const run = await acquire("full");
+    await setRanked("club_tag", "#OTHER");
+    await assert.rejects(beginRanked(run), /club_configuration_changed/);
+    assert.equal(await attemptMarker(), undefined);
+    await setRanked("club_tag", " %23club ");
+    await db.query("SELECT defer_sync_upstream('rnt',now()+interval '5 minutes')");
+    assert.equal(await beginRanked(run), false); assert.equal(await attemptMarker(), undefined);
+    await setRanked("sync_ranked_cooldown_until", "2000-01-01T00:00:00Z");
+    await setRanked("last_ranked_sync_time", new Date(Date.now() - 50 * 60000).toISOString());
+    await setRanked("sync_ranked_interval_minutes", "60");
+    assert.equal(await beginRanked(run), false); assert.equal(await attemptMarker(), undefined);
+    await setRanked("sync_ranked_interval_minutes", "30");
+    const before = await markers(); assert.equal(await beginRanked(run), true);
+    assert.deepEqual(await markers(), before);
+  });
+
+  await t.test("ranked reservation enforces attempt precedence and the cadence boundary with safe invalid-setting defaults", async () => {
+    await reset(); const run = await acquire("full");
+    await setRanked("last_ranked_sync_time", "2000-01-01T00:00:00Z");
+    await setRanked("last_ranked_attempt_time", new Date(Date.now() - 28 * 60000).toISOString());
+    for (const invalid of ["invalid", "9", "1441", "Infinity", "NaN", ""]) {
+      await setRanked("sync_ranked_interval_minutes", invalid);
+      assert.equal(await beginRanked(run), false, invalid);
+    }
+    await setRanked("last_ranked_attempt_time", new Date(Date.now() - 29 * 60000 - 1000).toISOString());
+    assert.equal(await beginRanked(run), true);
+    await setRanked("sync_ranked_interval_minutes", "10");
+    await setRanked("last_ranked_attempt_time", new Date(Date.now() - 8 * 60000).toISOString());
+    assert.equal(await beginRanked(run), false);
+    await setRanked("last_ranked_attempt_time", new Date(Date.now() - 9 * 60000 - 1000).toISOString());
+    assert.equal(await beginRanked(run), true);
+    await setRanked("last_ranked_attempt_time", "invalid-date");
+    await setRanked("sync_ranked_cooldown_until", "invalid-date");
+    assert.equal(await beginRanked(run), true);
+    await setRanked("last_ranked_attempt_time", "infinity");
+    assert.equal(await beginRanked(run), true);
+  });
+
+  await t.test("ranked reservation sees a settings update committed while it waits for the row lock", async () => {
+    await reset(); const run = await acquire("full");
+    await setRanked("last_ranked_attempt_time", "2000-01-01T00:00:00Z");
+    const updater = await db.connect(); const caller = await db.connect();
+    let pending;
+    try {
+      await updater.query("BEGIN");
+      await updater.query("UPDATE settings SET value=clock_timestamp()::text WHERE key='last_ranked_attempt_time'");
+      pending = caller.query("SELECT begin_sync_ranked_attempt($1,$2) allowed", [run.run_id, run.fence]);
+      const deadline = Date.now() + 4000; let waiting = false;
+      while (!waiting && Date.now() < deadline) {
+        waiting = (await db.query("SELECT wait_event_type='Lock' waiting FROM pg_stat_activity WHERE pid=$1", [caller.processID])).rows[0]?.waiting;
+        if (!waiting) await db.query("SELECT pg_sleep(0.01)");
+      }
+      assert.equal(waiting, true, "reservation must wait for the locked settings row");
+      await updater.query("COMMIT");
+      assert.equal((await pending).rows[0].allowed, false);
+      assert.deepEqual(await markers(), {});
+    } finally {
+      await updater.query("ROLLBACK");
+      if (pending) await pending.catch(() => {});
+      updater.release(); caller.release();
+    }
+  });
+
+  await t.test("only the service role may reserve ranked requests", async () => {
+    await reset(); const run = await acquire("full");
+    const permissions = (await db.query("SELECT has_function_privilege('anon','public.begin_sync_ranked_attempt(uuid,bigint)','EXECUTE') anon,has_function_privilege('authenticated','public.begin_sync_ranked_attempt(uuid,bigint)','EXECUTE') authenticated,has_function_privilege('service_role','public.begin_sync_ranked_attempt(uuid,bigint)','EXECUTE') service")).rows[0];
+    assert.deepEqual(permissions, { anon: false, authenticated: false, service: true });
+    const client = await db.connect();
+    try {
+      for (const role of ["anon", "authenticated"]) {
+        await client.query(`BEGIN; SET LOCAL ROLE ${role}`);
+        await assert.rejects(client.query("SELECT begin_sync_ranked_attempt($1,$2)", [run.run_id, run.fence]), /permission denied/);
+        await client.query("ROLLBACK");
+      }
+      await client.query("BEGIN; SET LOCAL ROLE service_role");
+      assert.equal((await client.query("SELECT begin_sync_ranked_attempt($1,$2) allowed", [run.run_id, run.fence])).rows[0].allowed, true);
+      await client.query("COMMIT");
+      assert.ok(await attemptMarker()); assert.deepEqual(await markers(), {});
+    } finally { await client.query("ROLLBACK"); client.release(); }
   });
 }
 

@@ -80,5 +80,6 @@ export const arExtra: Record<string, string> = {
   "Date: {date}": "التاريخ: {date}", "Club Weekly Report": "تقرير النادي الأسبوعي", "Generated": "تاريخ الإنشاء", "Period": "الفترة", "Summary": "الملخص", "Change": "التغير",
   "No recorded departures": "لا توجد مغادرات مسجلة",
   "Last completed full attempt": "آخر محاولة مزامنة كاملة انتهت",
+  "Last full sync:": "آخر مزامنة كاملة:", "Last roster check:": "آخر فحص للأعضاء:",
   "The latest full sync did not complete. The displayed data comes from an earlier successful update.": "لم تكتمل آخر محاولة مزامنة كاملة. البيانات المعروضة من تحديث ناجح سابق.",
 };

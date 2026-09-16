@@ -64,7 +64,7 @@ export function useSidebarContext() {
 }
 
 function SimpleSidebar() {
-  useSyncHealth();
+  const syncHealth = useSyncHealth();
   const pathname = usePathname();
   const { clubName, lastSyncTime, isSyncing, clubTag, apiKeyConfigured, notificationsEnabled } = useAppStore();
   const { isOpen, close } = useSidebarContext();
@@ -160,7 +160,7 @@ function SimpleSidebar() {
           </div>
 
           {/* Navigation */}
-          <nav className="flex-1 px-3 py-4 space-y-1">
+          <nav className="min-h-0 flex-1 overflow-y-auto px-3 py-4 space-y-1">
             {navigation
               .filter((item) => !item.adminOnly || isAdmin)
               .map((item) => {
@@ -200,10 +200,11 @@ function SimpleSidebar() {
               <RefreshCw className={cn("size-4", isSyncing && "animate-spin")} />
               <span>{isSyncing ? <T text="Syncing..." /> : <T text="Sync Now" />}</span>
             </Button>
-            {lastSyncTime && (
-              <p className="text-xs text-muted-foreground text-center mt-2">
-                <T text=" Last: " /><LocalDate value={lastSyncTime} time />
-              </p>
+            {(lastSyncTime || syncHealth?.lastRosterSuccessAt) && (
+              <dl className="mt-2 space-y-1 text-xs text-muted-foreground">
+                <div className="flex flex-wrap justify-between gap-x-2"><dt><T text="Last full sync:" /></dt><dd><LocalDate value={lastSyncTime} time /></dd></div>
+                <div className="flex flex-wrap justify-between gap-x-2"><dt><T text="Last roster check:" /></dt><dd><LocalDate value={syncHealth?.lastRosterSuccessAt} time /></dd></div>
+              </dl>
             )}
           </div>
         </div>
