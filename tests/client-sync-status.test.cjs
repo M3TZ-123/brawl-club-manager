@@ -14,11 +14,11 @@ function fixture(initial = "2026-09-15T23:40:07.824Z") {
   window.clearInterval = id => timers.delete(id);
   window.localStorage = {setItem: (key,value) => writes.push({key,value})};
   window.addEventListener("club-data-updated",event => emitted.push(event.detail));
-  const module = loadTypeScript("src/lib/client-sync-status.ts", {
+  const syncStatusModule = loadTypeScript("src/lib/client-sync-status.ts", {
     "@/lib/store": {useAppStore:{getState:()=>state}},
     "@/lib/client-data-cache": {invalidateJsonCache() {},fetchJsonCached: async (url,options) => {requests.push({url,options}); if(response instanceof Error) throw response; return response;}},
   }, {window,document,CustomEvent:class {constructor(type,options={}) {this.type=type;this.detail=options.detail;}}});
-  return {module,state,window,document,timers,requests,writes,emitted,setResponse(value) {response=value;}};
+  return {module:syncStatusModule,state,window,document,timers,requests,writes,emitted,setResponse(value) {response=value;}};
 }
 
 test("sidebar and health consumers share one poll and replace even a newer persisted timestamp with the server value", async () => {
