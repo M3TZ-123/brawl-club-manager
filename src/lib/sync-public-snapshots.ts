@@ -1,4 +1,6 @@
 export const PUBLIC_MEMBER_COLUMNS = "player_tag,player_name,icon_id,role,trophies,highest_trophies,exp_level,rank_current,rank_highest,ranked_season_id,ranked_points,ranked_season_best,ranked_season_best_points,ranked_all_time_best_points,ranked_checked_at,ranked_source,ranked_provenance,win_rate,brawlers_count,solo_victories,duo_victories,trio_victories,is_active,last_updated";
+// List screens use the tier names; detailed provenance belongs in the one-player response.
+export const PUBLIC_MEMBER_LIST_COLUMNS = "player_tag,player_name,icon_id,role,trophies,highest_trophies,exp_level,rank_current,rank_highest,win_rate,brawlers_count,solo_victories,duo_victories,trio_victories,is_active,last_updated";
 const memberFields = new Set(PUBLIC_MEMBER_COLUMNS.split(","));
 const auditFields = new Set([...memberFields, "first_seen", "last_seen", "last_left_at", "times_joined", "times_left", "is_current_member", "role_at_leave", "trophies_at_leave"]);
 type RankedProvenance = Record<string, { source: "profile" | "rnt"; checked_at: string }>;

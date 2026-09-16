@@ -9,7 +9,7 @@ class FixedDate extends Date { constructor(...args) { super(...(args.length ? ar
 const owner = "private-owner-fixture-identifier";
 function tables() {
   const rows = {
-    members: [{ player_tag: "#A", player_name: "Public fixture", trophies: 1000, highest_trophies: 1500, role: "member", is_active: true, last_updated: timestamp }],
+    members: [{ player_tag: "#A", player_name: "Public fixture", trophies: 1000, highest_trophies: 1500, role: "member", is_active: true, last_updated: timestamp, rank_current: "Diamond I", ranked_points: 3417, ranked_provenance: { rank_current: { source: "profile", checked_at: timestamp } } }],
     member_history: [{ player_tag: "#A", is_current_member: true }],
     club_events: [{ id: 1, event_type: "join", player_tag: "#A", player_name: "Public fixture", event_time: timestamp }],
     notifications: [{ id: 1, type: "join", title: "Joined", message: "Public fixture joined", player_tag: "#A", player_name: "Public fixture", is_read: false, created_at: timestamp }],
@@ -45,6 +45,7 @@ function projectedDatabase(selections) {
   } };
 }
 const routes = [
+  ["members", "src/app/api/members/route.ts", body => assert.equal(body.members[0].player_name, "Public fixture")],
   ["dashboard", "src/app/api/dashboard/route.ts", body => assert.equal(body.recentEvents[0].player_name, "Public fixture")],
   ["events", "src/app/api/events/route.ts", body => assert.deepEqual(Object.keys(body.events[0]).sort(), ["event_time", "event_type", "id", "player_name", "player_tag"])],
   ["battles/feed", "src/app/api/battles/feed/route.ts", body => assert.equal(body.matches[0].clubPlayers[0].tag, "#A")],
@@ -64,6 +65,12 @@ for (const [route, file, verifyPublicFields] of routes) test("public " + route +
   const url = "http://fixture/api/" + route;
   const response = await GET(Object.assign(new Request(url), {nextUrl:new URL(url)}));
   assert.equal(response.status, 200);
+  if (route === "members") {
+    const { members } = await response.clone().json();
+    assert.equal(members[0].rank_current, "Diamond I");
+    assert.equal(Object.hasOwn(members[0], "ranked_provenance"), false);
+    assert.equal(Object.hasOwn(members[0], "ranked_points"), false);
+  }
   const body = await response.json();
   assert.doesNotMatch(JSON.stringify(body), /owner_user_id|private-owner-fixture-identifier/);
   verifyPublicFields(body);

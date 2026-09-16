@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabase-admin";
 import { appendMemberActivityMetrics } from "@/lib/member-activity-metrics";
-import { PUBLIC_MEMBER_COLUMNS, publicMemberSnapshot } from "@/lib/sync-public-snapshots";
+import { PUBLIC_MEMBER_LIST_COLUMNS, publicMemberSnapshot } from "@/lib/sync-public-snapshots";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -18,7 +18,7 @@ export async function GET() {
     const currentMemberTags = currentMemberHistory?.map((h) => h.player_tag) || [];
     const { data: members, error } = await supabaseAdmin
       .from("members")
-      .select(PUBLIC_MEMBER_COLUMNS)
+      .select(PUBLIC_MEMBER_LIST_COLUMNS)
       .in("player_tag", currentMemberTags.length > 0 ? currentMemberTags : [""])
       .order("trophies", { ascending: false });
 
