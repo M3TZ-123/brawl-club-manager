@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button";
 import { fetchJsonWithTimeout } from "@/lib/client-fetch";
 import { useAppStore } from "@/lib/store";
 import { formatBrawlName } from "@/lib/brawl-text";
+import { megaPigReportedStage, MEGA_PIG_RULE_REFERENCE_URL } from "@/lib/mega-pig-progress";
 import type { MegaPigSourceResponse } from "@/lib/mega-pig-source-types";
 
 const tagKey = (value: string) => value.trim() ? `#${value.trim().replace(/^#/, "").toUpperCase()}` : "";
@@ -87,6 +88,7 @@ export function MegaPigSourcePanel() {
   const unknownNumber = (value: number | null) => value === null ? t("Unknown") : number(value);
   const sourceUrl = data?.source.url && /^https:\/\/(?:www\.)?brawlace\.com\//i.test(data.source.url) ? data.source.url : null;
   const rosterDiffers = counters && (counters.matchedMembers !== counters.rosterMembers || counters.sourceMembers !== counters.matchedMembers);
+  const estimatedStage = counters?.totalWins == null ? null : megaPigReportedStage(counters.totalWins);
 
   return <section className="rounded-lg border bg-card p-4 space-y-3 min-w-0" aria-label={t("Mega Pig counters")}>
     <div className="flex items-start justify-between gap-3"><div><h2 className="font-semibold">{t("Mega Pig counters")}</h2><p className="text-xs text-muted-foreground">{t("Reported by BrawlAce · third-party source")}</p></div><Button type="button" variant="ghost" size="sm" disabled={loading || !clubTag} onClick={() => void load()}>{t("Refresh")}</Button></div>
@@ -95,6 +97,7 @@ export function MegaPigSourcePanel() {
     {data?.status === "pending" && <p role="status" className="text-sm text-muted-foreground">{t("The source is being checked. Counters will appear when available.")}</p>}
     {counters && <>
       <dl className="grid grid-cols-2 gap-3"><div><dt className="text-xs text-muted-foreground">{t("Reported total wins")}</dt><dd className="mt-1 text-2xl font-semibold">{unknownNumber(counters.totalWins)}</dd></div><div><dt className="text-xs text-muted-foreground">{t("Players reported by source")}</dt><dd className="mt-1 text-2xl font-semibold">{unknownNumber(counters.reportedPlayersPlayed)}</dd></div></dl>
+      <p className="text-xs text-muted-foreground">{t("Estimated stage")}: <bdi dir="ltr">{estimatedStage === null ? t("Unknown") : `${number(estimatedStage)}/${number(5)}`}</bdi> · {t("Based on 16 wins per stage")}{estimatedStage === 5 ? ` · ${t("Target reached by this estimate")}` : ""}</p>
       {counters.status === "stale" && <p role="status" className="text-sm text-amber-600 dark:text-amber-400">{t("Showing saved counters; the source refresh is delayed.")}</p>}
       {rosterDiffers && <p role="status" className="text-xs text-amber-600 dark:text-amber-400">{t("Matched {matched} of {total} current members. Missing members have unknown counters.", { matched: number(counters.matchedMembers), total: number(counters.rosterMembers) })}</p>}
       <details className="text-sm"><summary className="cursor-pointer text-primary">{t("View member counters and source")}</summary><div className="mt-3 space-y-3">
@@ -102,6 +105,7 @@ export function MegaPigSourcePanel() {
         {counters.members.some(member => member.reportedWins === null || member.reportedTicketsRemaining === null) && <p className="text-xs text-muted-foreground">{t("Matching a member does not mean their wins or tickets are available.")}</p>}
         {counters.members.length > 0 && <table className="w-full table-fixed text-sm"><caption className="sr-only">{t("Reported counters for current members")}</caption><thead><tr className="border-b text-start text-xs text-muted-foreground"><th scope="col" className="pb-2 text-start font-medium">{t("Member")}</th><th scope="col" className="w-16 pb-2 text-end font-medium">{t("Wins")}</th><th scope="col" className="w-24 pb-2 ps-2 text-end font-medium">{t("Tickets remaining")}</th></tr></thead><tbody>{counters.members.map(member => <tr key={member.playerTag} className="border-b last:border-0"><th scope="row" className="py-2 pe-2 text-start font-normal [overflow-wrap:anywhere]">{formatBrawlName(member.playerName, t("Player"))}<bdi dir="ltr" className="block text-xs text-muted-foreground">{member.playerTag}</bdi></th><td className="py-2 text-end">{unknownNumber(member.reportedWins)}</td><td className="py-2 ps-2 text-end">{unknownNumber(member.reportedTicketsRemaining)}</td></tr>)}</tbody></table>}
         {sourceUrl && <a href={sourceUrl} target="_blank" rel="noopener noreferrer" className="inline-block text-primary underline underline-offset-4">{t("Open BrawlAce source")}</a>}
+        <p className="text-xs text-muted-foreground">{t("16 wins per stage · community-reported rules, adjustable")} · <a className="text-primary underline" href={MEGA_PIG_RULE_REFERENCE_URL} target="_blank" rel="noopener noreferrer">{t("Rule reference")}</a></p>
         <p className="text-xs text-muted-foreground">{t("Refresh reads the app cache. Source checks run automatically; this button does not force a provider update.")}</p>
       </div></details>
     </>}

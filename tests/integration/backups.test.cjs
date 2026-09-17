@@ -18,6 +18,11 @@ const sourcePayload = { clubTag: "#PYLQ", totalWins: 5, reportedPlayersPlayed: 2
 ] };
 const previousSourcePayload = { ...sourcePayload, totalWins: 3, members: sourcePayload.members.map(member => ({ ...member, reportedWins: member.reportedWins - 1, reportedTicketsRemaining: member.reportedTicketsRemaining + 1 })) };
 const sourceRpcNames = ["claim_mega_pig_source_cache", "finish_mega_pig_source_cache"];
+const archiveTables = ["club_mega_pig_observations", "club_mega_pig_cycles", "club_mega_pig_cycle_members", "club_mega_pig_cycle_revisions"];
+const archiveRpcNames = ["mega_pig_archive_payload", "mega_pig_archive_ready", "mega_pig_archive_apply", "mega_pig_archive_capture",
+  "mega_pig_archive_observation_summary", "mega_pig_archive_write", "mega_pig_archive_read"];
+const archiveObservationId = "00000000-0000-4000-8000-000000000039";
+const archiveCycleId = "00000000-0000-4000-8000-000000000139";
 
 test("encrypted backup restores actual schema, rows and private permissions into an empty local database", { skip: !connectionString }, async t => {
   validateRestoreTarget(connectionString);
@@ -110,6 +115,34 @@ test("encrypted backup restores actual schema, rows and private permissions into
     VALUES('#PYLQ',$1::jsonb,$2::jsonb,'2026-09-17T10:00:00Z','2026-09-17T09:45:00Z','2026-09-17T10:30:00Z','2026-09-17T11:00:00Z',
       '00000000-0000-4000-8000-000000000038','2026-09-17T10:30:15Z','rate_limited',2)`, [JSON.stringify(sourcePayload), JSON.stringify(previousSourcePayload)]);
   const savedSourceCache = (await client.query("SELECT to_jsonb(cache) AS entry FROM public.club_mega_pig_source_cache cache WHERE club_tag='#PYLQ'")).rows[0].entry;
+  const archivedPayload = { ...sourcePayload, members: [sourcePayload.members[0], { ...sourcePayload.members[1], reportedWins: null, reportedTicketsRemaining: null }] };
+  await client.query(`
+    INSERT INTO public.club_mega_pig_observations(id,club_tag,payload,first_fetched_at,last_fetched_at,origin,recorded_at)
+      VALUES($1,'#PYLQ',$2::jsonb,'2026-09-17T10:00:00.123456Z','2026-09-17T10:20:00.654321Z','source_fetch','2026-09-17T10:20:01Z')
+  `, [archiveObservationId, JSON.stringify(archivedPayload)]);
+  await client.query(`
+    INSERT INTO public.club_mega_pig_cycles(id,club_tag,request_id,create_payload,title,starts_at,ends_at,milestones,notes,version,
+      initial_observation_id,capture_enabled,last_captured_at,reported_total_wins,reported_players_played,final_total_wins,
+      confirmed_stage,reward_status,finalized_at,created_at,updated_at)
+      VALUES($2,'#PYLQ','00000000-0000-4000-8000-000000000239','{"action":"save_cycle","title":"دورة مؤرشفة"}',
+        'دورة مؤرشفة','2026-09-14T08:00:00Z','2026-09-17T10:20:00Z',ARRAY[16,32,48,64,80],'تأكيد إداري خاص',2,$1,false,
+        '2026-09-17T10:20:00.654321Z',5,2,80,5,'received','2026-09-17T10:30:00Z','2026-09-14T08:00:00Z','2026-09-17T10:30:00Z')
+  `, [archiveObservationId, archiveCycleId]);
+  await client.query(`
+    INSERT INTO public.club_mega_pig_cycle_members(cycle_id,player_tag,first_player_name,player_name,first_observed_at,last_observed_at,
+      wins,tickets_remaining,wins_observed_at,tickets_observed_at,latest_wins_unknown,latest_tickets_unknown)
+      VALUES($1,'#GGRR','اسم قديم محفوظ','اسم المغادر الأخير','2026-09-14T09:00:00Z','2026-09-16T10:00:00.123456Z',3,NULL,
+        '2026-09-16T10:00:00.123456Z',NULL,true,true)
+  `, [archiveCycleId]);
+  await client.query(`
+    INSERT INTO public.club_mega_pig_cycle_revisions(cycle_id,version,action,before_snapshot,after_snapshot,reason,saved_at)
+      SELECT id,version,'finalize_cycle',
+        (to_jsonb(c)-'create_payload')||'{"final_total_wins":null,"confirmed_stage":4,"reward_status":"unknown","finalized_at":null}'::jsonb,
+        to_jsonb(c)-'create_payload','تأكيد الوصول واستلام المكافأة','2026-09-17T10:30:00.123456Z'
+      FROM public.club_mega_pig_cycles c WHERE id=$1
+  `, [archiveCycleId]);
+  const savedArchive = new Map();
+  for (const table of archiveTables) savedArchive.set(table, (await client.query(`SELECT to_jsonb(t) AS row FROM public.${table} t ORDER BY to_jsonb(t)::text`)).rows.map(item => item.row));
   const directory = await fs.mkdtemp(path.join(os.tmpdir(), "brawl-encrypted-backup-test-"));
   t.after(() => fs.rm(directory, { recursive: true, force: true }));
   const output = path.join(directory, "test.brawlbackup");
@@ -152,6 +185,8 @@ test("encrypted backup restores actual schema, rows and private permissions into
     for (const name of ["sync_battle_coverage", "sync_battle_gaps", "capacity_samples", "sync_ranked_fallback_attempts", "club_sync_signals"]) assert.equal(manifest.tables.find(table => table.name === name).row_count, 1);
     for(const name of clubFeatureTables)assert.equal(manifest.tables.find(table=>table.name===name)?.row_count,1,`${name} must be included with its data`);
     for(const name of sourceRpcNames)assert.ok(manifest.functions.some(fn=>fn.name===name),`${name} must be included in the captured schema`);
+    for(const name of archiveTables)assert.equal(manifest.tables.find(table=>table.name===name)?.row_count,1,`${name} archive rows must be captured`);
+    for(const name of archiveRpcNames)assert.ok(manifest.functions.some(fn=>fn.name===name),`${name} archive procedure must be captured`);
     assert.ok(manifest.functions.find(fn=>fn.name==='commit_sync_snapshot').definition.includes('member_inactivity_exempt(v_run.club_tag,player_tag,v_now)'),'The backup must capture the live absence hook, not an older sync body');
     assert.ok(manifest.tables.find(table => table.name === "profiles").columns.some(column => column.name === "owner_user_id"));
     assert.ok((await client.query("SELECT max(octet_length(payload)) AS size FROM public.backup_chunks")).rows[0].size < 1024 * 1024);
@@ -219,6 +254,20 @@ test("encrypted backup restores actual schema, rows and private permissions into
       await assert.rejects(restoreBackup(exposedSourceRpc,connectionString),new RegExp(`Private function permissions verification failed for ${name}`));
       assert.equal((await client.query("SELECT count(*)::int n FROM pg_tables WHERE schemaname='public'")).rows[0].n,0,`An exposed ${name} must roll back the complete restore`);
     }
+    for (const [index, name] of archiveTables.entries()) {
+      const grant = index % 2 ? { role: 'authenticated', privilege: 'UPDATE', grantable: false } : { role: 'anon', privilege: 'SELECT', grantable: false };
+      const exposedArchive = { ...backup, manifest: { ...backup.manifest, tables: backup.manifest.tables.map(table => table.name === name ? { ...table, grants: [...table.grants, grant] } : table) } };
+      await assert.rejects(restoreBackup(exposedArchive, connectionString), new RegExp(`Private permissions verification failed for ${name}`));
+      assert.equal((await client.query("SELECT count(*)::int n FROM pg_tables WHERE schemaname='public'")).rows[0].n, 0, `Exposed ${name} must leave no partial restored data`);
+    }
+    for (const name of archiveRpcNames) {
+      const exposedArchiveRpc = { ...backup, manifest: { ...backup.manifest, functions: backup.manifest.functions.map(fn => fn.name === name ? { ...fn, grants: [...fn.grants, { role: 'PUBLIC', privilege: 'EXECUTE', grantable: false }] } : fn) } };
+      await assert.rejects(restoreBackup(exposedArchiveRpc, connectionString), new RegExp(`Private function permissions verification failed for ${name}`));
+      assert.equal((await client.query("SELECT count(*)::int n FROM pg_tables WHERE schemaname='public'")).rows[0].n, 0, `Exposed ${name} must roll back data and schema`);
+    }
+    const missingArchiveRls = { ...backup, manifest: { ...backup.manifest, tables: backup.manifest.tables.map(table => table.name === 'club_mega_pig_cycles' ? { ...table, rls: false } : table) } };
+    await assert.rejects(restoreBackup(missingArchiveRls, connectionString), /Private RLS verification failed for club_mega_pig_cycles/);
+    assert.equal((await client.query("SELECT count(*)::int n FROM pg_tables WHERE schemaname='public'")).rows[0].n, 0, 'Missing archive RLS must roll back the complete restore');
     const result = await restoreBackup(backup, connectionString);
     assert.equal(result.verified, true);
     const restoredBattle = (await client.query("SELECT trophy_change,trophy_change_reported,battle_type,event_id,event_mode_id,battle_mode,event_mode,placement_rank FROM public.battle_history")).rows[0];
@@ -236,6 +285,21 @@ test("encrypted backup restores actual schema, rows and private permissions into
     for(const name of clubFeatureTables)assert.equal((await client.query(`SELECT count(*)::int n FROM public.${name}`)).rows[0].n,1,`${name} roundtrip row count`);
     assert.deepEqual((await client.query("SELECT to_jsonb(cache) AS entry FROM public.club_mega_pig_source_cache cache WHERE club_tag='#PYLQ'")).rows[0].entry,savedSourceCache,'Both provider payloads, Unicode, timestamps, cooldown and private lease must roundtrip unchanged');
     assert.deepEqual(savedSourceCache.payload,sourcePayload);assert.deepEqual(savedSourceCache.previous_payload,previousSourcePayload);
+    for (const name of archiveTables) {
+      const rows = (await client.query(`SELECT to_jsonb(t) AS row FROM public.${name} t ORDER BY to_jsonb(t)::text`)).rows.map(item => item.row);
+      assert.deepEqual(rows, savedArchive.get(name), `${name} must preserve every historical field, including microsecond timestamps`);
+    }
+    const restoredCycle = savedArchive.get('club_mega_pig_cycles')[0];
+    assert.deepEqual(restoredCycle.milestones, [16, 32, 48, 64, 80]);
+    assert.equal(restoredCycle.final_total_wins, 80); assert.equal(restoredCycle.confirmed_stage, 5); assert.equal(restoredCycle.reward_status, 'received');
+    const restoredDeparted = savedArchive.get('club_mega_pig_cycle_members')[0];
+    assert.equal(restoredDeparted.first_player_name, 'اسم قديم محفوظ'); assert.equal(restoredDeparted.player_name, 'اسم المغادر الأخير');
+    assert.equal(restoredDeparted.wins, 3); assert.equal(restoredDeparted.tickets_remaining, null);
+    assert.equal(restoredDeparted.latest_wins_unknown, true); assert.equal(restoredDeparted.tickets_observed_at, null);
+    assert.equal((await client.query('SELECT count(*)::int n FROM public.members WHERE player_tag=$1', [restoredDeparted.player_tag])).rows[0].n, 0, 'Historical member survives without a current roster row');
+    assert.deepEqual(savedArchive.get('club_mega_pig_observations')[0].payload, archivedPayload);
+    assert.equal(savedArchive.get('club_mega_pig_cycle_revisions')[0].before_snapshot.confirmed_stage, 4);
+    assert.equal(savedArchive.get('club_mega_pig_cycle_revisions')[0].after_snapshot.reward_status, 'received');
     assert.deepEqual((await client.query("SELECT first_members,last_members FROM public.club_roster_snapshots")).rows[0],{
       first_members:[{tag:'#PLAYER',name:'لاعب عربي',role:'member',trophies:29900}],last_members:[{tag:'#PLAYER',name:'لاعب عربي',role:'member',trophies:30000}]});
     assert.equal((await client.query("SELECT metadata->>'description' description FROM public.club_profiles")).rows[0].description,'وصف محفوظ');
@@ -306,6 +370,14 @@ test("encrypted backup restores actual schema, rows and private permissions into
           await assert.rejects(client.query(`SELECT * FROM public.${name}`),error=>error.code==='42501');
           await assert.rejects(client.query(`DELETE FROM public.${name}`),error=>error.code==='42501');
         }
+        for (const name of archiveTables) {
+          await assert.rejects(client.query(`SELECT * FROM public.${name}`), error => error.code === '42501');
+          await assert.rejects(client.query(`DELETE FROM public.${name}`), error => error.code === '42501');
+          await assert.rejects(client.query(`TRUNCATE public.${name}`), error => error.code === '42501');
+        }
+        for (const fn of backup.manifest.functions.filter(item => archiveRpcNames.includes(item.name))) {
+          assert.equal((await client.query("SELECT has_function_privilege(current_user,$1,'EXECUTE') allowed", [fn.identity])).rows[0].allowed, false, `${role} cannot invoke ${fn.name}`);
+        }
         for(const query of ["SELECT public.member_inactivity_exempt('#CLUB','#PLAYER',now())","SELECT public.club_intelligence_read(7,now())","SELECT public.club_planning_refresh_goals('#CLUB')","SELECT public.claim_club_rival('#PYLQ','#GGRR','00000000-0000-4000-8000-000000000001')","SELECT public.member_comparison_read('#CLUB',7,now())","SELECT public.club_event_observations_read('#CLUB','00000000-0000-4000-8000-000000000131',now())"])
           await assert.rejects(client.query(query),error=>error.code==='42501');
         for(const query of ["SELECT public.claim_mega_pig_source_cache('#PYLQ','00000000-0000-4000-8000-000000000038')","SELECT public.finish_mega_pig_source_cache('#PYLQ','00000000-0000-4000-8000-000000000038',NULL,'unavailable',NULL)"])
@@ -329,6 +401,14 @@ test("encrypted backup restores actual schema, rows and private permissions into
       assert.equal((await client.query("SELECT * FROM public.capacity_samples")).rowCount, 1);
       assert.deepEqual((await client.query("SELECT payload,previous_payload FROM public.club_mega_pig_source_cache WHERE club_tag='#PYLQ'")).rows[0],{payload:sourcePayload,previous_payload:previousSourcePayload});
       await assert.rejects(client.query("UPDATE public.club_mega_pig_source_cache SET payload=NULL WHERE club_tag='#PYLQ'"),error=>error.code==='42501');
+      for (const name of archiveTables) {
+        assert.deepEqual((await client.query(`SELECT to_jsonb(t) AS row FROM public.${name} t ORDER BY to_jsonb(t)::text`)).rows.map(item => item.row), savedArchive.get(name));
+        await assert.rejects(client.query(`DELETE FROM public.${name}`), error => error.code === '42501');
+        assert.equal((await client.query("SELECT has_table_privilege(current_user,$1,'INSERT,UPDATE,DELETE,TRUNCATE') allowed", [`public.${name}`])).rows[0].allowed, false, `Service role can only read ${name} directly`);
+      }
+      for (const fn of backup.manifest.functions.filter(item => archiveRpcNames.includes(item.name))) {
+        assert.equal((await client.query("SELECT has_function_privilege(current_user,$1,'EXECUTE') allowed", [fn.identity])).rows[0].allowed, ['mega_pig_archive_read', 'mega_pig_archive_write'].includes(fn.name), `Restored service access matches the public RPC boundary for ${fn.name}`);
+      }
       await assert.rejects(client.query("SELECT public.sample_database_capacity()"), error => error.code === "42501");
     }
     finally { await client.query("RESET ROLE"); }
@@ -347,6 +427,34 @@ test("encrypted backup restores actual schema, rows and private permissions into
       assert.equal(finished.entry.error_code,null);assert.equal(finished.entry.consecutive_failures,0);assert.equal(Object.hasOwn(finished.entry,'lease_token'),false);
     }finally{await client.query("ROLLBACK");}
     assert.deepEqual((await client.query("SELECT to_jsonb(cache) AS entry FROM public.club_mega_pig_source_cache cache WHERE club_tag='#PYLQ'")).rows[0].entry,savedSourceCache,'Procedure verification must not change the restored snapshot');
+  });
+
+  await t.test("restored archive RPCs retain departed members and confirmed outcomes with version-checked corrections", async () => {
+    await client.query('BEGIN');
+    try {
+      await client.query("UPDATE public.settings SET value='#PYLQ' WHERE key='club_tag'; SET LOCAL ROLE service_role");
+      const cycle = (await client.query("SELECT public.mega_pig_archive_read('#PYLQ','cycle',$1,NULL,0) value", [archiveCycleId])).rows[0].value;
+      assert.equal(cycle.cycle.confirmed_stage, 5); assert.equal(cycle.cycle.final_total_wins, 80); assert.equal(cycle.cycle.reward_status, 'received');
+      assert.equal(cycle.members.length, 1); assert.equal(cycle.members[0].is_current_member, false);
+      assert.equal(cycle.members[0].wins, 3); assert.equal(cycle.members[0].tickets_remaining, null);
+      assert.equal(Object.hasOwn(cycle.cycle, 'request_id'), false); assert.equal(Object.hasOwn(cycle.cycle, 'create_payload'), false);
+      const reading = (await client.query("SELECT public.mega_pig_archive_read('#PYLQ','reading',$1,NULL,0) value", [archiveObservationId])).rows[0].value;
+      assert.deepEqual(reading.observation.payload, archivedPayload); assert.equal(reading.observation.unknown_members, 1);
+      const history = (await client.query("SELECT public.mega_pig_archive_read('#PYLQ','player',NULL,'#GGRR',0) value")).rows[0].value;
+      assert.equal(history.history.length, 1); assert.equal(history.history[0].cycle.id, archiveCycleId);
+      const correction = { id: archiveCycleId, version: 2, reason: 'تصحيح مؤرخ لا يمحو التأكيد السابق' };
+      const reopened = (await client.query("SELECT public.mega_pig_archive_write('#PYLQ','reopen_cycle',$1::jsonb) value", [JSON.stringify(correction)])).rows[0].value;
+      assert.equal(reopened.version, 3);
+      const updated = (await client.query("SELECT public.mega_pig_archive_read('#PYLQ','cycle',$1,NULL,0) value", [archiveCycleId])).rows[0].value;
+      assert.equal(updated.cycle.finalized_at, null); assert.equal(updated.cycle.reward_status, 'unknown');
+      assert.equal((await client.query('SELECT count(*)::int n FROM public.club_mega_pig_cycle_revisions WHERE cycle_id=$1', [archiveCycleId])).rows[0].n, 2);
+      await client.query('SAVEPOINT stale_archive_revision');
+      await assert.rejects(client.query("SELECT public.mega_pig_archive_write('#PYLQ','reopen_cycle',$1::jsonb)", [JSON.stringify(correction)]), error => error.code === '40001');
+      await client.query('ROLLBACK TO SAVEPOINT stale_archive_revision');
+    } finally { await client.query('ROLLBACK'); }
+    for (const table of archiveTables) {
+      assert.deepEqual((await client.query(`SELECT to_jsonb(t) AS row FROM public.${table} t ORDER BY to_jsonb(t)::text`)).rows.map(item => item.row), savedArchive.get(table), 'Archive procedure rehearsal must not alter the restored snapshot');
+    }
   });
 
   await t.test("restored maintenance definitions keep the extra day required by90-day comparisons", async () => {

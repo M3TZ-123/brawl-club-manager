@@ -128,7 +128,7 @@ test('Mega Pig source cache privately coordinates durable cadence and preserves 
   });
   await t.test('the new private table is included in the existing bounded backup capture allowlist', async () => {
     const definition = (await db.query("SELECT pg_get_functiondef('public.create_backup_snapshot(uuid)'::regprocedure) value")).rows[0].value;
-    assert.match(definition, /v_allowed text\[\] := ARRAY\['club_mega_pig_source_cache',/);
+    assert.match(definition, /v_allowed text\[\] := ARRAY\[[^\]]*'club_mega_pig_source_cache'/);
     assert.match(definition, /club_roster_snapshots/); assert.match(definition, /club_event_entries/);
   });
 });

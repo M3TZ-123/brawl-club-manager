@@ -159,21 +159,34 @@ export async function fetchMegaPigSource(expectedClub: string, options: { signal
   const deadline = new AbortController(), timer = setTimeout(() => deadline.abort(), 8000);
   const signal = options.signal ? AbortSignal.any([options.signal, deadline.signal]) : deadline.signal;
   let response: Response | undefined;
+  let failureReason = "network_error";
   try {
     if (signal.aborted) throw new SourceProviderError("unavailable");
     response = await abortable(fetch(url, {
       method: "GET", headers: { "User-Agent": "BrawlStatz (+https://brawlstatz.vercel.app)", Accept: "text/html", "Accept-Language": "en" },
       credentials: "omit", cache: "no-store", redirect: "error", signal,
     }), signal);
-    if (response.redirected || (response.url && response.url !== url)) throw new SourceProviderError("unavailable");
+    if (response.redirected || (response.url && response.url !== url)) {
+      failureReason = "redirect";
+      throw new SourceProviderError("unavailable");
+    }
     if (response.status === 429) {
+      failureReason = "rate_limited";
       const header = response.headers.get("retry-after");
       const retry = header !== null && header.length <= 128 ? parseRetryAfterMs(header) : null;
       throw new SourceProviderError("rate_limited", retry !== null && Number.isFinite(retry) ? Math.max(1, Math.ceil(retry / 1000)) : undefined);
     }
+    failureReason = "http_status";
     if (!response.ok) throw new SourceProviderError("unavailable");
+    failureReason = "body_read";
     return parseMegaPigSourceHtml(await readHtml(response, signal), expected);
   } catch (error) {
+    // Keep diagnostics server-only and finite: never log request identities,
+    // source content, headers, transport exceptions, or credentials.
+    console.warn("mega_pig_source_failure", {
+      reason: signal.aborted ? "aborted" : error instanceof SourceProviderError && error.code === "invalid" ? "invalid_data" : failureReason,
+      httpStatus: response?.status ?? null,
+    });
     if (error instanceof SourceProviderError) throw error;
     throw new SourceProviderError("unavailable");
   } finally {

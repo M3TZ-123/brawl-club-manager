@@ -1,6 +1,7 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const { loadTypeScript } = require('./helpers/load-typescript.cjs');
+const { loadTypeScript: loadModule } = require('./helpers/load-typescript.cjs');
+const loadTypeScript = (relativePath, mocks = {}, globals = {}) => loadModule(relativePath, mocks, { console: { ...console, warn() {} }, ...globals });
 const file = 'src/lib/mega-pig-source-provider.ts';
 const club = '#PYLC';
 const headers = ['NAME', 'Mega Pig Wins', 'Mega Pig Tickets Left', 'Trophies', 'RANKED RANK'];
@@ -181,4 +182,39 @@ test('the eight-second provider deadline includes a stalled body even after resp
   });
   await assert.rejects(provider.fetchMegaPigSource(club), error => error.code === 'unavailable');
   assert.equal(duration, 8000); assert.equal(cancelled, true);
+});
+
+test('server diagnostics record only a finite reason and HTTP status while preserving public error codes', async () => {
+  for (const [status, reason, code] of [[403, 'http_status', 'unavailable'], [500, 'http_status', 'unavailable'], [429, 'rate_limited', 'rate_limited']]) {
+    const logs = [];
+    const provider = loadTypeScript(file, {}, {
+      console: { warn: (...args) => logs.push(args) },
+      fetch: async () => new Response('PRIVATE SOURCE BODY #PYLC', { status, headers: { 'set-cookie': 'PRIVATE_COOKIE', 'retry-after': '60' } }),
+    });
+    await assert.rejects(provider.fetchMegaPigSource(club), error => error.code === code);
+    assert.deepEqual(clean(logs), [['mega_pig_source_failure', { reason, httpStatus: status }]]);
+  }
+  const logs = [];
+  const provider = loadTypeScript(file, {}, { console: { warn: (...args) => logs.push(args) }, fetch: async () => response() });
+  await provider.fetchMegaPigSource(club);
+  assert.deepEqual(logs, [], 'Successful reads do not emit failure diagnostics');
+});
+
+test('network, invalid-page and aborted-body diagnostics never include exception or source details', async () => {
+  for (const phase of ['network', 'invalid', 'aborted']) {
+    const logs = [], controller = new AbortController();
+    const provider = loadTypeScript(file, {}, {
+      console: { warn: (...args) => logs.push(args) },
+      fetch: async () => {
+        if (phase === 'network') throw new Error('PRIVATE_TOKEN https://private.invalid/?secret=PRIVATE #PYLC');
+        if (phase === 'invalid') return response('<html>PRIVATE BODY #PYLC</html>');
+        return response(new ReadableStream({ start() { setTimeout(() => controller.abort(), 5); } }));
+      },
+    });
+    await assert.rejects(provider.fetchMegaPigSource(club, { signal: controller.signal }), error => error.code === (phase === 'invalid' ? 'invalid' : 'unavailable'));
+    assert.deepEqual(clean(logs), [['mega_pig_source_failure', {
+      reason: phase === 'network' ? 'network_error' : phase === 'invalid' ? 'invalid_data' : 'aborted', httpStatus: phase === 'network' ? null : 200,
+    }]]);
+    assert.doesNotMatch(JSON.stringify(logs), /PRIVATE|PYLC|https?:\/\/|cookie|secret/i);
+  }
 });

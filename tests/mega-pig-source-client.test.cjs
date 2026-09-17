@@ -136,3 +136,12 @@ test("the Arabic source panel translates the counters, provenance and unknown me
   assert.doesNotMatch(textContent(tree), /Reported total wins|Players reported by source|Unknown|Last fetched/); assert.match(textContent(tree), /لا تسجّل الحضور ولا تؤثر/); page.unmount();
   assert.match(textContent(tree), /مطابقة العضو لا تعني توفر/);
 });
+
+test("the community-rule stage estimate handles stage boundaries and never confirms reward receipt", async () => {
+  for (const [totalWins, stage] of [[64, "4/5"], [79, "4/5"], [80, "5/5"], [null, "Unknown"]]) {
+    const page = harness({ response: () => snapshot({ totalWins }) }); const tree = await page.render();
+    assert.ok(textContent(tree).includes(`Estimated stage: ${stage}`)); assert.match(textContent(tree), /Based on 16 wins per stage/);
+    assert.equal(textContent(tree).includes("Target reached by this estimate"), totalWins === 80); assert.doesNotMatch(textContent(tree), /Reward received/);
+    assert.match(textContent(tree), /does not identify the cycle/); page.unmount();
+  }
+});

@@ -13,6 +13,7 @@ const privateTables = [
   "club_administration_settings", "recruitment_applications", "recruitment_application_limits", "club_goals",
   "club_goal_members", "club_goal_snapshots", "club_planned_events", "club_event_entries", "club_event_revisions",
   "club_rivals", "club_rival_snapshots", "club_rank_history", "club_planning_create_requests", "club_mega_pig_source_cache",
+  "club_mega_pig_cycles", "club_mega_pig_cycle_members", "club_mega_pig_observations", "club_mega_pig_cycle_revisions",
 ];
 const privateClubFunctions = new Set([
   "capture_club_intelligence", "club_intelligence_read", "reject_member_decision_mutation", "administration_club_tag",
@@ -21,6 +22,8 @@ const privateClubFunctions = new Set([
   "club_planning_roster_ready", "club_planning_create_goal", "club_planning_archive_goal", "club_planning_refresh_goals",
   "club_planning_save_event", "save_club_rival", "claim_club_rival", "finish_club_rival", "capture_club_rank_history", "club_planning_create_once", "member_comparison_read", "club_event_observations_read",
   "claim_mega_pig_source_cache", "finish_mega_pig_source_cache",
+  "mega_pig_archive_payload", "mega_pig_archive_ready", "mega_pig_archive_apply", "mega_pig_archive_capture",
+  "mega_pig_archive_observation_summary", "mega_pig_archive_write", "mega_pig_archive_read",
 ]);
 
 function validateRestoreTarget(connectionString) {

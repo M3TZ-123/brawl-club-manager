@@ -8,6 +8,7 @@ import { ClubGoalCard } from "@/components/club-goals-overview";
 import { ClubGoalEditor,ClubGoalDetails } from "@/components/club-goal-editor";
 import { ClubEventEditor } from "@/components/club-event-editor";
 import { MegaPigSourcePanel } from "@/components/mega-pig-source-panel";
+import { MegaPigArchivePanel } from "@/components/mega-pig-archive-panel";
 import { useAdminSession } from "@/hooks/use-admin-session";
 import { eventKindLabels,usePlanningResource } from "@/lib/club-planning-client";
 import type { PlanningResponse } from "@/lib/club-planning-types";
@@ -29,6 +30,7 @@ export function PlanningWorkspace({isAdmin}:{isAdmin:boolean}){
     {error&&<p role="alert" className="text-destructive">{t(error)}</p>}{loading&&<p role="status">{t("Loading...")}</p>}
     {data?.refreshDeferred&&<p role="status" className="text-sm text-amber-600">{t("Progress refresh delayed. Showing the last saved observations.")}</p>}
     {isAdmin&&view==="event"&&!editing&&<MegaPigSourcePanel/>}
+    {isAdmin&&view==="event"&&!editing&&<MegaPigArchivePanel/>}
     {isAdmin&&creating==="goal"&&<ClubGoalEditor onSaved={saved} onCancel={()=>setCreating(null)}/>}
     {isAdmin&&creating==="event"&&<ClubEventEditor event={null} data={blank} onSaved={saved} onCancel={()=>setCreating(null)}/>}
     {isAdmin&&selected&&<PlanningDetail key={`${selected.kind}:${selected.id}`} {...selected} onClose={()=>setSelected(null)} onSaved={saved}/>}
