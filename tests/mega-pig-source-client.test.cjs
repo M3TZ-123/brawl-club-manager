@@ -121,11 +121,10 @@ test("source panel is available without a planned cycle only in the admin Events
     const { PlanningWorkspace } = loadTypeScript("src/app/club-planning/page.tsx", { ...componentMocks, react: renderer.react,
       "@/components/mega-pig-source-panel": { MegaPigSourcePanel: "MegaPigSourcePanel" },
       "@/components/club-event-editor": { ClubEventEditor: "EventEditor" },
-      "@/lib/club-planning-client": { eventKindLabels: {}, usePlanningResource: () => ({ data: { goals: [], events: [], roster: [] }, error: null, loading: false, reload: async () => true }) },
+      "@/lib/club-planning-client": { eventKindLabels: {}, usePlanningResource: () => ({ data: { events: [], roster: [] }, error: null, loading: false, reload: async () => true }) },
     }, { window: browser });
     const render = () => renderer.render(() => PlanningWorkspace({ isAdmin })); let tree = await render(); assert.equal(elements(tree).some(node => node.type === "MegaPigSourcePanel"), isAdmin);
-    action(tree, "Optional goals")(); tree = await render(); assert.equal(elements(tree).some(node => node.type === "MegaPigSourcePanel"), false);
-    action(tree, "Events")(); tree = await render(); assert.equal(elements(tree).some(node => node.type === "MegaPigSourcePanel"), isAdmin);
+    assert.doesNotMatch(textContent(tree), /Optional goals|Create goal/);
     assert.match(textContent(tree), /No club events have been planned yet/);
     if (isAdmin) { action(tree, "Plan event")(); tree = await render(); assert.equal(elements(tree).some(node => node.type === "MegaPigSourcePanel"), false); elements(tree).find(node => node.type === "EventEditor").props.onCancel(); tree = await render(); assert.ok(elements(tree).some(node => node.type === "MegaPigSourcePanel")); }
     renderer.unmount();

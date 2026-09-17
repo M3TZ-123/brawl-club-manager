@@ -29,7 +29,6 @@ test('roster sync piggybacks sanitized club observations on its existing single 
   const db = { from: () => ({ select() { return this; }, in: async () => ({ data: settings, error: null }) }),
     rpc: async (name, args) => { calls.push({ name, args }); return { data: name === 'acquire_sync_run' ? { acquired: true, run_id: 'run', fence: 1 } : { success: true, scope: 'roster' }, error: null }; } };
   const { executeSync } = loadTypeScript('src/lib/sync-service.ts', { '@/lib/supabase-admin': { supabaseAdmin: db },
-    '@/lib/sync-club-planning': { refreshPlanningAfterSync: async () => {} },
     '@/lib/upstream-rate-limit': { getUpstreamCooldownMs: () => 0 }, '@/lib/brawl-api': { getClub: async () => {
       calls.push({ name: 'getClub' }); return { tag: '#CLUB', name: 'Club', description: 'Description', requiredTrophies: 0, owner_user_id: 'private', members: [{ tag: '#AA', name: 'A', role: 'member', trophies: 100 }] };
     } },

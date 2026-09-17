@@ -4,9 +4,7 @@ export const arClubRivals:Record<string,string>={
   "Top observed gain: {name} · +{count}": "أعلى تقدم مرصود: {name} · +{count}",
   "No positive trophy gain recorded for this period.": "لم تُسجل زيادة كؤوس موجبة لهذه الفترة.",
   "Trophy progress coverage: {known}/{total} members": "تغطية تقدم الكؤوس: {known}/{total} عضوًا",
-  "Current club goals": "أهداف النادي الحالية",
   "Limited observations": "رصد محدود",
-  "Goal observations unavailable": "رصد الأهداف غير متاح",
   "Roster comparison period": "فترة مقارنة التشكيلة",
 
   "Application trophy requirement": "شرط الكؤوس لطلب الانضمام",
@@ -30,6 +28,6 @@ export const arClubRivals:Record<string,string>={
   "Observed trophy history":"سجل الكؤوس المرصود","Club ranking history":"تاريخ ترتيب النادي",
   "Daily last observation from the top 50. A missing rank means no exact rank is available; history starts with recorded observations.":"آخر رصد يومي ضمن أفضل 50. غياب الرتبة يعني عدم توفر ترتيب دقيق؛ يبدأ التاريخ من الرصد الفعلي.",
   "Latest observed rank":"آخر ترتيب مرصود","Not available in the top 50":"غير متاح ضمن أفضل 50","No ranking history recorded yet.":"لم يُسجّل تاريخ للترتيب بعد.","All observations":"جميع الأرصاد",
-  "Overview":"نظرة عامة","Activity and performance":"النشاط والأداء","Growth and history":"النمو والتاريخ","Club planning":"فعاليات وأهداف النادي","Club management":"إدارة النادي","Join the club":"الانضمام للنادي",
+  "Overview":"نظرة عامة","Activity and performance":"النشاط والأداء","Growth and history":"النمو والتاريخ","Club planning":"فعاليات النادي","Club management":"إدارة النادي","Join the club":"الانضمام للنادي",
   "Club report card":"بطاقة تقرير النادي","Download report image":"تنزيل صورة التقرير","Report image could not be created":"تعذّر إنشاء صورة التقرير","Roster members":"أعضاء التشكيلة","Observed participations":"المشاركات المرصودة","Distinct active members":"الأعضاء النشطون الفريدون","Public report · no private notes":"تقرير عام · دون ملاحظات خاصة"
 };

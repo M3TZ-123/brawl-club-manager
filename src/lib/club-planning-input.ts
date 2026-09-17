@@ -1,4 +1,4 @@
-import { eventKinds, goalCycles, goalMetrics, type EventEntry, type EventFields, type PlanningMutation } from "@/lib/club-planning-types";
+import { eventKinds, type EventEntry, type EventFields, type PlanningMutation } from "@/lib/club-planning-types";
 export class PlanningInputError extends Error { constructor(message:string, public readonly status=400){super(message);} }
 export const planningUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 function fail():never {throw new PlanningInputError("Check the planning fields and try again.");}
@@ -10,19 +10,10 @@ function date(value:unknown):string {if(typeof value!=="string"||value.length>40
 function nullableInteger(value:unknown) {return value===null?null:integer(value,0,1000);}
 export function planningId(value:unknown) {if(typeof value!=="string"||!planningUuid.test(value))return fail();return value;}
 export function planningInput(value:unknown,now=Date.now()):PlanningMutation {
-  const body=obj(value,["action","title","metric","cycle","endsAt","target","id","version","event","entries","reason","request_id"]);
-  if(body.action==="archive_goal") {obj(body,["action","id","version"]);return{action:"archive_goal",id:planningId(body.id),version:integer(body.version,1,2147483646)};}
-  if(body.action==="create_goal") {
-    obj(body,["action","title","metric","cycle","endsAt","target","request_id"]);
-    const requestId=body.request_id===undefined?undefined:planningId(body.request_id);
-    const cycle=choice(body.cycle,goalCycles),endsAt=cycle==="custom"?date(body.endsAt):null;
-    // A committed retry may arrive after its deadline. The atomic create RPC
-    // checks current time only after looking for an existing request receipt.
-    if(!requestId&&endsAt&&(Date.parse(endsAt)<=now||Date.parse(endsAt)>now+90*86400000))fail();
-    return{action:"create_goal",title:text(body.title,100,true),metric:choice(body.metric,goalMetrics),cycle,endsAt,target:integer(body.target,1,50000000),...(requestId?{request_id:requestId}:{})};
-  }
+  const body=obj(value,["action","id","version","event","entries","reason","request_id"]);
   if(body.action!=="save_event")return fail();
-  obj(body,["action","id","version","event","entries","reason","request_id"]);
+  // A committed creation retry can arrive after its deadline. The atomic RPC
+  // checks current time only after looking for an existing request receipt.
   const requestId=body.request_id===undefined?undefined:planningId(body.request_id);
   if(requestId&&body.id!==null)fail();
   const raw=obj(body.event,["title","kind","cycleLabel","startsAt","endsAt","teamSize","ticketAllowance","status","notes"]);

@@ -1,14 +1,7 @@
-export const goalMetrics = ["trophies", "participants"] as const;
-export const goalCycles = ["weekly", "monthly", "custom"] as const;
 export const eventKinds = ["mega_pig", "ranked", "tournament", "custom"] as const;
-export type GoalMetric = typeof goalMetrics[number];
-export type GoalCycle = typeof goalCycles[number];
-export type PlanningGoal = { id:string; title:string; metric:GoalMetric; cycle:GoalCycle; startsAt:string; endsAt:string; target:number; status:"active"|"archived"; version:number; progress:number|null; cohortCount:number; knownMembers:number; limited:boolean; possibleGap:boolean; achievedAt:string|null; refreshedAt:string|null };
-export type GoalMember = { playerTag:string; playerName:string; baselineTrophies:number|null; baselineAt:string|null; latestTrophies:number|null; latestAt:string|null; participated:boolean; departed:boolean; possibleGap:boolean };
-export type GoalSnapshot = { day:string; observedAt:string; progress:number|null; knownMembers:number; limited:boolean; possibleGap:boolean };
 export type EventFields = { title:string; kind:typeof eventKinds[number]; cycleLabel:string; startsAt:string; endsAt:string; teamSize:number; ticketAllowance:number|null; status:"planned"|"completed"|"cancelled"; notes:string };
 export type EventEntry = { playerTag:string; team:number; slot:"starter"|"substitute"; attendance:"invited"|"confirmed"|"present"|"absent"; wins:number|null; ticketsRemaining:number|null; observedAt:string|null; notes:string };
 export type PlanningEvent = Omit<EventFields,"notes"> & { id:string; version:number; updatedAt:string; notes?:string };
 export type EventRevision = { version:number; savedAt:string; reason:string; event:EventFields; entries:EventEntry[] };
-export type PlanningResponse = { goals:PlanningGoal[]; events:PlanningEvent[]; refreshDeferred?:boolean; roster?:{tag:string;name:string}[]; goalDetail?:{id:string;members:GoalMember[];snapshots:GoalSnapshot[]}; eventDetail?:{id:string;entries:(EventEntry & {playerName:string})[];revisions:EventRevision[]} };
-export type PlanningMutation = {action:"create_goal";title:string;metric:GoalMetric;cycle:GoalCycle;endsAt:string|null;target:number;request_id?:string} | {action:"archive_goal";id:string;version:number} | {action:"save_event";id:string|null;version:number;event:EventFields;entries:EventEntry[];reason:string;request_id?:string};
+export type PlanningResponse = { events:PlanningEvent[]; roster?:{tag:string;name:string}[]; eventDetail?:{id:string;entries:(EventEntry & {playerName:string})[];revisions:EventRevision[]} };
+export type PlanningMutation = {action:"save_event";id:string|null;version:number;event:EventFields;entries:EventEntry[];reason:string;request_id?:string};

@@ -2,8 +2,6 @@
 import { useCallback,useEffect,useRef,useState } from "react";
 import { fetchJsonWithTimeout } from "@/lib/client-fetch";
 import type { PlanningMutation,PlanningResponse } from "@/lib/club-planning-types";
-export const goalMetricLabels={trophies:"Net trophy gain",participants:"Unique participating members"};
-export const goalCycleLabels={weekly:"7 days",monthly:"30 days",custom:"Custom end date"};
 export const eventKindLabels={mega_pig:"Mega Pig",ranked:"Ranked",tournament:"Tournament",custom:"Custom event"};
 export const attendanceLabels={invited:"Invited",confirmed:"Confirmed",present:"Present",absent:"Absent"};
 export function localDateInput(value:string|null){if(!value)return"";const date=new Date(value);if(!Number.isFinite(date.getTime()))return"";return new Date(date.getTime()-date.getTimezoneOffset()*60000).toISOString().slice(0,16);}
@@ -23,10 +21,10 @@ export function usePlanningMutation(onSaved:(id:string)=>void){
   const controller=useRef<AbortController|null>(null),pending=useRef(false),createRequestId=useRef<string|null>(null);
   useEffect(()=>{const current=new AbortController();controller.current=current;return()=>current.abort();},[]);
   const save=async(body:PlanningMutation)=>{const current=controller.current;if(!current||current.signal.aborted||pending.current)return;pending.current=true;setBusy(true);setError("");
-    try{const creating=body.action==="create_goal"||(body.action==="save_event"&&body.id===null);
+    try{const creating=body.id===null;
       if(creating&&!createRequestId.current)createRequestId.current=crypto.randomUUID();
       const payload=creating?{...body,request_id:createRequestId.current}:body;
-      const result=await fetchJsonWithTimeout<{id:string}>("/api/club-planning",{method:body.action==="create_goal"?"POST":"PATCH",headers:{"Content-Type":"application/json"},body:JSON.stringify(payload),signal:current.signal});if(!current.signal.aborted)onSaved(result.id);}
+      const result=await fetchJsonWithTimeout<{id:string}>("/api/club-planning",{method:"PATCH",headers:{"Content-Type":"application/json"},body:JSON.stringify(payload),signal:current.signal});if(!current.signal.aborted)onSaved(result.id);}
     catch(e){if(!current.signal.aborted)setError(e instanceof Error?e.message:"Club planning is unavailable. Please try again.");}
     finally{pending.current=false;if(!current.signal.aborted)setBusy(false);}
   };

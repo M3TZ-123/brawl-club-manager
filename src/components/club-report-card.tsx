@@ -5,14 +5,11 @@ import { ImageDown } from "lucide-react";
 import { useI18n } from "@/components/locale-provider";
 import { Button } from "@/components/ui/button";
 import { useAppStore } from "@/lib/store";
-import { useFeatureResource } from "@/components/use-feature-resource";
-import type { PlanningResponse } from "@/lib/club-planning-types";
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 
 export type ReportCardData={generatedAt:string;period:{start:string;end:string};summary:{totalMembers:number;totalTrophies:number;weeklyBattles:number;weeklyWins:number;weeklyWinRate:number;trophyProgressKnownMembers?:number};topGainers?:{playerName:string;trophyChange:number}[]};
 export function ClubReportCard({report}:{report:ReportCardData}){
   const {t,number,reportDate,locale,direction}=useI18n(),name=useAppStore(s=>s.clubName);
-  const planning=useFeatureResource<PlanningResponse>("/api/club-planning?overview=1&public=1","roster,battles");
   const [error,setError]=useState(false),[busy,setBusy]=useState(false);
   const [preview,setPreview]=useState<{url:string;filename:string}|null>(null);
   useEffect(()=>()=>{if(preview)URL.revokeObjectURL(preview.url);},[preview]);
@@ -20,9 +17,9 @@ export function ClubReportCard({report}:{report:ReportCardData}){
     setBusy(true);setError(false);
     try{
       await document.fonts.ready;
-      const canvas=document.createElement("canvas");canvas.width=1200;canvas.height=900;
+      const canvas=document.createElement("canvas");canvas.width=1200;canvas.height=750;
       const ctx=canvas.getContext("2d");if(!ctx)throw new Error("canvas");
-      ctx.fillStyle="#080e1d";ctx.fillRect(0,0,1200,900);
+      ctx.fillStyle="#080e1d";ctx.fillRect(0,0,1200,750);
       ctx.fillStyle="#8255ef";ctx.fillRect(0,0,1200,12);
       ctx.direction=direction;ctx.textAlign=direction==="rtl"?"right":"left";
       const edge=direction==="rtl"?1136:64;
@@ -41,13 +38,8 @@ export function ClubReportCard({report}:{report:ReportCardData}){
       const leader=report.topGainers?.find(member=>member.trophyChange>0);
       line(leader?t("Top observed gain: {name} · +{count}",{name:leader.playerName,count:number(leader.trophyChange)}):t("No positive trophy gain recorded for this period."),590,24,"#ffffff");
       line(t("Trophy progress coverage: {known}/{total} members",{known:report.summary.trophyProgressKnownMembers==null?t("Unknown"):number(report.summary.trophyProgressKnownMembers),total:number(report.summary.totalMembers)}),625,18,"#acbad0");
-      line(t("Current club goals"),677,24,"#b9a2ff");
-      const goals=planning.data?.goals.filter(goal=>goal.status==="active"&&Date.parse(goal.endsAt)>Date.now()).slice(0,2);
-      if(planning.loading||planning.error||!planning.data||planning.data.refreshDeferred)line(t("Goal observations unavailable"),713,20,"#acbad0");
-      else if(goals?.length) goals.forEach((goal,index)=>line(`${goal.title}: ${goal.progress===null?t("Unknown"):number(goal.progress)} / ${number(goal.target)}${goal.limited||goal.possibleGap?` · ${t("Limited observations")}`:""}`,713+index*32,20,"#ffffff"));
-      else line(t("No current club goals."),713,20,"#acbad0");
-      line(t("Public report · no private notes"),812,20,"#acbad0");
-      line(`${t("Updated")}: ${reportDate(report.generatedAt)} · brawlstatz.vercel.app`,850,18,"#8397b4");
+      line(t("Public report · no private notes"),674,20,"#acbad0");
+      line(`${t("Updated")}: ${reportDate(report.generatedAt)} · brawlstatz.vercel.app`,712,18,"#8397b4");
       const blob=await new Promise<Blob|null>(resolve=>canvas.toBlob(resolve,"image/png"));if(!blob)throw new Error("image");
       setPreview({url:URL.createObjectURL(blob),filename:`club-report-${locale}-${report.period.end.slice(0,10)}.png`});
     }catch{setError(true);}finally{setBusy(false);}
@@ -55,7 +47,7 @@ export function ClubReportCard({report}:{report:ReportCardData}){
   return <div><Button variant="outline" disabled={busy} onClick={()=>void download()}><ImageDown className="w-4 h-4 me-2"/>{t("Download report image")}</Button>{error&&<p role="alert" className="text-sm text-amber-500">{t("Report image could not be created")}</p>}
     <Sheet open={preview!==null} onOpenChange={open=>{if(!open)setPreview(null);}}><SheetContent className="w-full overflow-y-auto sm:max-w-4xl">
       <SheetHeader><SheetTitle>{t("Club report card")}</SheetTitle><SheetDescription>{t("Preview the image, then save it to share.")}</SheetDescription></SheetHeader>
-      {preview&&<div className="mt-5 space-y-4"><Image src={preview.url} alt={t("Club report card")} width={1200} height={900} unoptimized className="h-auto w-full rounded-lg border"/><a href={preview.url} download={preview.filename} className="inline-flex items-center rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground">{t("Download PNG")}</a></div>}
+      {preview&&<div className="mt-5 space-y-4"><Image src={preview.url} alt={t("Club report card")} width={1200} height={750} unoptimized className="h-auto w-full rounded-lg border"/><a href={preview.url} download={preview.filename} className="inline-flex items-center rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground">{t("Download PNG")}</a></div>}
     </SheetContent></Sheet>
   </div>;
 }

@@ -27,27 +27,49 @@ const{createAdminSessionToken}=loadTypeScript('src/lib/admin-auth.ts',{'next/ser
 function request(path,{body,admin=false,origin='https://club.test'}={}){const req=new Request(`https://club.test${path}`,{method:body===undefined?'GET':'PATCH',headers:{origin,host:'club.test','content-type':'application/json',...(admin?{cookie:`brawlstatz_admin=${createAdminSessionToken()}`}:{})},...(body===undefined?{}:{body:JSON.stringify(body)})});Object.defineProperty(req,'nextUrl',{value:new URL(req.url)});return req;}
 function routeFixture(){
   const id=randomUUID(),calls=[];
-  const db={...readOnlyDatabase({settings:[{key:'club_tag',value:'#CLUB'}],club_goals:[{id,club_tag:'#CLUB',title:'Goal',metric:'trophies',cycle:'weekly',starts_at:'2026-09-16T00:00:00Z',ends_at:'2026-09-23T00:00:00Z',target:100,progress:null,status:'active',version:1,cohort_count:2,known_members:0,limited:true,possible_gap:false,achieved_at:null,refreshed_at:null,owner_user_id:'PRIVATE'}],club_planned_events:[{id,club_tag:'#CLUB',title:sampleEvent.title,kind:'mega_pig',cycle_label:'September',starts_at:sampleEvent.startsAt,ends_at:sampleEvent.endsAt,team_size:3,ticket_allowance:15,status:'completed',version:1,notes:'PRIVATE EVENT',updated_at:'2026-09-16T11:30:00Z',future_secret:'PRIVATE'}],member_history:[{player_tag:'#AAA',player_name:'Alpha',is_current_member:true}],club_event_entries:[{event_id:id,player_tag:'#AAA',player_name:'Alpha',team:1,slot:'starter',attendance:'present',wins:0,tickets_remaining:null,observed_at:sampleEntry.observedAt,notes:'PRIVATE NOTE',owner_user_id:'PRIVATE'}],club_event_revisions:[]}),rpc:async(name,args)=>{calls.push({name,args});return{data:id,error:null};}};
+  const db={...readOnlyDatabase({settings:[{key:'club_tag',value:'#CLUB'}],club_planned_events:[{id,club_tag:'#CLUB',title:sampleEvent.title,kind:'mega_pig',cycle_label:'September',starts_at:sampleEvent.startsAt,ends_at:sampleEvent.endsAt,team_size:3,ticket_allowance:15,status:'completed',version:1,notes:'PRIVATE EVENT',updated_at:'2026-09-16T11:30:00Z',future_secret:'PRIVATE'}],member_history:[{player_tag:'#AAA',player_name:'Alpha',is_current_member:true}],club_event_entries:[{event_id:id,player_tag:'#AAA',player_name:'Alpha',team:1,slot:'starter',attendance:'present',wins:0,tickets_remaining:null,observed_at:sampleEntry.observedAt,notes:'PRIVATE NOTE',owner_user_id:'PRIVATE'}],club_event_revisions:[]}),rpc:async(name,args)=>{calls.push({name,args});return{data:id,error:null};}};
   const route=loadTypeScript('src/app/api/club-planning/route.ts',{'next/server':next,'@/lib/supabase-admin':{supabaseAdmin:db}},globals);return{route,db,id,calls};
 }
 test('public summaries never expose attendance, notes, members or future private columns',async()=>{
-  const{route,id}=routeFixture();const response=await route.GET(request('/api/club-planning'));assert.equal(response.status,200);assert.equal(response.headers.get('cache-control'),'no-store');assert.equal(response.headers.get('vary'),'Cookie');const data=await response.json();assert.equal(data.goals[0].progress,null);assert.equal(data.events.length,1);assert.equal(data.roster,undefined);assert.doesNotMatch(JSON.stringify(data),/PRIVATE|owner_user_id|notes|attendance|revisions/);
+  const{route,id}=routeFixture();const response=await route.GET(request('/api/club-planning'));assert.equal(response.status,200);assert.equal(response.headers.get('cache-control'),'no-store');assert.equal(response.headers.get('vary'),'Cookie');const data=await response.json();assert.equal(data.goals,undefined);assert.equal(data.refreshDeferred,undefined);assert.equal(data.goalDetail,undefined);assert.equal(data.events.length,1);assert.equal(data.roster,undefined);assert.doesNotMatch(JSON.stringify(data),/PRIVATE|owner_user_id|notes|attendance|revisions/);
   assert.equal((await route.GET(request(`/api/club-planning?event=${id}`))).status,401);
   const privateData=await(await route.GET(request(`/api/club-planning?event=${id}`,{admin:true}))).json();assert.equal(privateData.eventDetail.entries[0].notes,'PRIVATE NOTE');assert.equal(privateData.eventDetail.entries[0].ticketsRemaining,null);assert.equal(privateData.eventDetail.entries[0].wins,0);assert.doesNotMatch(JSON.stringify(privateData),/owner_user_id|future_secret/);
   const forcedPublic=await(await route.GET(request('/api/club-planning?public=1',{admin:true}))).json();assert.equal(forcedPublic.roster,undefined);assert.equal(forcedPublic.events[0].notes,undefined);
 });
 test('mutations reject unauthenticated and cross-origin requests before storage and return safe conflicts',async()=>{
-  const{route,calls,db,id}=routeFixture(),body={action:'archive_goal',id,version:1};
+  const{route,calls,db,id}=routeFixture(),body={...mutation,id,version:1};
   assert.equal((await route.PATCH(request('/api/club-planning',{body}))).status,401);assert.equal((await route.PATCH(request('/api/club-planning',{body,admin:true,origin:'https://other.test'}))).status,403);assert.equal(calls.length,0);
   db.rpc=async()=>({data:null,error:{code:'40001',message:'PRIVATE DATABASE DIAGNOSTIC'}});const response=await route.PATCH(request('/api/club-planning',{body,admin:true}));assert.equal(response.status,409);assert.match((await response.json()).error,/draft is preserved/);
 });
-test('optional progress refresh failure preserves saved public summaries with an explicit deferred flag',async()=>{
-  const{route,db}=routeFixture();db.rpc=async()=>({data:null,error:{code:'57014',message:'PRIVATE diagnostic'}});const response=await route.GET(request('/api/club-planning'));assert.equal(response.status,200);const value=await response.json();assert.equal(value.refreshDeferred,true);assert.equal(value.goals.length,1);assert.doesNotMatch(JSON.stringify(value),/PRIVATE|diagnostic/);
+test('event reads do not access retired goal tables or invoke write RPCs',async()=>{
+  const{route,db,calls}=routeFixture(),reads=[],originalFrom=db.from;
+  db.from=table=>{reads.push(table);assert.doesNotMatch(table,/goal/);return originalFrom(table);};
+  const response=await route.GET(request('/api/club-planning'));assert.equal(response.status,200);
+  const data=await response.json();assert.deepEqual(Object.keys(data),['events']);assert.equal(data.events.length,1);
+  assert.deepEqual(reads,['settings','club_planned_events']);assert.equal(calls.length,0);
 });
+
+test('retired goal reads and writes reject before storage and retain private auth guards',async()=>{
+  const{route,db,calls,id}=routeFixture();let reads=0;db.from=()=>{reads++;throw new Error('Retired requests must not access storage');};
+  for(const query of [`?goal=${id}`,'?goal=']){
+    assert.equal((await route.GET(request(`/api/club-planning${query}`))).status,401);
+    const response=await route.GET(request(`/api/club-planning${query}`,{admin:true}));assert.equal(response.status,410);assert.equal(response.headers.get('cache-control'),'no-store');assert.equal(response.headers.get('vary'),'Cookie');assert.match((await response.json()).error,/Goals have been removed/);
+  }
+  assert.equal((await route.GET(request('/api/club-planning?overview=1&public=1'))).status,410);
+  for(const body of [{action:'create_goal',title:'Retired',metric:'trophies',cycle:'weekly',target:100,endsAt:null,request_id:randomUUID()},{action:'archive_goal',id,version:1}]){
+    for(const method of ['POST','PATCH']){
+      assert.equal((await route[method](request('/api/club-planning',{body}))).status,401);
+      assert.equal((await route[method](request('/api/club-planning',{body,admin:true,origin:'https://other.test'}))).status,403);
+      assert.equal((await route[method](request('/api/club-planning',{body,admin:true}))).status,400);
+    }
+  }
+  assert.equal(reads,0);assert.equal(calls.length,0);
+});
+
 test('event editor keeps a draft after conflict and submits the exact loaded revision with manual nulls',async()=>{
   const renderer=hookRenderer(),calls=[];const event={...sampleEvent,id:randomUUID(),version:7,updatedAt:'2026-09-16T11:30:00Z'};
   const{ClubEventEditor}=loadTypeScript('src/components/club-event-editor.tsx',{...componentMocks,react:renderer.react,'@/lib/client-fetch':{fetchJsonWithTimeout:async(url,init)=>{calls.push(JSON.parse(init.body));throw new Error('Planning changed. Reload before saving. Your draft is preserved.');}}},{window:windowMock,Error});
-  const props={event,data:{goals:[],events:[event],roster:[{tag:'#AAA',name:'Alpha'}],eventDetail:{id:event.id,entries:[{...sampleEntry,playerName:'Alpha'}],revisions:[]}},onSaved:()=>assert.fail('A failed mutation cannot close the editor'),onCancel(){}};
+  const props={event,data:{events:[event],roster:[{tag:'#AAA',name:'Alpha'}],eventDetail:{id:event.id,entries:[{...sampleEntry,playerName:'Alpha'}],revisions:[]}},onSaved:()=>assert.fail('A failed mutation cannot close the editor'),onCancel(){}};
   let tree=await renderer.render(()=>ClubEventEditor(props));const note=elements(tree).find(e=>e.type==='textarea');note.props.onChange({target:{value:'My unsaved correction'}});tree=await renderer.render(()=>ClubEventEditor(props));elements(tree).find(e=>e.type==='form').props.onSubmit({preventDefault(){}});tree=await renderer.render(()=>ClubEventEditor(props));assert.equal(calls[0].version,7);assert.equal(calls[0].event.notes,'My unsaved correction');assert.equal(calls[0].entries[0].wins,0);assert.equal(calls[0].entries[0].ticketsRemaining,null);assert.equal(elements(tree).find(e=>e.type==='textarea').props.value,'My unsaved correction');assert.match(textContent(tree),/draft is preserved/);
 });
 test('planning requests abort on unmount and cannot apply a delayed private mutation',async()=>{
@@ -57,20 +79,20 @@ test('planning requests abort on unmount and cannot apply a delayed private muta
 });
 test('a newer planning read wins and failed reloads report failure without replacing saved data',async()=>{
   const renderer=hookRenderer(),requests=[];const{usePlanningResource}=loadTypeScript('src/lib/club-planning-client.ts',{react:renderer.react,'@/lib/client-fetch':{fetchJsonWithTimeout:(_url,init)=>new Promise((resolve,reject)=>requests.push({resolve,reject,signal:init.signal}))}},{Error});
-  let state;const render=()=>renderer.render(()=>{state=usePlanningResource('/api/club-planning');return null;});await render();const newer=state.reload();assert.equal(requests[0].signal.aborted,true);requests[1].resolve({goals:[{title:'New'}],events:[]});assert.equal(await newer,true);requests[0].resolve({goals:[{title:'Old'}],events:[]});await render();assert.equal(state.data.goals[0].title,'New');
-  const failed=state.reload();requests[2].reject(new Error('Unavailable'));assert.equal(await failed,false);await render();assert.equal(state.data.goals[0].title,'New');assert.equal(state.error,'Unavailable');
+  let state;const render=()=>renderer.render(()=>{state=usePlanningResource('/api/club-planning');return null;});await render();const newer=state.reload();assert.equal(requests[0].signal.aborted,true);requests[1].resolve({events:[{title:'New'}]});assert.equal(await newer,true);requests[0].resolve({events:[{title:'Old'}]});await render();assert.equal(state.data.events[0].title,'New');
+  const failed=state.reload();requests[2].reject(new Error('Unavailable'));assert.equal(await failed,false);await render();assert.equal(state.data.events[0].title,'New');assert.equal(state.error,'Unavailable');
 });
-test('changing a goal or event URL immediately hides the previous record while the new read is pending',async()=>{
+test('changing an event URL immediately hides the previous record while the new read is pending',async()=>{
   const renderer=hookRenderer(),requests=[];const{usePlanningResource}=loadTypeScript('src/lib/club-planning-client.ts',{react:renderer.react,'@/lib/client-fetch':{fetchJsonWithTimeout:(url,init)=>new Promise(resolve=>requests.push({url,resolve,signal:init.signal}))}});let url='/api/club-planning?event=first',state;
-  const render=()=>renderer.render(()=>{state=usePlanningResource(url);return null;});await render();requests[0].resolve({events:[{id:'first',notes:'private first'}],goals:[]});await render();assert.equal(state.data.events[0].id,'first');url='/api/club-planning?event=second';await render();assert.equal(state.data,null);assert.equal(state.loading,true);assert.equal(requests[0].signal.aborted,true);requests[1].resolve({events:[{id:'second'}],goals:[]});await render();assert.equal(state.data.events[0].id,'second');
+  const render=()=>renderer.render(()=>{state=usePlanningResource(url);return null;});await render();requests[0].resolve({events:[{id:'first',notes:'private first'}]});await render();assert.equal(state.data.events[0].id,'first');url='/api/club-planning?event=second';await render();assert.equal(state.data,null);assert.equal(state.loading,true);assert.equal(requests[0].signal.aborted,true);requests[1].resolve({events:[{id:'second'}]});await render();assert.equal(state.data.events[0].id,'second');
 });
 test('public planning workspace hides editors and exposes only public summary actions',async()=>{
-  const renderer=hookRenderer();const resources={goals:[],events:[],roster:[{tag:'#PRIVATE',name:'Should not be rendered'}]};const{PlanningWorkspace}=loadTypeScript('src/app/club-planning/page.tsx',{...componentMocks,react:renderer.react,'@/hooks/use-admin-session':{useAdminSession:()=>({isAdmin:false})},'@/lib/client-fetch':{fetchJsonWithTimeout:async()=>resources}}, {window:windowMock});
+  const renderer=hookRenderer();const resources={events:[],roster:[{tag:'#PRIVATE',name:'Should not be rendered'}]};const{PlanningWorkspace}=loadTypeScript('src/app/club-planning/page.tsx',{...componentMocks,react:renderer.react,'@/hooks/use-admin-session':{useAdminSession:()=>({isAdmin:false})},'@/lib/client-fetch':{fetchJsonWithTimeout:async()=>resources}}, {window:windowMock});
   const tree=await renderer.render(()=>PlanningWorkspace({isAdmin:false}));assert.doesNotMatch(textContent(tree),/Should not be rendered/);assert.match(textContent(tree),/Sign in to view Mega Pig and manage events/);assert.equal(elements(tree).filter(e=>e.type==='form').length,0);
 });
 test('changing administrator access remounts the planning workspace instead of retaining private drafts',async()=>{
   const renderer=hookRenderer();let isAdmin=true;
-  const Page=loadTypeScript('src/app/club-planning/page.tsx',{...componentMocks,react:renderer.react,'@/hooks/use-admin-session':{useAdminSession:()=>({isAdmin})},'@/lib/client-fetch':{fetchJsonWithTimeout:async()=>({goals:[],events:[]})}},{window:windowMock}).default;
+  const Page=loadTypeScript('src/app/club-planning/page.tsx',{...componentMocks,react:renderer.react,'@/hooks/use-admin-session':{useAdminSession:()=>({isAdmin})},'@/lib/client-fetch':{fetchJsonWithTimeout:async()=>({events:[]})}},{window:windowMock}).default;
   const admin=await renderer.render(Page);const before=elements(admin).find(e=>e.props?.isAdmin===true);assert.equal(before.key,'admin');isAdmin=false;const publicTree=await renderer.render(Page);const after=elements(publicTree).find(e=>e.props?.isAdmin===false);assert.equal(after.key,'public');
 });
 
@@ -79,7 +101,7 @@ test('collapsed event sections reveal invalid controls without discarding the dr
   class Element { constructor(parentElement){this.parentElement=parentElement;} }
   class Details extends Element { open=false; }
   const {ClubEventEditor}=loadTypeScript('src/components/club-event-editor.tsx',{...componentMocks,react:renderer.react},{HTMLElement:Element,HTMLDetailsElement:Details});
-  const tree=await renderer.render(()=>ClubEventEditor({event:null,data:{goals:[],events:[],roster:[]},onSaved(){},onCancel(){}}));
+  const tree=await renderer.render(()=>ClubEventEditor({event:null,data:{events:[],roster:[]},onSaved(){},onCancel(){}}));
   const form=elements(tree).find(node=>node.type==='form'),outer=new Details(form),inner=new Details(outer),input=new Element(inner);
   form.props.onInvalidCapture({target:input,currentTarget:form});
   assert.equal(inner.open,true);assert.equal(outer.open,true);
@@ -87,21 +109,10 @@ test('collapsed event sections reveal invalid controls without discarding the dr
   assert.equal(wins,undefined,'custom events do not display Mega Pig results');
 });
 
-test('optional empty goals overview hides only a successful empty result and keeps refresh errors visible',async()=>{
-  const renderer=hookRenderer();let resource={data:{goals:[],events:[]},error:null,loading:false,reload:async()=>true};
-  const{ClubGoalsOverview}=loadTypeScript('src/components/club-goals-overview.tsx',{...componentMocks,react:renderer.react,'@/lib/club-planning-client':{usePlanningResource:()=>resource}},{window:windowMock});
-  assert.equal(await renderer.render(()=>ClubGoalsOverview({hideWhenEmpty:true})),null);
-  assert.match(textContent(await renderer.render(()=>ClubGoalsOverview({}))),/No club goals/);
-  resource={...resource,error:'Planning unavailable'};
-  assert.match(textContent(await renderer.render(()=>ClubGoalsOverview({hideWhenEmpty:true}))),/Planning unavailable/);
-  resource={...resource,error:null,data:{...resource.data,refreshDeferred:true}};
-  assert.match(textContent(await renderer.render(()=>ClubGoalsOverview({hideWhenEmpty:true}))),/Progress refresh delayed/);
-});
-
 test('draft Mega Pig results stay visible and prevent a type change until explicitly cleared',async()=>{
   const renderer=hookRenderer(),calls=[];
   const{ClubEventEditor}=loadTypeScript('src/components/club-event-editor.tsx',{...componentMocks,react:renderer.react,'@/lib/client-fetch':{fetchJsonWithTimeout:async(url,init)=>{calls.push(JSON.parse(init.body));return{id:'saved'};}}},{crypto:{randomUUID}});
-  const props={event:null,data:{goals:[],events:[],roster:[{tag:'#AAA',name:'Alpha'}]},onSaved(){},onCancel(){}};
+  const props={event:null,data:{events:[],roster:[{tag:'#AAA',name:'Alpha'}]},onSaved(){},onCancel(){}};
   const input=(tree,label)=>elements(elements(tree).find(node=>node.type==='label'&&textContent(node).startsWith(label))).find(node=>node.type==='Input'||node.type==='select');
   let tree=await renderer.render(()=>ClubEventEditor(props));input(tree,'Event type').props.onChange({target:{value:'mega_pig'}});tree=await renderer.render(()=>ClubEventEditor(props));
   input(tree,'Add a member').props.onChange({target:{value:'#AAA'}});tree=await renderer.render(()=>ClubEventEditor(props));elements(tree).find(node=>node.type==='Button'&&textContent(node)==='Add').props.onClick();tree=await renderer.render(()=>ClubEventEditor(props));
@@ -115,31 +126,29 @@ test('draft Mega Pig results stay visible and prevent a type change until explic
   assert.equal(calls[0].event.kind,'ranked');assert.equal(calls[0].entries[0].wins,null);assert.equal(calls[0].entries[0].ticketsRemaining,null);
 });
 
-test('keyed creation can reach its committed receipt after deadlines without weakening structural validation',()=>{
-  const{planningInput}=loadTypeScript('src/lib/club-planning-input.ts');
-  const goal={action:'create_goal',title:'Goal',metric:'trophies',cycle:'custom',target:1,endsAt:'2026-09-16T11:00:00Z'};
-  assert.throws(()=>planningInput(goal,fixedNow));
-  const request_id=randomUUID();assert.equal(planningInput({...goal,request_id},fixedNow).request_id,request_id);
-  assert.equal(planningInput({...mutation,request_id},fixedNow+100*86400000).request_id,request_id);
-  for(const invalid of [{...goal,request_id:'invalid'},{...goal,request_id,target:0},{...goal,request_id,endsAt:'not a date'},
+test('keyed event creation can reach its committed receipt after deadlines without weakening structural validation',()=>{
+  const{planningInput}=loadTypeScript('src/lib/club-planning-input.ts'),request_id=randomUUID(),later=fixedNow+100*86400000;
+  assert.throws(()=>planningInput(mutation,later));
+  assert.equal(planningInput({...mutation,request_id},later).request_id,request_id);
+  for(const invalid of [{...mutation,request_id:'invalid'},
+    {...mutation,request_id,event:{...sampleEvent,endsAt:'not a date'}},
     {...mutation,request_id,event:{...sampleEvent,endsAt:sampleEvent.startsAt}},
-    {...mutation,request_id,id:randomUUID(),version:1},{action:'archive_goal',id:randomUUID(),version:1,request_id}])assert.throws(()=>planningInput(invalid,fixedNow));
+    {...mutation,request_id,entries:[{...sampleEntry,wins:-1}]},
+    {...mutation,request_id,id:randomUUID(),version:1}])assert.throws(()=>planningInput(invalid,later));
 });
 
-test('creation routes use the idempotent RPC only for keyed new records and return a clear safe conflict',async()=>{
-  const{route,calls,db,id}=routeFixture(),request_id=randomUUID();
-  const goal={action:'create_goal',title:'Retry-safe goal',metric:'trophies',cycle:'weekly',target:100,endsAt:null,request_id};
-  const response=await route.POST(request('/api/club-planning',{body:goal,admin:true}));
+test('event creation routes use the idempotent RPC only for keyed new records and return a clear safe conflict',async()=>{
+  const{route,calls,db,id}=routeFixture(),request_id=randomUUID(),body={...mutation,request_id};
+  const response=await route.POST(request('/api/club-planning',{body,admin:true}));
   assert.equal(response.status,200);assert.equal((await response.json()).id,id);
   assert.equal(calls[0].name,'club_planning_create_once');assert.equal(calls[0].args.p_request_id,request_id);
-  assert.equal(calls[0].args.p_payload.request_id,undefined);assert.equal(calls[0].args.p_payload.title,goal.title);
-  await route.PATCH(request('/api/club-planning',{body:{...mutation,request_id},admin:true}));assert.equal(calls[1].name,'club_planning_create_once');
-  const{request_id:ignored,...legacy}=goal;assert.ok(ignored);
-  await route.POST(request('/api/club-planning',{body:legacy,admin:true}));assert.equal(calls[2].name,'club_planning_create_goal');
-  await route.PATCH(request('/api/club-planning',{body:{...mutation,id,version:2},admin:true}));assert.equal(calls[3].name,'club_planning_save_event');assert.equal(calls[3].args.p_version,2);
+  assert.equal(calls[0].args.p_payload.request_id,undefined);assert.equal(calls[0].args.p_payload.action,'save_event');assert.equal(calls[0].args.p_payload.event.title,sampleEvent.title);
+  const retry=await route.PATCH(request('/api/club-planning',{body,admin:true}));assert.equal(retry.status,200);assert.equal(calls[1].name,'club_planning_create_once');assert.equal(calls[1].args.p_request_id,request_id);
+  const legacy=await route.POST(request('/api/club-planning',{body:mutation,admin:true}));assert.equal(legacy.status,200);assert.equal(calls[2].name,'club_planning_save_event');assert.equal(calls[2].args.p_id,null);
+  const update=await route.PATCH(request('/api/club-planning',{body:{...mutation,id,version:2},admin:true}));assert.equal(update.status,200);assert.equal(calls[3].name,'club_planning_save_event');assert.equal(calls[3].args.p_version,2);
   db.rpc=async()=>({data:null,error:{code:'40001',message:'planning_request_changed PRIVATE'}});
-  const conflict=await route.POST(request('/api/club-planning',{body:goal,admin:true}));assert.equal(conflict.status,409);
-  const message=(await conflict.json()).error;assert.match(message,/already saved with different details/);assert.doesNotMatch(message,/PRIVATE|request_id|sha256/);
+  const conflict=await route.POST(request('/api/club-planning',{body,admin:true}));assert.equal(conflict.status,409);
+  const message=(await conflict.json()).error;assert.match(message,/already saved with different details/);assert.doesNotMatch(message,/PRIVATE|request_id|sha256|goals/);
 });
 
 test('creation retries and edited drafts retain one UUID while updates retain their version contract',async()=>{

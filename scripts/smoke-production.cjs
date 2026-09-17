@@ -21,11 +21,12 @@ async function main() {
     const progress=await get(`/api/members/${encodeURIComponent(readiness.rows[0].player.tag)}/progress?collectionLimit=1&rankLimit=1`);
     assert.ok(progress.collection.items.length<=1 && progress.rankedHistory.items.length<=1,'Player progress is paginated');
   }
-  const [club, planning, rivals, join] = await Promise.all([get('/api/club-intelligence?range=7d'),get('/api/club-planning?overview=1&public=1'),get('/api/club-rivals?region=global'),get('/api/join')]);
+  const [club, planning, rivals, join] = await Promise.all([get('/api/club-intelligence?range=7d'),get('/api/club-planning?public=1'),get('/api/club-rivals?region=global'),get('/api/join')]);
   assert.equal(club.calendar.timezone,'UTC');
   assert.equal(club.calendar.completeHistory,false);
   assert.ok(club.calendar.rows.length<=30 && club.calendar.days.length<=7,'Club calendar is bounded');
-  assert.ok(Array.isArray(planning.goals) && Array.isArray(planning.events),'Planning summary available');
+  assert.ok(Array.isArray(planning.events),'Club events summary available');
+  assert.ok(!Object.hasOwn(planning,'goals') && !Object.hasOwn(planning,'refreshDeferred'),'Retired goal data is absent');
   assert.ok(!planning.roster && !planning.goalDetail && !planning.eventDetail,'Public planning excludes private details');
   assert.ok(!JSON.stringify(planning).includes('"notes":'),'Public planning excludes notes');
   assert.ok(rivals.rivals.length<=5,'Rival comparison is bounded');
