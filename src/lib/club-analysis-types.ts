@@ -14,11 +14,12 @@ export type AnalysisPair = {
   matches: number; wins: number; losses: number; draws: number; unknownResults: number; winRate: number | null;
 };
 export type AnalysisResponse = {
+  timeZone?: string;
   period: { key: TimeRangeKey; days: number; start: string; end: string; aggregation: "rolling" };
   filters: { context: string | null; mode: string | null; map: string | null; brawler: string | null };
   summary: AnalysisStats;
   modes: AnalysisGroup[]; maps: AnalysisGroup[]; brawlers: AnalysisGroup[]; pairs: AnalysisPair[];
-  hourly: Array<AnalysisStats & { hour: number }>;
+  hourly: Array<AnalysisStats & { hour: number; uniquePlayers?: number; activeDays?: number }>;
   facets: {
     contexts: Array<AnalysisContext & { count: number }>;
     modes: Array<AnalysisMode & { count: number }>;

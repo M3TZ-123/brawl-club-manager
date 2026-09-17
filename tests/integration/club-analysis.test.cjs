@@ -25,10 +25,13 @@ test("club analysis and readiness use real bounded PostgreSQL aggregates and pri
   for(const file of files)await db.query(fs.readFileSync(path.join(migrationDir,file),"utf8"));
   await db.query(fs.readFileSync(path.join(migrationDir,"202609160021_club_analysis.sql"),"utf8"));
   await db.query(fs.readFileSync(path.join(migrationDir,"202609160026_analysis_team_reads.sql"),"utf8"));
+  const hoursMigration=fs.readFileSync(path.join(migrationDir,"202609160040_analysis_hours.sql"),"utf8");
+  await db.query(hoursMigration);await db.query(hoursMigration);
   await db.query("INSERT INTO settings(key,value) VALUES('club_tag','#CLUB'),('scheduler_token','SECRET'),('api_key','SECRET') ON CONFLICT(key) DO UPDATE SET value=excluded.value");
   await db.query("INSERT INTO members(player_tag,player_name,trophies,owner_user_id) VALUES('#A','علي',1000,'00000000-0000-0000-0000-000000000001'),('#B','B',1000,NULL),('#D','D',1000,NULL),('#EMPTY','Empty',1000,NULL),('#FORMER','Former',1000,NULL)");
   await db.query("INSERT INTO member_history(player_tag,player_name,is_current_member,notes) SELECT player_tag,player_name,player_tag<>'#FORMER','SECRET' FROM members;INSERT INTO member_history(player_tag,player_name,is_current_member)VALUES('#MISSING','Missing',true)");
   const analysis=async(days=7,context=null,mode=null,map=null,brawler=null,pNow=now)=>(await db.query("SELECT club_analysis_read($1,$2,$3,$4,$5,$6) data",[days,pNow,context,mode,map,brawler])).rows[0].data;
+  const hours=async({days=7,timeZone="UTC",context=null,mode=null,map=null,brawler=null,pNow=now}={})=>(await db.query("SELECT club_analysis_hours_read($1,$2,$3,$4,$5,$6,$7) data",[days,pNow,context,mode,map,brawler,timeZone])).rows[0].data;
   const ready=async(brawler=null,min=0,search=null,offset=0,limit=100,pNow=now)=>(await db.query("SELECT club_readiness_read($1,$2,$3,$4,$5,$6) data",[pNow,brawler,min,search,offset,limit])).rows[0].data;
   const team=[[{tag:"#A"},{tag:"#B"},{tag:"#C"}],[{tag:"#D"},{tag:"#X"},{tag:"#Y"}]];
   const add=async(tag,time,extra={})=>{
@@ -48,6 +51,10 @@ test("club analysis and readiness use real bounded PostgreSQL aggregates and pri
     assert.equal(data.summary.durationObservations,3);assert.equal(data.summary.recordedDurationSeconds,360);assert.equal(data.summary.averageDurationSeconds,120);
     assert.equal(data.hourly.find(row=>row.hour===6).observations,3);assert.equal(data.hourly.length,24);
     assert.equal(data.summary.unknownResults,0);assert.doesNotMatch(JSON.stringify(data),/owner_user_id|private_future|SECRET|notes|api_key/);
+    const local=await hours();assert.deepEqual(local.summary,data.summary);assert.deepEqual(local.coverage,data.coverage);assert.deepEqual(local.facets,data.facets);
+    assert.deepEqual(local.hourly.map(hour=>{const value={...hour};delete value.uniquePlayers;delete value.activeDays;return value;}),data.hourly);
+    assert.equal(local.hourly[6].uniquePlayers,3);assert.equal(local.hourly[6].activeDays,1);
+    for(const key of ["modes","maps","brawlers","pairs"])assert.deepEqual(local[key],[]);
   });
 
   await t.test("conflicting same-team results become unknown, malformed teams and duplicate tags do not invent partnerships",async()=>{
@@ -74,6 +81,9 @@ test("club analysis and readiness use real bounded PostgreSQL aggregates and pri
     assert.equal(all.facets.modes.find(row=>row.key==="brawlHockey").count,1);assert.equal(all.facets.modes.find(row=>row.key==="trioShowdown").count,7);
     assert.equal(filtered.summary.winRate,null);assert.equal(filtered.summary.durationObservations,0);assert.equal(filtered.summary.averageDurationSeconds,null);
     assert.equal((await analysis(7,null,"airHockey")).summary.observations,1);
+    const local=await hours({context:"ranked",mode:"trioShowdown",map:"Other",brawler:"Colt",timeZone:"Asia/Kolkata"});
+    assert.deepEqual(local.summary,filtered.summary);assert.deepEqual(local.facets,all.facets);
+    assert.equal(local.hourly.reduce((sum,hour)=>sum+hour.observations,0),1);
   });
 
   await t.test("all five rolling boundaries exclude future, old, former and orphan observations",async()=>{
@@ -83,6 +93,8 @@ test("club analysis and readiness use real bounded PostgreSQL aggregates and pri
       const data=await analysis(days);assert.equal(data.summary.observations,2);assert.equal(data.coverage.currentPlayers,4);
       assert.equal(data.summary.durationObservations,1);assert.equal(data.summary.recordedDurationSeconds,0);assert.equal(data.summary.averageDurationSeconds,0);
       assert.equal(Date.parse(data.coverage.earliestBattleAt),Date.parse(ago(days)));assert.equal(Date.parse(data.coverage.latestBattleAt),Date.parse(now));
+      const local=await hours({days,timeZone:"Africa/Tunis"});assert.deepEqual(local.summary,data.summary);assert.deepEqual(local.coverage,data.coverage);
+      assert.equal(local.hourly.reduce((sum,hour)=>sum+hour.observations,0),2);
     }
   });
 
@@ -95,6 +107,41 @@ test("club analysis and readiness use real bounded PostgreSQL aggregates and pri
     assert.equal((await analysis(1)).coverage.possibleGapCount,0);assert.equal((await analysis(90)).coverage.possibleGapCount,2);
     await db.query("UPDATE settings SET value='%23club' WHERE key='club_tag'");assert.equal((await analysis(7)).coverage.possibleGapCount,1);
     await db.query("UPDATE settings SET value='#CLUB' WHERE key='club_tag'");
+    assert.deepEqual((await hours()).coverage,data.coverage);
+  });
+
+  await t.test("fractional timezones bucket individual timestamps and count distinct local players and calendar days",async()=>{
+    await db.query("TRUNCATE battle_history");
+    for(const [tag,time] of [["#A","2026-09-14T12:15:00Z"],["#B","2026-09-14T12:45:00Z"],["#A","2026-09-14T12:55:00Z"],["#A","2026-09-15T12:50:00Z"]])await add(tag,time);
+    const local=await hours({timeZone:"Asia/Kolkata"});assert.equal(local.timeZone,"Asia/Kolkata");
+    assert.deepEqual([local.hourly[17].observations,local.hourly[17].uniquePlayers,local.hourly[17].activeDays],[1,1,1]);
+    assert.deepEqual([local.hourly[18].observations,local.hourly[18].uniquePlayers,local.hourly[18].activeDays],[3,2,2]);
+    assert.equal((await hours()).hourly[12].observations,4,"The same UTC-hour bucket must split into two local hours");
+    assert.equal((await hours({timeZone:"Asia/Kathmandu"})).hourly[18].observations,4,"Quarter-hour offsets must not round to whole hours");
+    assert.equal(local.hourly[0].uniquePlayers,0);assert.equal(local.hourly[0].activeDays,0);assert.equal(local.hourly[0].winRate,null);
+    await db.query("TRUNCATE battle_history");await add("#A","2026-09-14T23:45:00Z");await add("#A","2026-09-15T00:10:00Z");
+    const midnight=await hours({timeZone:"Asia/Kolkata"});assert.deepEqual([midnight.hourly[5].observations,midnight.hourly[5].uniquePlayers,midnight.hourly[5].activeDays],[2,1,1]);
+  });
+
+  await t.test("DST transition hours follow each observation and keep repeated hours on the same local calendar day",async()=>{
+    await db.query("TRUNCATE battle_history");
+    for(const [tag,time] of [["#A","2026-03-08T06:30:00Z"],["#B","2026-03-08T07:30:00Z"],["#A","2026-03-07T07:30:00Z"]])await add(tag,time);
+    const spring=await hours({days:3,timeZone:"America/New_York",pNow:"2026-03-08T12:00:00Z"});
+    assert.deepEqual([spring.hourly[1].observations,spring.hourly[2].observations,spring.hourly[3].observations],[1,1,1]);
+    await db.query("TRUNCATE battle_history");
+    for(const [tag,time] of [["#A","2026-11-01T05:30:00Z"],["#B","2026-11-01T06:30:00Z"],["#A","2026-10-31T05:30:00Z"]])await add(tag,time);
+    const fall=await hours({days:3,timeZone:"America/New_York",pNow:"2026-11-01T12:00:00Z"});
+    assert.deepEqual([fall.hourly[1].observations,fall.hourly[1].uniquePlayers,fall.hourly[1].activeDays],[3,2,2]);
+    assert.equal(fall.hourly[2].observations,0);
+  });
+
+  await t.test("rolling boundaries remain elapsed24hours under a database session that crosses DST",async()=>{
+    await db.query("TRUNCATE battle_history");const end="2026-03-08T12:00:00Z",start="2026-03-07T12:00:00Z";
+    await add("#A",start);await add("#A",end);
+    await db.query("INSERT INTO battle_history(player_tag,battle_time) VALUES('#A',$1::timestamptz-interval '1 microsecond'),('#A',$2::timestamptz+interval '1 microsecond')",[start,end]);
+    await db.query("SET TIME ZONE 'America/New_York'");
+    try{const local=await hours({days:1,timeZone:"America/New_York",pNow:end});assert.equal(local.summary.observations,2);assert.equal(Date.parse(local.coverage.earliestBattleAt),Date.parse(start));}
+    finally{await db.query("SET TIME ZONE 'UTC'");}
   });
 
   await t.test("readiness uses the current roster, exact NULL equipment semantics, literal search and stable bounded pagination",async()=>{
@@ -116,6 +163,10 @@ test("club analysis and readiness use real bounded PostgreSQL aggregates and pri
       await db.query("INSERT INTO battle_history(player_tag,battle_time,mode,map,result,battle_type) SELECT '#A',$1::timestamptz-i*interval '1 second','gemGrab','Map','victory','ranked' FROM generate_series(0,100000)i",[now]);
       const data=await analysis(7);assert.equal(data.summary.observations,100000);assert.equal(data.limits.truncated,true);assert.equal(data.coverage.truncated,true);assert.equal(data.coverage.completeHistory,false);assert.equal(data.facets.modes[0].count,100000);
       assert.ok(Buffer.byteLength(JSON.stringify(data))<25000,"Aggregate response must not ship raw retained battle rows");
+      const local=await hours({timeZone:"Asia/Kolkata"});assert.deepEqual(local.summary,data.summary);assert.equal(local.limits.truncated,true);assert.equal(local.coverage.truncated,true);
+      assert.equal(local.hourly.reduce((sum,hour)=>sum+hour.observations,0),100000);assert.ok(local.hourly.every(hour=>hour.uniquePlayers<=1));
+      assert.deepEqual(local.limits.groupCounts,{modes:0,maps:0,brawlers:0,pairs:0});assert.ok(Buffer.byteLength(JSON.stringify(local))<25000);
+      assert.doesNotMatch(JSON.stringify(local),/owner_user_id|private_future|SECRET|notes|api_key|teams_json/);
     }finally{await db.query("ROLLBACK");}
   });
 
@@ -123,11 +174,14 @@ test("club analysis and readiness use real bounded PostgreSQL aggregates and pri
     for(const days of [0,2,91,null])await assert.rejects(analysis(days),error=>error.code==="22023");
     await assert.rejects(analysis(7,"casual"),error=>error.code==="22023");await assert.rejects(analysis(7,null,null,null,null,"infinity"),error=>error.code==="22023");
     await assert.rejects(ready(null,12),error=>error.code==="22023");await assert.rejects(ready(null,0,null,0,201),error=>error.code==="22023");
-    const functions=(await db.query("SELECT proname,prosecdef,proconfig FROM pg_proc WHERE pronamespace='public'::regnamespace AND proname IN('club_analysis_read','club_readiness_read')")).rows;
-    assert.equal(functions.length,2);for(const fn of functions){assert.equal(fn.prosecdef,true);assert.ok(fn.proconfig.includes("search_path=pg_catalog, pg_temp"));}
+    for(const timeZone of [null,"Nope/Nowhere","+05:30","EST","UTC';DROP TABLE members;--", "A".repeat(101)])await assert.rejects(hours({timeZone}),error=>error.code==="22023");
+    for(const days of [0,2,91,null])await assert.rejects(hours({days}),error=>error.code==="22023");
+    await assert.rejects(hours({pNow:"infinity"}),error=>error.code==="22023");await assert.rejects(hours({context:"casual"}),error=>error.code==="22023");
+    const functions=(await db.query("SELECT proname,prosecdef,proconfig,provolatile FROM pg_proc WHERE pronamespace='public'::regnamespace AND proname IN('club_analysis_read','club_readiness_read','club_analysis_hours_read')")).rows;
+    assert.equal(functions.length,3);for(const fn of functions){assert.equal(fn.prosecdef,true);assert.equal(fn.provolatile,"s");assert.ok(fn.proconfig.includes("search_path=pg_catalog, pg_temp"));}
     for(const role of ["anon","authenticated","service_role"]){await db.query(`SET ROLE ${role}`);try{
-      if(role==="service_role"){assert.ok((await analysis()).summary);assert.equal((await ready()).total,3);}
-      else{await assert.rejects(analysis(),error=>error.code==="42501");await assert.rejects(ready(),error=>error.code==="42501");}
+      if(role==="service_role"){assert.ok((await analysis()).summary);assert.equal((await ready()).total,3);assert.ok((await hours()).summary);}
+      else{await assert.rejects(analysis(),error=>error.code==="42501");await assert.rejects(ready(),error=>error.code==="42501");await assert.rejects(hours(),error=>error.code==="42501");}
     }finally{await db.query("RESET ROLE");}}
   });
 });

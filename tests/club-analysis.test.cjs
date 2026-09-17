@@ -43,6 +43,46 @@ test("invalid analysis filters fail before reading the database",async()=>{
   assert.equal(calls.length,0);
 });
 
+test("teammates view keeps pair evidence and full group counts while projecting unrelated panels out",async()=>{
+  const data=analysis(),calls=[];data.limits.groupCounts.pairs=350;
+  const response=await route("analysis",data,calls).GET(request("view=teammates&range=30d")),body=await response.json();
+  assert.equal(response.status,200);assert.equal(calls[0].name,"club_analysis_read");assert.equal(calls[0].args.p_days,30);
+  for(const key of ["maps","modes","brawlers","hourly"])assert.deepEqual(body[key],[]);
+  assert.equal(body.pairs[0].matches,1);assert.equal(body.limits.groupCounts.pairs,350);assert.equal(body.summary.observations,3);
+  assert.equal(body.facets.modes[0].key,"brawlHockey");assert.equal(body.coverage.pairEligibleObservations,2);
+  assert.equal(body.timeZone,undefined);assert.doesNotMatch(JSON.stringify(body),/PRIVATE|owner_user_id|notes|private/);
+});
+
+test("hours view requests timestamp-level IANA aggregation and returns bounded local activity evidence",async()=>{
+  for(const timezone of [undefined,"Africa/Tunis","Asia/Kolkata","America/New_York","Pacific/Chatham"]){
+    const canonical=new Intl.DateTimeFormat("en",{timeZone:timezone||"UTC"}).resolvedOptions().timeZone;
+    const data=analysis(),calls=[];data.timeZone=canonical;data.hourly=data.hourly.map(row=>({...row,uniquePlayers:2,activeDays:3,private:"PRIVATE"}));
+    const response=await route("analysis",data,calls).GET(request("view=hours&range=3d&context=ranked"+(timezone?"&timezone="+encodeURIComponent(timezone):"")));
+    assert.equal(response.status,200);const body=await response.json();
+    assert.equal(calls[0].name,"club_analysis_hours_read");assert.equal(calls[0].args.p_timezone,canonical);assert.equal(calls[0].args.p_context,"ranked");
+    assert.equal(body.timeZone,canonical);assert.equal(body.hourly.length,24);assert.equal(body.hourly[0].uniquePlayers,2);assert.equal(body.hourly[0].activeDays,3);
+    for(const key of ["maps","modes","brawlers","pairs"])assert.deepEqual(body[key],[]);
+    assert.doesNotMatch(JSON.stringify(body),/PRIVATE|owner_user_id|notes|private/);
+  }
+});
+
+test("invalid analysis views and timezone expressions fail before any RPC",async()=>{
+  const calls=[],source=route("analysis",analysis(),calls);
+  for(const query of ["view=maps","view=","view=hours&timezone=Nope/Nowhere","view=hours&timezone=UTC%27%3BDROP%20TABLE%20members%3B--",
+    "view=hours&timezone=%2B05%3A30","view=hours&timezone=EST","view=hours&timezone=UTC%00","view=hours&timezone="+"A".repeat(101)]){
+    assert.equal((await source.GET(request(query))).status,400,query);
+  }
+  assert.equal(calls.length,0);
+});
+
+test("hours rejects mismatched timezone, duplicate hours and malformed activity evidence",async()=>{
+  for(const change of [data=>{data.timeZone="Africa/Tunis";},data=>{data.hourly[23].hour=22;},data=>{data.hourly[0].hour=24;},
+    data=>{data.hourly[0].uniquePlayers=3;},data=>{data.hourly[0].activeDays=null;},data=>{data.hourly=[];}]){
+    const data=analysis();data.timeZone="UTC";data.hourly=data.hourly.map(row=>({...row,uniquePlayers:2,activeDays:1}));change(data);
+    assert.equal((await route("analysis",data).GET(request("view=hours"))).status,500);
+  }
+});
+
 test("readiness keeps unknown distinct from zero/empty and filters nested private or future timestamp fields",async()=>{
   const calls=[],response=await route("readiness",readiness(),calls).GET(request("brawler=16000000&minPower=9&search=%D8%B9%D9%84%D9%8A&limit=1&offset=0"));
   assert.equal(response.status,200);const body=await response.json();

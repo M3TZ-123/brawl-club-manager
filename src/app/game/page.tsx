@@ -74,7 +74,7 @@ export default function GamePage() {
         return <article key={`${event.slotId}:${event.startTime}`} className="rounded-lg border bg-card p-5 space-y-3">
           <p className="text-sm text-muted-foreground">{mode.icon} {t(mode.label)}</p><h3 className="font-bold text-lg break-words">{event.map}</h3>
           <p className={expired ? "text-muted-foreground text-sm" : "text-primary text-sm"}>{expired ? t("Event ended") : t(upcoming ? "Starts in {hours}h {minutes}m" : "Ends in {hours}h {minutes}m", {hours,minutes})}</p>
-          <Link href={`/analysis?map=${encodeURIComponent(event.map)}&mode=${encodeURIComponent(event.mode)}`} className="text-sm text-primary underline underline-offset-4">{t("Club results on this map")}</Link>
+          <Link href={`/analysis?map=${encodeURIComponent(event.map)}&mode=${encodeURIComponent(event.mode)}`} className="text-sm text-primary underline underline-offset-4">{t("Teammates on this map")}</Link>
         </article>;
       })}</div>
       <Link href="/readiness" className="text-primary inline-block underline underline-offset-4">{t("Find club brawlers for these maps")}</Link>

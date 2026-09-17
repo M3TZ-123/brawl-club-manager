@@ -55,7 +55,19 @@ const integerFilter = (params: URLSearchParams, key: string, fallback: number | 
   return parsed;
 };
 
+function analysisTimeZone(params: URLSearchParams): string {
+  const value = params.get("timezone") || "UTC";
+  if (value.length > 100 || value !== "UTC" && !/^(?:[A-Za-z][A-Za-z0-9._+-]*\/)+[A-Za-z][A-Za-z0-9._+-]*$/.test(value)) {
+    throw new AnalysisInputError("Invalid analysis timezone");
+  }
+  try { return new Intl.DateTimeFormat("en", { timeZone: value }).resolvedOptions().timeZone; }
+  catch { throw new AnalysisInputError("Invalid analysis timezone"); }
+}
+
 export async function readClubAnalysis(params: URLSearchParams, now = new Date()): Promise<AnalysisResponse> {
+  const view = params.get("view");
+  if (view !== null && view !== "teammates" && view !== "hours") throw new AnalysisInputError("Invalid analysis view");
+  const timeZone = view === "hours" ? analysisTimeZone(params) : undefined;
   const range = params.get("range");
   if (range && !Object.hasOwn(TIME_RANGES, range)) throw new AnalysisInputError("Invalid analysis range");
   const key = parseTimeRange(range), days = TIME_RANGES[key].days;
@@ -66,27 +78,42 @@ export async function readClubAnalysis(params: URLSearchParams, now = new Date()
   if (filters.context && !battleContextOptions.some(item => item.key === filters.context)) throw new AnalysisInputError("Invalid battle context");
   if (filters.mode) filters.mode = normalizeBattleMode(filters.mode);
   const clubTag = await requireAcceptedClubRoster();
-  const { data, error } = await supabaseAdmin.rpc("club_analysis_read", {
+  const { data, error } = await supabaseAdmin.rpc(view === "hours" ? "club_analysis_hours_read" : "club_analysis_read", {
     p_days: days, p_now: now.toISOString(), p_context: filters.context, p_mode: filters.mode, p_map: filters.map, p_brawler: filters.brawler,
+    ...(timeZone ? { p_timezone: timeZone } : {}),
   });
+  if (error?.code === "22023" && error.message === "invalid_analysis_timezone") throw new AnalysisInputError("Invalid analysis timezone");
   if (error) throw new Error("Analysis database read failed");
   const body = object(data), facets = object(body.facets), coverage = object(body.coverage), limits = object(body.limits);
+  if (view === "hours" && body.timeZone !== timeZone) throw new Error("Invalid analysis timezone response");
   const groupCounts = object(limits.groupCounts), facetCounts = object(limits.facetCounts);
   const plainFacet = (rows: unknown) => array(rows).map(row => ({ key: text(row.key), count: count(row.count) }));
+  const hourly = view === "teammates" ? [] : array(body.hourly, 24).map(row => {
+    const hour = count(row.hour), measurements = stats(row);
+    if (hour > 23) throw new Error("Invalid analysis hour");
+    if (view !== "hours") return { hour, ...measurements };
+    const uniquePlayers = count(row.uniquePlayers), activeDays = count(row.activeDays);
+    if (uniquePlayers > count(coverage.currentPlayers) || uniquePlayers > measurements.observations || activeDays > measurements.observations) {
+      throw new Error("Invalid analysis hour evidence");
+    }
+    return { hour, ...measurements, uniquePlayers, activeDays };
+  });
+  if (view === "hours" && (hourly.length !== 24 || new Set(hourly.map(row => row.hour)).size !== 24)) throw new Error("Invalid analysis hours");
   await assertAcceptedClubRoster(clubTag);
   return {
+    ...(timeZone ? { timeZone } : {}),
     period: { key, days, start: new Date(now.getTime() - days * 86_400_000).toISOString(), end: now.toISOString(), aggregation: "rolling" },
     filters, summary: stats(object(body.summary)),
-    modes: array(body.modes, 200).map(row => ({ ...stats(row), context: context(row.context), mode: mode(row.mode) })),
-    maps: array(body.maps, 200).map(row => ({ ...stats(row), context: context(row.context), mode: mode(row.mode), map: text(row.map) })),
-    brawlers: array(body.brawlers, 200).map(row => ({ ...stats(row), context: context(row.context), brawler: text(row.brawler) })),
-    pairs: array(body.pairs, 200).map(row => {
+    modes: view ? [] : array(body.modes, 200).map(row => ({ ...stats(row), context: context(row.context), mode: mode(row.mode) })),
+    maps: view ? [] : array(body.maps, 200).map(row => ({ ...stats(row), context: context(row.context), mode: mode(row.mode), map: text(row.map) })),
+    brawlers: view ? [] : array(body.brawlers, 200).map(row => ({ ...stats(row), context: context(row.context), brawler: text(row.brawler) })),
+    pairs: view === "hours" ? [] : array(body.pairs, 200).map(row => {
       const first = object(row.player1), second = object(row.player2);
       return { player1: { tag: text(first.tag, 30), name: text(first.name) }, player2: { tag: text(second.tag, 30), name: text(second.name) },
         context: context(row.context), matches: count(row.matches), wins: count(row.wins), losses: count(row.losses), draws: count(row.draws),
         unknownResults: count(row.unknownResults), winRate: nonnegative(row.winRate) };
     }),
-    hourly: array(body.hourly, 24).map(row => ({ hour: count(row.hour), ...stats(row) })),
+    hourly,
     facets: {
       contexts: battleContextOptions.map(item => ({ ...item, count: count(array(facets.contexts, 7).find(row => row.key === item.key)?.count ?? 0) })),
       modes: array(facets.modes).map(row => ({ ...mode(row.key), count: count(row.count) })),

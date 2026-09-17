@@ -26,6 +26,17 @@ async function main() {
   const [analysis, readiness, report] = await Promise.all([get('/api/analysis?range=7d'),get('/api/readiness?limit=1'),get('/api/reports/weekly?range=7d')]);
   assert.ok(Number.isSafeInteger(analysis.summary.observations), 'Club analysis is available');
   assert.equal(analysis.coverage.completeHistory,false,'Analysis declares observed coverage');
+  const [teammates, hours] = await Promise.all([get('/api/analysis?range=7d&view=teammates'), get('/api/analysis?range=7d&view=hours&timezone=Africa%2FTunis')]);
+  assert.ok(Array.isArray(teammates.pairs), 'Teammate view returns pair records');
+  assert.equal(teammates.maps.length + teammates.modes.length + teammates.brawlers.length + teammates.hourly.length, 0, 'Teammate view omits unused groups');
+  assert.equal(hours.timeZone, 'Africa/Tunis', 'Hours are aggregated in the requested time zone');
+  assert.equal(hours.hourly.length, 24, 'Hours include the whole day');
+  assert.equal(hours.maps.length + hours.modes.length + hours.brawlers.length + hours.pairs.length, 0, 'Hours view omits unused groups');
+  for (const [index, hour] of hours.hourly.entries()) {
+    assert.equal(hour.hour, index);
+    assert.ok(Number.isSafeInteger(hour.uniquePlayers) && hour.uniquePlayers >= 0 && hour.uniquePlayers <= hours.coverage.currentPlayers, 'Distinct hourly member count is bounded');
+    assert.ok(Number.isSafeInteger(hour.activeDays) && hour.activeDays >= 0 && hour.activeDays <= 8, 'Rolling 7 days can span 8 local dates');
+  }
   assert.ok(Array.isArray(readiness.rows) && readiness.rows.length<=1,'Readiness honors page bounds');
   assert.ok(Object.hasOwn(report,'trophyChange'),'Report includes optional club trophy comparison');
   if (report.trophyChange !== null) {

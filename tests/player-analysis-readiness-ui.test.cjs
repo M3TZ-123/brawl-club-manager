@@ -19,6 +19,9 @@ function harness(path, response, { name = "default", props = {}, query = "", loc
     ...componentMocks, react: { ...renderer.react, Suspense: "Suspense" },
     "next/navigation": { useSearchParams: () => new URLSearchParams(query) },
     "@/components/time-range-picker": { TimeRangePicker: "TimeRangePicker" },
+    "@/hooks/use-device-time-zone": { useDeviceTimeZone: () => "Africa/Tunis" },
+    "@/components/analysis-teammates": { AnalysisTeammates: "AnalysisTeammates" },
+    "@/components/analysis-playing-hours": { AnalysisPlayingHours: "AnalysisPlayingHours" },
     "@/components/locale-provider": { useI18n: () => locale, LocalDate: "LocalDate", T: "T" },
     "@/lib/client-data-cache": { fetchJsonCached: async (url, options) => {
       const params = new URL(url, "http://fixture").searchParams; requests.push({ url, params, options });
@@ -52,36 +55,47 @@ function progress(values = {}) { return {
   brawlerHistory: { brawlerId: null, items: [], coverageStart: null, coverageEnd: null }, ...values,
 }; }
 
-test("analysis initializes game map/mode links and ignores responses from an older period", async () => {
+test("analysis preserves linked map/mode filters and ignores responses from an older selected period", async () => {
   const old = deferred();
   const page = harness("src/app/analysis/page.tsx", params => params.get("range") === "7d" ? old.promise : analysis({ summary: stats({ observations: 30 }) }), { name: "AnalysisContent", query: "map=Map%20One&mode=airHockey" });
   let tree = await page.render();
   assert.equal(page.requests[0].params.get("map"), "Map One");
   assert.equal(page.requests[0].params.get("mode"), "brawlHockey");
+  assert.equal(page.requests[0].params.get("view"), "teammates");
+  assert.equal(page.requests[0].params.has("timezone"), false);
   assert.match(textContent(tree), /Loading battle analysis/);
+  assert.match(textContent(tree), /Brawl Hockey.*Map One/);
   elements(tree).find(node => node.type === "TimeRangePicker").props.onChange("30d");
   tree = await page.render();
   assert.equal(page.requests.at(-1).params.get("range"), "30d");
-  assert.match(textContent(tree), /Member participations30/);
+  assert.match(textContent(tree), /30 recorded member participations/);
   old.resolve(analysis({ summary: stats({ observations: 999 }) }));
   tree = await page.render();
   assert.doesNotMatch(textContent(tree), /999/);
-  assert.match(textContent(tree), /Member participations30/);
+  assert.equal(elements(tree).find(node => node.type === "AnalysisTeammates").props.data.summary.observations, 30);
+  action(tree, "Clear filters")(); tree = await page.render();
+  assert.equal(page.requests.at(-1).params.has("mode"), false);
+  assert.equal(page.requests.at(-1).params.has("map"), false);
 });
 
-test("analysis sends independent filters, shows null statistics honestly, and refreshes only relevant visible data", async () => {
-  const page = harness("src/app/analysis/page.tsx", analysis(), { name: "AnalysisContent" });
+test("analysis offers only teammates and hours, requests the chosen timezone, and refreshes only relevant visible data", async () => {
+  const page = harness("src/app/analysis/page.tsx", analysis(), { name: "AnalysisContent", query: "brawler=SHELLY" });
   let tree = await page.render();
-  assert.match(textContent(tree), /Decided-result win rateUnknown/);
-  assert.match(textContent(tree), /Recorded match durationUnknown/);
-  assert.match(textContent(tree), /Average recorded duration.*Unknown/);
-  assert.match(textContent(tree), /not time online/);
-  for (const [id, value] of [["analysis-context", "ranked"], ["analysis-mode", "brawlHockey"], ["analysis-map", "Map One"], ["analysis-brawler", "SHELLY"]]) {
-    control(tree, id).props.onChange({ target: { value } }); tree = await page.render();
-  }
-  const params = page.requests.at(-1).params;
-  assert.equal(params.get("context"), "ranked"); assert.equal(params.get("mode"), "brawlHockey");
-  assert.equal(params.get("map"), "Map One"); assert.equal(params.get("brawler"), "SHELLY");
+  const tabs = elements(tree).find(node => node.props?.['aria-label'] === 'Analysis view');
+  assert.deepEqual(elements(tabs).filter(node => node.type === 'Button').map(textContent), ['Teammates', 'Playing hours']);
+  assert.doesNotMatch(textContent(tree), /Decided-result win rate|Recorded match duration|Average recorded duration/);
+  assert.equal(page.requests[0].params.get('brawler'), 'SHELLY');
+  control(tree, "analysis-context").props.onChange({ target: { value: "ranked" } }); tree = await page.render();
+  assert.equal(page.requests.at(-1).params.get("context"), "ranked");
+  action(tree, 'Playing hours')(); tree = await page.render();
+  assert.equal(page.requests.at(-1).params.get('view'), 'hours');
+  assert.equal(page.requests.at(-1).params.get('timezone'), 'Africa/Tunis');
+  assert.ok(elements(tree).some(node => node.type === 'AnalysisPlayingHours'));
+  assert.equal(elements(tree).some(node => node.type === 'AnalysisTeammates'), false);
+  control(tree, 'analysis-time-zone').props.onChange({ target: { value: 'utc' } }); tree = await page.render();
+  assert.equal(page.requests.at(-1).params.get('timezone'), 'UTC');
+  action(tree, 'Clear filters')(); tree = await page.render();
+  for (const key of ['context', 'mode', 'map', 'brawler']) assert.equal(page.requests.at(-1).params.has(key), false);
   const before = page.requests.length;
   page.window.dispatchEvent({ type: "club-data-updated", detail: { datasets: ["ranked"] } });
   await page.render(); assert.equal(page.requests.length, before);
@@ -92,27 +106,44 @@ test("analysis sends independent filters, shows null statistics honestly, and re
   await page.render(); assert.equal(page.requests.length, before + 1); assert.equal(page.requests.at(-1).options.force, true);
 });
 
-test("analysis keeps teammate counts separate from participations and preserves coverage/limit caveats", async () => {
-  const page = harness("src/app/analysis/page.tsx", analysis({
+test("analysis keeps coverage limitations visible and passes unmerged teammate records and group limits into the selected view", async () => {
+  const response = analysis({
     summary: stats({ observations: 6, wins: 4, losses: 2, winRate: 66.666 }),
     pairs: [{ player1: { tag: "#ONE", name: "One" }, player2: { tag: "#TWO", name: "Two" }, context: { key: "ladder", label: "Trophy matches" }, matches: 2, wins: 1, losses: 1, draws: 0, unknownResults: 0, winRate: 50 }],
     coverage: { status: "possible_gap", currentPlayers: 30, fullPeriodMonitoredPlayers: 2, stalePlayers: 1, affectedPlayers: 3, retainedGapWindowDays: 28, truncated: true },
     limits: { truncated: true, groupCounts: { pairs: 300, maps: 0, modes: 0, brawlers: 0 } },
-  }), { name: "AnalysisContent" });
-  let tree = await page.render();
-  assert.match(textContent(tree), /Possible gaps in battle history/); assert.match(textContent(tree), /Partial results — choose a shorter period/);
-  action(tree, "Teammates")(); tree = await page.render();
-  assert.match(textContent(tree), /2 shared matches/); assert.match(textContent(tree), /do not prove a premade party/);
-  assert.match(textContent(tree), /Showing 1 of 300 groups/);
-  assert.equal(elements(tree).filter(node => node.type === "Link").length, 2);
+  });
+  const page = harness("src/app/analysis/page.tsx", response, { name: "AnalysisContent" });
+  const tree = await page.render();
+  const pairView = elements(tree).find(node => node.type === 'AnalysisTeammates');
+  assert.equal(pairView.props.data.pairs.length, 1);
+  assert.equal(pairView.props.data.pairs[0].matches, 2);
+  assert.equal(pairView.props.data.summary.observations, 6);
+  assert.equal(pairView.props.data.limits.groupCounts.pairs, 300);
+  const coverage = page.loaded.AnalysisCoverage({ data: response });
+  assert.match(textContent(coverage), /Partial results — choose a shorter period/);
+  assert.match(textContent(coverage), /2 of 30 members monitored throughout this period/);
+  assert.match(textContent(coverage), /Possible gaps for 3 members; delayed checks for 1 members/);
+  const help = elements(coverage).find(node => node.type === 'details');
+  assert.doesNotMatch(textContent(help), /Partial results — choose a shorter period/);
+  assert.match(textContent(help), /A missing record does not mean a member did not play/);
+  assert.doesNotMatch(textContent(tree), /Decided-result win rate|Recorded match duration|Average recorded duration/);
 });
 
-test("analysis rounds recorded duration across minute boundaries without displaying sixty seconds", async () => {
-  const page = harness("src/app/analysis/page.tsx", analysis({summary:stats({durationObservations:10,recordedDurationSeconds:1199,averageDurationSeconds:119.9})}), {name:"AnalysisContent"});
-  const tree = await page.render();
-  assert.match(textContent(tree), /Recorded match duration19 min 59 sec/);
-  assert.match(textContent(tree), /Average recorded duration.*2 min 0 sec/);
-  assert.doesNotMatch(textContent(tree), /1 min 60 sec/);
+test("an hours deep link requests local time immediately and a delayed hours response cannot replace the teammate view", async () => {
+  const oldHours = deferred();
+  const page = harness("src/app/analysis/page.tsx", params => params.get('view') === 'hours' ? oldHours.promise : analysis({ summary: stats({ observations: 12 }) }), { name: 'AnalysisContent', query: 'view=hours&context=friendly' });
+  let tree = await page.render();
+  assert.equal(page.requests[0].params.get('view'), 'hours');
+  assert.equal(page.requests[0].params.get('timezone'), 'Africa/Tunis');
+  assert.equal(page.requests[0].params.get('context'), 'friendly');
+  action(tree, 'Teammates')(); tree = await page.render();
+  assert.equal(page.requests.at(-1).params.get('view'), 'teammates');
+  assert.equal(page.requests.at(-1).params.has('timezone'), false);
+  oldHours.resolve(analysis({ summary: stats({ observations: 999 }) })); tree = await page.render();
+  assert.doesNotMatch(textContent(tree), /999/);
+  assert.equal(elements(tree).find(node => node.type === 'AnalysisTeammates').props.data.summary.observations, 12);
+  assert.equal(elements(tree).some(node => node.type === 'AnalysisPlayingHours'), false);
 });
 
 test("readiness filters are current snapshots, pagination preserves filters and deduplicates player-brawler rows", async () => {
