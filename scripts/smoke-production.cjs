@@ -13,10 +13,20 @@ async function main() {
   assert.ok(Number.isFinite(health.expectedIntervalMinutes), "Expected sync interval is available");
   assert.ok(!JSON.stringify(history).includes('"notes":'), "Public history excludes private notes");
   assert.ok(!JSON.stringify(history).includes('"review_updated_at":'), "Public history excludes private review revisions");
-  const [analysis, readiness] = await Promise.all([get('/api/analysis?range=7d'),get('/api/readiness?limit=1')]);
+  const [analysis, readiness, report] = await Promise.all([get('/api/analysis?range=7d'),get('/api/readiness?limit=1'),get('/api/reports/weekly?range=7d')]);
   assert.ok(Number.isSafeInteger(analysis.summary.observations), 'Club analysis is available');
   assert.equal(analysis.coverage.completeHistory,false,'Analysis declares observed coverage');
   assert.ok(Array.isArray(readiness.rows) && readiness.rows.length<=1,'Readiness honors page bounds');
+  assert.ok(Object.hasOwn(report,'trophyChange'),'Report includes optional club trophy comparison');
+  if (report.trophyChange !== null) {
+    const change=report.trophyChange;
+    assert.equal(change.requestedStart,report.period.start,'Club trophy comparison follows the report start');
+    assert.equal(change.requestedEnd,report.period.end,'Club trophy comparison follows the report end');
+    assert.ok(change.points.length<=7,'Daily trophy history is bounded by the selected period');
+    assert.ok(!JSON.stringify(change).includes('"tag":') && !JSON.stringify(change).includes('"notes":'),'Trophy comparison only exposes aggregate roster data');
+    if (change.status==='insufficient_history') assert.equal(change.totalChange,null,'Missing trophy history stays unknown');
+    else assert.equal(change.totalChange,change.commonProgress+change.addedTrophies-change.removedTrophies,'Trophy change reconciles with roster changes');
+  }
   if (readiness.rows[0]) {
     const progress=await get(`/api/members/${encodeURIComponent(readiness.rows[0].player.tag)}/progress?collectionLimit=1&rankLimit=1`);
     assert.ok(progress.collection.items.length<=1 && progress.rankedHistory.items.length<=1,'Player progress is paginated');

@@ -130,14 +130,9 @@ test('calendar renders member-day links, visible uncertainty and its own bounded
   assert.equal(elements(tree).filter(node => node.type === 'option').length, 3);
 });
 
-test('growth UI does not display invented deltas before a baseline and new Arabic copy is available', async () => {
-  const result = buildClubIntelligence(raw(), '7d', now), renderer = hookRenderer();
-  const { ClubGrowth } = loadTypeScript('src/components/club-growth.tsx', { ...componentMocks, react: renderer.react,
-    '@/components/club-intelligence-panel': { ClubIntelligencePanel: 'Panel', useClubIntelligence: () => ({ data: result }) },
-  });
-  const tree = await renderer.render(() => ClubGrowth({})); assert.match(textContent(tree), /starting roster has not been recorded/); assert.doesNotMatch(textContent(tree), /Present only at the end/);
+test('club intelligence and integrated trophy change labels have Arabic translations', () => {
   const { arClubIntelligence } = loadTypeScript('src/lib/i18n/ar-club-intelligence.ts');
-  for (const key of ['Member activity calendar', 'What changed the club trophies?', 'Observed member retention', 'Before monitoring baseline', 'Roster strength']) assert.match(arClubIntelligence[key], /[\u0600-\u06ff]/);
+  for (const key of ['Member activity calendar', 'Club trophy changes', 'Observed member retention', 'Before monitoring baseline', 'Roster strength']) assert.match(arClubIntelligence[key], /[\u0600-\u06ff]/);
 });
 
 test('club metadata history localizes admission values and hides numeric badge identifiers', async () => {

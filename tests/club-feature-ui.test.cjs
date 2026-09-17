@@ -29,11 +29,6 @@ test('primary navigation stays visible and private destinations remain gated in 
   isAdmin=true;pathname='/recruitment';tree=await render();links=elements(tree).filter(e=>e.props?.href).map(e=>e.props.href);for(const href of ['/reviews','/settings','/recruitment'])assert.ok(links.includes(href));assert.equal(group(tree,'Management').props.open,true);
   isOpen=false;tree=await render();assert.equal(elements(tree).find(e=>e.type==='aside').props.inert,true,'Closed navigation must leave the keyboard and accessibility order');
 });
-test('roster comparison has its own explicit period and passes each selected range to the growth panel',async()=>{
-  const renderer=hookRenderer();const{ClubGrowthPeriod}=loadTypeScript('src/components/club-growth-period.tsx',{...componentMocks,react:renderer.react,'@/components/club-growth':{ClubGrowth:'ClubGrowth'}});
-  let tree=await renderer.render(ClubGrowthPeriod);assert.match(textContent(tree),/Roster comparison period/);assert.equal(elements(tree).find(e=>e.type==='ClubGrowth').props.range,'7d');
-  for(const range of ['30d','90d']){elements(tree).find(e=>e.type==='select').props.onChange({target:{value:range}});tree=await renderer.render(ClubGrowthPeriod);assert.equal(elements(tree).find(e=>e.type==='ClubGrowth').props.range,range);}
-});
 async function reportImage({report={},locale='en'}={}){
   const renderer=hookRenderer(),drawn=[],downloads=[],requests=[],context={fillRect(){},fillText(text,x,y){drawn.push({text,x,y});}};
   const{translate}=loadTypeScript('src/lib/i18n/messages.ts');const i18n={...require('./helpers/client-renderer.cjs').i18n,locale,direction:locale==='ar'?'rtl':'ltr',t:(text,values)=>translate(text,locale,values)};

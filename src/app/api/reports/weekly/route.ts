@@ -5,6 +5,7 @@ import { getReportingPeriod, reportingPeriodMetadata } from "@/lib/reporting-per
 import { fetchDailyStats, fetchAccountTrophyTrend } from "@/lib/reporting-data";
 import { parseTimeRange, TIME_RANGES } from "@/lib/time-range";
 import { requireAcceptedClubRoster, assertAcceptedClubRoster, ClubRosterUnavailableError } from "@/lib/accepted-club-roster";
+import { fetchReportClubGrowth } from "@/lib/report-club-growth";
 
 export const dynamic = "force-dynamic";
 
@@ -28,7 +29,7 @@ export async function GET(request?: Request) {
     const weekAgoDate = period.dates[0];
     const currentMemberFilter = currentMemberTags.length > 0 ? currentMemberTags : [""];
 
-    const [membersRes, dailyRows, eventsRes, trophyTrend] = await Promise.all([
+    const [membersRes, dailyRows, eventsRes, trophyTrend, trophyChange] = await Promise.all([
       supabaseAdmin
         .from("members")
         .select("player_tag, player_name, trophies, is_active")
@@ -43,6 +44,7 @@ export async function GET(request?: Request) {
         .order("event_time", { ascending: false })
         .limit(10),
       fetchAccountTrophyTrend(currentMemberTags, period.days, now),
+      fetchReportClubGrowth(clubTag, period),
     ]);
 
     if (membersRes.error) throw membersRes.error;
@@ -110,6 +112,7 @@ export async function GET(request?: Request) {
       activityDistribution,
       recentEvents: events?.slice(0, 10) || [],
       trophyTrend,
+      trophyChange,
     };
 
     await assertAcceptedClubRoster(clubTag);

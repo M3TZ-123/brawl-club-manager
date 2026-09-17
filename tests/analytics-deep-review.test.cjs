@@ -5,7 +5,7 @@ const { hookRenderer, componentMocks, windowMock, elements, textContent, action 
 const mocks = { ...componentMocks,
   'next/dynamic': () => 'Chart',
   '@/components/club-report-card': { ClubReportCard: 'ReportImage' },
-  '@/components/club-growth-period': { ClubGrowthPeriod: 'Growth' },
+  '@/components/club-growth': { ClubGrowth: 'Growth' },
   '@/components/club-activity-calendar': { ClubActivityCalendar: 'Calendar' },
   '@/components/time-range-picker': { TimeRangePicker: 'PeriodPicker' },
   '@/components/ui/tabs': Object.fromEntries(['Tabs', 'TabsContent', 'TabsList', 'TabsTrigger'].map(name => [name, name])),
@@ -14,7 +14,7 @@ const mocks = { ...componentMocks,
 const report = (name = 'Current player') => ({ generatedAt: '2026-09-17T00:15:00Z', period: { start: '2026-09-17T00:00:00Z', end: '2026-09-17T00:15:00Z' },
   summary: { totalMembers: 1, totalTrophies: 1000, avgTrophies: 1000, activeMembers: 1, activityRate: 100, weeklyWins: 0, weeklyBattles: 0, weeklyWinRate: 0 },
   topGainers: [{ playerTag: '#PLAYER', playerName: name, trophyChange: 50 }], topLosers: [], recentEvents: [], trophyTrend: [],
-  activityDistribution: { active: 1, minimal: 0, inactive: 0 } });
+  activityDistribution: { active: 1, minimal: 0, inactive: 0 }, trophyChange: { marker: name } });
 function reportHarness(search, fetch) {
   const renderer = hookRenderer(), urls = [], downloads = [], listeners = new Map();
   const Page = loadTypeScript('src/app/reports/page.tsx', { ...mocks, react: renderer.react,
@@ -39,10 +39,26 @@ test('a delayed linked-period report cannot populate or export the newly selecte
   let tree = await page.render();
   elements(tree).find(node => node.type === 'PeriodPicker').props.onChange('90d'); tree = await page.render();
   assert.match(textContent(tree), /New period player/);
+  assert.equal(elements(tree).find(node => node.type === 'Growth').props.data.marker, 'New period player');
   finishOld(report('Old period player')); tree = await page.render();
   assert.doesNotMatch(textContent(tree), /Old period player/);
+  assert.equal(elements(tree).find(node => node.type === 'Growth').props.data.marker, 'New period player');
   elements(tree).find(node => node.type === 'Button' && node.props['aria-label'] === 'Export').props.onClick();
   assert.match(page.downloads[0], /New period player/); assert.doesNotMatch(page.downloads[0], /Old period player/);
+});
+
+test('changing report period clears existing trophy changes until the matching response arrives', async () => {
+  let finish;
+  const page = reportHarness('?range=7d', url => url.includes('7d') ? report('Seven-day player') : new Promise(resolve => { finish = resolve; }));
+  let tree = await page.render();
+  assert.equal(elements(tree).find(node => node.type === 'Growth').props.data.marker, 'Seven-day player');
+  elements(tree).find(node => node.type === 'PeriodPicker').props.onChange('30d'); tree = await page.render();
+  assert.equal(elements(tree).some(node => node.type === 'Growth'), false);
+  assert.doesNotMatch(textContent(tree), /Seven-day player/);
+  assert.equal(elements(tree).find(node => node.type === 'Button' && node.props['aria-label'] === 'Export').props.disabled, true);
+  finish(report('Monthly player')); tree = await page.render();
+  assert.equal(elements(tree).find(node => node.type === 'Growth').props.data.marker, 'Monthly player');
+  assert.match(textContent(tree), /Monthly player/);
 });
 
 test('today report explicitly separates rolling account progress in the page and HTML export', async () => {
@@ -58,10 +74,13 @@ test('report clears the previous club immediately while its replacement read is 
   let calls = 0, finish;
   const page = reportHarness('', () => ++calls === 1 ? report('Previous club') : new Promise(resolve => { finish = resolve; }));
   let tree = await page.render(); assert.match(textContent(tree), /Previous club/);
+  assert.equal(elements(tree).find(node => node.type === 'Growth').props.data.marker, 'Previous club');
   page.listeners.get('club-data-updated')({ detail: { clubChanged: true } });
   tree = await page.render(); assert.doesNotMatch(textContent(tree), /Previous club/);
+  assert.equal(elements(tree).some(node => node.type === 'Growth'), false);
   assert.equal(elements(tree).find(node => node.type === 'Button' && node.props['aria-label'] === 'Export').props.disabled, true);
   finish(report('Replacement club')); tree = await page.render(); assert.match(textContent(tree), /Replacement club/);
+  assert.equal(elements(tree).find(node => node.type === 'Growth').props.data.marker, 'Replacement club');
 });
 
 function activityHarness(members) {

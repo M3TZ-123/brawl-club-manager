@@ -1,28 +1,75 @@
 "use client";
-import { useI18n } from "@/components/locale-provider";
-import { ClubIntelligencePanel, useClubIntelligence } from "@/components/club-intelligence-panel";
-import type { ClubIntelligenceRange } from "@/lib/club-intelligence-types";
 
-export function ClubGrowth({ range = "7d" }: { range?: ClubIntelligenceRange }) {
-  const resource = useClubIntelligence(range), data = resource.data?.growth;
-  const { t, number, dateTime, delta } = useI18n();
-  return <ClubIntelligencePanel title="What changed the club trophies?" resource={resource}>{data && <>
-    <p className="text-xs text-muted-foreground">{t("Last {days} days", { days: number(Number.parseInt(range, 10)) })}</p>
-    {data.status === "observed" ? <>
-      <p className="text-2xl font-bold tabular-nums">{delta(data.totalChange!)}</p>
-      <p className="text-xs text-muted-foreground">{t("Includes changes in who belongs to the club.")}</p>
-      <p className="text-xs text-muted-foreground">{dateTime(data.startAt)} → {dateTime(data.endAt)}</p>
-      {data.returningMembers > 0 && <p className="text-sm text-amber-600">{t("{count} shared members left and returned between the snapshots.", { count: number(data.returningMembers) })}</p>}
-      <details className="text-sm"><summary className="cursor-pointer font-medium text-primary">{t("How the total changed")}</summary><div className="mt-3 space-y-3">
-      <dl className="grid gap-3 text-sm sm:grid-cols-3">
-        <div className="rounded-lg bg-muted/40 p-3"><dt>{t("Members in both snapshots")}</dt><dd className="mt-1 text-lg font-semibold">{delta(data.commonProgress!)}</dd><dd className="text-xs text-muted-foreground">{t("{count} members", { count: number(data.commonMembers) })}</dd></div>
-        <div className="rounded-lg bg-muted/40 p-3"><dt>{t("Present only at the end")}</dt><dd className="mt-1 text-lg font-semibold">+{number(data.addedTrophies!)}</dd><dd className="text-xs text-muted-foreground">{t("{count} members", { count: number(data.addedMembers) })}</dd></div>
-        <div className="rounded-lg bg-muted/40 p-3"><dt>{t("Present only at the start")}</dt><dd className="mt-1 text-lg font-semibold">−{number(data.removedTrophies!)}</dd><dd className="text-xs text-muted-foreground">{t("{count} members", { count: number(data.removedMembers) })}</dd></div>
-      </dl>
-      <p className="text-xs text-muted-foreground">{t("This separates endpoint roster changes. It does not measure trophies earned only while a player belonged to the club.")}</p>
-      </div></details>
-    </> : <p className="text-sm text-muted-foreground">{t("A complete starting roster has not been recorded for this period yet.")}</p>}
-    {data.availableFrom && <p className="text-xs text-muted-foreground">{t("Roster history begins")}: {dateTime(data.availableFrom)}</p>}
-    {data.points.length > 0 && <details className="text-sm"><summary className="cursor-pointer text-primary">{t("Recorded daily roster totals")}</summary><div className="mt-2 max-h-56 overflow-auto"><table className="w-full text-start text-xs"><thead><tr><th className="p-2 text-start">{t("Observed")}</th><th className="p-2 text-end">{t("Trophies")}</th><th className="p-2 text-end">{t("Members")}</th></tr></thead><tbody>{data.points.map(point => <tr key={point.observedAt} className="border-t"><td className="p-2">{dateTime(point.observedAt)}</td><td className="p-2 text-end">{number(point.totalTrophies)}</td><td className="p-2 text-end">{number(point.members)}</td></tr>)}</tbody></table></div></details>}
-  </>}</ClubIntelligencePanel>;
+import { useI18n } from "@/components/locale-provider";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import type { ClubTrophyChange } from "@/lib/club-trophy-change";
+
+export function ClubGrowth({ data, onRetry }: { data: ClubTrophyChange | null; onRetry: () => void }) {
+  const { t, number, dateTime, date, delta } = useI18n();
+  const comparable = data && data.status !== "insufficient_history" && data.totalChange != null && data.startAt && data.endAt;
+  const firstRecord = data?.points[0]?.observedAt;
+
+  return <Card className="min-w-0">
+    <CardHeader className="p-4 pb-3"><CardTitle className="text-base">{t("Club trophy changes")}</CardTitle></CardHeader>
+    <CardContent className="space-y-3 p-4 pt-0">
+      {!data ? <div role="status" className="flex flex-wrap items-center gap-2 text-sm text-muted-foreground">
+        <p>{t("Club trophy changes are temporarily unavailable.")}</p>
+        <Button variant="outline" size="sm" onClick={onRetry}>{t("Retry")}</Button>
+      </div> : <>
+        {comparable ? <>
+          <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
+            <p className="text-2xl font-bold tabular-nums"><bdi>{delta(data.totalChange)}</bdi></p>
+            <p className="text-sm text-muted-foreground">{t(data.status === "partial_period" ? "Since first available record" : "Change between recorded totals")}</p>
+          </div>
+          {data.status === "partial_period" && <p className="text-xs text-muted-foreground">{t("Full-period history is not available yet.")}</p>}
+          <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-muted-foreground">
+            <p>{t("From")}: <bdi>{dateTime(data.startAt)}</bdi></p>
+            <p>{t("To")}: <bdi>{dateTime(data.endAt)}</bdi></p>
+          </div>
+          <dl className="grid grid-cols-3 gap-2 border-t pt-3 text-sm">
+            {[
+              { label: "Same members", change: data.commonProgress, members: data.commonMembers },
+              { label: "Members added", change: data.addedTrophies, members: data.addedMembers },
+              { label: "Members left", change: data.removedTrophies == null ? null : -data.removedTrophies, members: data.removedMembers },
+            ].map(item => <div key={item.label} className="min-w-0">
+              <dt className="text-xs text-muted-foreground">{t(item.label)}</dt>
+              <dd className="mt-1 font-semibold tabular-nums"><bdi>{delta(item.change)}</bdi></dd>
+              <dd className="text-xs text-muted-foreground">{item.members == null ? "—" : t("{count} members", { count: number(item.members) })}</dd>
+            </div>)}
+          </dl>
+        </> : <div className="space-y-2 text-sm text-muted-foreground">
+          <p>{t(firstRecord ? "One complete roster record is available. A later record is needed to calculate the change." : "Trophy changes will appear after two complete roster records are saved.")}</p>
+          {firstRecord && <p className="text-xs">{t("First complete record")}: <bdi>{dateTime(firstRecord)}</bdi></p>}
+        </div>}
+        <details className="text-sm">
+          <summary className="cursor-pointer font-medium text-primary">{t("Details")}</summary>
+          <div className="mt-3 space-y-3">
+            <p className="text-xs text-muted-foreground">{t("Requested period")}: <bdi>{dateTime(data.requestedStart)}</bdi> — <bdi>{dateTime(data.requestedEnd)}</bdi></p>
+            {comparable && <div className="space-y-2 text-xs text-muted-foreground">
+              <p>{t("Same members compares the accounts present in both records. Added and left show the trophies of members present in only the last or first record.")}</p>
+              <p>{t("This compares two rosters, not every join or departure between them. Account changes can include play outside the club and are not a participation score.")}</p>
+            </div>}
+            {data.points.length > 0 && <div className="max-h-56 max-w-full overflow-auto rounded-md border" tabIndex={0} role="region" aria-label={t("Recorded daily roster totals")}>
+              <table className="w-full min-w-[34rem] text-start text-xs">
+                <caption className="p-2 text-start text-muted-foreground">{t("Recorded daily roster totals")}</caption>
+                <thead><tr>
+                  <th scope="col" className="p-2 text-start">{t("Day (UTC)")}</th>
+                  <th scope="col" className="p-2 text-start">{t("Last observed (local time)")}</th>
+                  <th scope="col" className="p-2 text-end">{t("Trophies")}</th>
+                  <th scope="col" className="p-2 text-end">{t("Members")}</th>
+                </tr></thead>
+                <tbody>{data.points.map(point => <tr key={point.day} className="border-t">
+                  <td className="whitespace-nowrap p-2"><bdi>{date(`${point.day}T00:00:00Z`, { dateStyle: "medium", timeZone: "UTC" })}</bdi></td>
+                  <td className="whitespace-nowrap p-2"><bdi>{dateTime(point.observedAt)}</bdi></td>
+                  <td className="p-2 text-end tabular-nums"><bdi>{number(point.totalTrophies)}</bdi></td>
+                  <td className="p-2 text-end tabular-nums">{number(point.members)}</td>
+                </tr>)}</tbody>
+              </table>
+            </div>}
+          </div>
+        </details>
+      </>}
+    </CardContent>
+  </Card>;
 }

@@ -5,7 +5,6 @@ export const arClubRivals:Record<string,string>={
   "No positive trophy gain recorded for this period.": "لم تُسجل زيادة كؤوس موجبة لهذه الفترة.",
   "Trophy progress coverage: {known}/{total} members": "تغطية تقدم الكؤوس: {known}/{total} عضوًا",
   "Limited observations": "رصد محدود",
-  "Roster comparison period": "فترة مقارنة التشكيلة",
 
   "Application trophy requirement": "شرط الكؤوس لطلب الانضمام",
   "Observed win share": "نسبة الانتصارات المرصودة",

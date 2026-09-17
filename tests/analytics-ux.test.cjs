@@ -8,7 +8,7 @@ const mocks = {
   'next/dynamic': () => 'Chart',
   '@/components/time-range-picker': { TimeRangePicker: 'PeriodPicker' },
   '@/components/club-activity-calendar': { ClubActivityCalendar: 'Calendar' },
-  '@/components/club-growth-period': { ClubGrowthPeriod: 'GrowthPeriod' },
+  '@/components/club-growth': { ClubGrowth: 'Growth' },
   '@/components/club-report-card': { ClubReportCard: 'ReportImage' },
   '@/components/ui/tabs': Object.fromEntries(['Tabs', 'TabsContent', 'TabsList', 'TabsTrigger'].map(name => [name, name])),
   '@/components/ui/table': Object.fromEntries(['Table', 'TableBody', 'TableCell', 'TableHead', 'TableHeader', 'TableRow'].map(name => [name, name])),
@@ -43,34 +43,43 @@ test('activity chooses one workflow at a time and preserves its independent peri
   assert.equal(elements(tree).find(node => node.type === 'PeriodPicker').props.value, '30d');
 });
 
-test('report and roster growth periods stay separate and responsive charts only mount in an open panel', async () => {
-  const renderer = hookRenderer();
+test('club trophy changes share the report period and responsive charts only mount in an open panel', async () => {
+  const renderer = hookRenderer(), requests = [];
   const report = { generatedAt: '2026-09-17T12:00:00Z', period: { start: '2026-09-11', end: '2026-09-17' },
     summary: { totalMembers: 30, totalTrophies: 90000, avgTrophies: 3000, activeMembers: 10, activityRate: 33, weeklyWins: 5, weeklyBattles: 10, weeklyWinRate: 50 },
     activityDistribution: { active: 10, minimal: 10, inactive: 10 }, topGainers: [], topLosers: [], recentEvents: [],
     trophyTrend: [{ date: '2026-09-16', trophies: null }, { date: '2026-09-17', trophies: 90000 }] };
+  const growthByRange = Object.fromEntries(['24h', '3d', '7d', '30d', '90d'].map(range => [range, { marker: range }]));
   const Page = loadTypeScript('src/app/reports/page.tsx', { ...mocks, react: renderer.react,
-    '@/lib/client-data-cache': { fetchJsonCached: async () => report },
+    '@/lib/client-data-cache': { fetchJsonCached: async url => {
+      requests.push(url);
+      return { ...report, trophyChange: growthByRange[new URL(url, 'https://club.test').searchParams.get('range')] };
+    } },
   }, { window: windowMock }).default;
   let tree = await renderer.render(Page);
-  assert.equal(elements(tree).some(node => node.type === 'Chart' || node.type === 'GrowthPeriod'), false);
+  assert.equal(elements(tree).some(node => node.type === 'Chart'), false);
   assert.ok(elements(tree).some(node => node.type === 'ReportImage'));
-  elements(tree).find(node => node.type === 'PeriodPicker').props.onChange('30d'); tree = await renderer.render(Page);
+  assert.equal(elements(tree).find(node => node.type === 'Growth').props.data, growthByRange['7d']);
+  assert.doesNotMatch(textContent(tree), /Roster growth|Period report|Roster comparison period/);
+  for (const range of ['24h', '3d', '7d', '30d', '90d']) {
+    elements(tree).find(node => node.type === 'PeriodPicker').props.onChange(range); tree = await renderer.render(Page);
+    assert.equal(elements(tree).filter(node => node.type === 'PeriodPicker').length, 1);
+    assert.equal(elements(tree).find(node => node.type === 'PeriodPicker').props.value, range);
+    assert.equal(elements(tree).find(node => node.type === 'Growth').props.data, growthByRange[range]);
+    assert.equal(requests.at(-1), `/api/reports/weekly?range=${range}`);
+  }
+  assert.ok(requests.every(url => url.startsWith('/api/reports/weekly?range=')));
   disclosure(tree, 'Charts and current roster details').props.onToggle({ currentTarget: { open: true } }); tree = await renderer.render(Page);
   assert.equal(disclosure(tree, 'Charts and current roster details').props.open, true);
   assert.equal(elements(tree).filter(node => node.type === 'Chart').length, 2);
   const trophyChart = elements(tree).find(node => node.type === 'Chart' && node.props.points);
   assert.equal(trophyChart.props.points[0].trophies, null); assert.equal(trophyChart.props.dayBased, true);
-  action(tree, 'Roster growth')(); tree = await renderer.render(Page);
-  assert.equal(elements(tree).some(node => node.type === 'PeriodPicker' || node.type === 'Chart' || node.type === 'ReportImage'), false);
-  elements(tree).find(node => node.type === 'GrowthPeriod').props.onChange('90d'); tree = await renderer.render(Page);
-  action(tree, 'Period report')(); tree = await renderer.render(Page);
-  assert.equal(elements(tree).find(node => node.type === 'PeriodPicker').props.value, '30d');
+  assert.equal(elements(tree).find(node => node.type === 'PeriodPicker').props.value, '90d');
+  assert.ok(elements(tree).some(node => node.type === 'ReportImage'));
+  assert.equal(elements(tree).find(node => node.type === 'Growth').props.data, growthByRange['90d']);
   assert.equal(disclosure(tree, 'Charts and current roster details').props.open, true);
   disclosure(tree, 'Charts and current roster details').props.onToggle({ currentTarget: { open: false } }); tree = await renderer.render(Page);
   assert.equal(elements(tree).some(node => node.type === 'Chart'), false);
-  action(tree, 'Roster growth')(); tree = await renderer.render(Page);
-  assert.equal(elements(tree).find(node => node.type === 'GrowthPeriod').props.range, '90d');
 });
 
 test('calendar keeps uncertainty visible while its explanatory legend starts collapsed', async () => {
@@ -100,6 +109,6 @@ test('trend disclosure preserves actual timestamps and separates unknown observa
 
 test('analytics simplification labels have Arabic translations', () => {
   const dictionary = loadTypeScript('src/lib/i18n/ar-ux-analytics.ts').default;
-  for (const key of ['Daily activity', 'Member rankings', 'Reading this calendar', 'Roster growth', 'Period report', 'How retention is counted', 'Understanding member history'])
+  for (const key of ['Daily activity', 'Member rankings', 'Reading this calendar', 'How retention is counted', 'Understanding member history'])
     assert.match(dictionary[key], /[\u0600-\u06ff]/);
 });
