@@ -11,21 +11,24 @@ function rendererWithUnmount() {
     base.react.useEffect(() => { const cleanup = callback(); if (cleanup) cleanups.add(cleanup); return () => { cleanups.delete(cleanup); cleanup?.(); }; }, dependencies);
   } }, unmount() { for (const cleanup of cleanups) cleanup(); cleanups.clear(); } };
 }
-function harness(response) {
+function harness(response, query = "") {
   const main = rendererWithUnmount(), requests = [];
   let active = main;
   const react = new Proxy({}, { get: (_, key) => (...args) => active.react[key](...args) });
   const Page = loadTypeScript("src/app/recruitment/page.tsx", {
     ...componentMocks, react,
+    "next/navigation": { useSearchParams: () => new URLSearchParams(query) },
+    "@/components/recruitment-comparison": { RecruitmentComparison: "RecruitmentComparison" },
     "@/lib/client-fetch": { fetchJsonWithTimeout: async (url, options = {}) => {
       const request = { url, method: options.method || "GET", signal: options.signal, body: options.body && JSON.parse(options.body) };
       requests.push(request); return response(request, requests);
     } },
   }).default;
-  const workspace = elements(Page()).find(node => node.type?.name === "RecruitmentWorkspace").type;
+  const entry = elements(Page()).find(node => node.type?.name === "RecruitmentEntry").type;
+  const workspace = elements(entry()).find(node => node.type?.name === "RecruitmentWorkspace");
   return {
     requests, unmount: () => main.unmount(),
-    render() { active = main; return main.render(workspace); },
+    render() { active = main; return main.render(() => workspace.type(workspace.props)); },
     mountCard(element) {
       const child = rendererWithUnmount(); let props = element.props;
       return { unmount: () => child.unmount(), setProps(next) { props = next; }, render() { active = child; return child.render(() => element.type(props)); } };
@@ -142,4 +145,26 @@ test("candidate filters hide rather than unmount a card with a private draft",as
   assert.match(textContent(tree),/No candidates match these filters/);
   elements(tree).find(node=>node.type==='Input'&&node.props.max===2000000).props.onChange({target:{value:'0'}});tree=await page.render();
   editor.setProps(card(tree).props);form=await editor.render();assert.equal(textarea(form).props.value,'Draft kept through filters');
+});
+
+test("comparison links carry both players and the period into the private workspace", async () => {
+  const page = harness(() => ({ candidates: [candidate()] }), "view=comparison&member=%23A&candidate=%23PYLQ&range=30d");
+  const tree = await page.render(), comparison = elements(tree).find(node => node.type === "RecruitmentComparison");
+  assert.equal(comparison.props.active, true);
+  assert.deepEqual(JSON.parse(JSON.stringify(comparison.props.initialSelection)), { memberTag: "#A", candidateTag: "#PYLQ", range: "30d" });
+  assert.equal(elements(tree).find(node => node.type === "section" && elements(node).some(child => child.type?.name === "CandidateCard")).props.hidden, true);
+});
+
+test("candidate comparison and Add candidate return to the existing form without losing private drafts", async () => {
+  const page = harness(() => ({ candidates: [candidate()] }));
+  let tree = await page.render(); const original = card(tree), editor = page.mountCard(original);
+  let form = await editor.render(); textarea(form).props.onChange({ target: { value: "Private draft retained" } }); form = await editor.render();
+  action(form, "Compare")(); tree = await page.render(); let comparison = elements(tree).find(node => node.type === "RecruitmentComparison");
+  assert.equal(comparison.props.active, true); assert.equal(comparison.props.initialSelection.candidateTag, "#PYLQ");
+  const firstKey = comparison.key; comparison.props.onAddCandidate(); tree = await page.render();
+  assert.equal(elements(tree).find(node => node.type === "RecruitmentComparison").props.active, false);
+  editor.setProps(card(tree).props); form = await editor.render(); assert.equal(textarea(form).props.value, "Private draft retained");
+  action(form, "Compare")(); tree = await page.render(); comparison = elements(tree).find(node => node.type === "RecruitmentComparison");
+  assert.notEqual(comparison.key, firstKey, "An explicit same-candidate jump reinitializes the selection after Back to roster review");
+  assert.equal(page.requests.length, 1, "Opening comparison does not write candidate profiles automatically");
 });

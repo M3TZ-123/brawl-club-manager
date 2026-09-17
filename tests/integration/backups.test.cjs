@@ -38,7 +38,7 @@ test("encrypted backup restores actual schema, rows and private permissions into
   `);
   for (const filename of (await fs.readdir(path.join(root, "supabase/migrations"))).filter(name => /^20260916\d{4}_.*\.sql$/.test(name)).sort()) await client.query(await fs.readFile(path.join(root, "supabase/migrations", filename), "utf8"));
   await client.query(`
-    INSERT INTO public.settings(key,value) VALUES('club_tag','#CLUB') ON CONFLICT(key) DO UPDATE SET value=excluded.value;
+    INSERT INTO public.settings(key,value) VALUES('club_tag','#CLUB'),('last_roster_sync_time',now()::text) ON CONFLICT(key) DO UPDATE SET value=excluded.value;
     INSERT INTO public.sync_ranked_fallback_attempts(club_tag,player_tag,attempted_at) VALUES('#CLUB','#PLAYER',now());
     UPDATE public.members SET rank_current='Diamond I',rank_highest='Mythic I',ranked_points=3417,
       ranked_all_time_best_points=4678,ranked_season_id=48,ranked_season_best='Diamond II',ranked_season_best_points=3505,
@@ -237,6 +237,9 @@ test("encrypted backup restores actual schema, rows and private permissions into
     for(const rpc of ['report_dashboard_read','report_leaderboard_read']) {
       assert.ok(Array.isArray((await client.query(`SELECT public.${rpc}(7,now()) x`)).rows[0].x.members));
     }
+    const comparison = (await client.query("SELECT public.member_comparison_read('#CLUB',7,now()) x")).rows[0].x;
+    assert.equal(comparison.clubTag,'#CLUB'); assert.ok(Array.isArray(comparison.members)); assert.equal(comparison.candidates.length,1);
+    assert.doesNotMatch(JSON.stringify(comparison),/private-member-owner|private-test-key|ملاحظة ترشيح خاصة|سبب مغادرة خاص/);
     assert.equal((await client.query("SELECT possible_gap FROM public.sync_battle_coverage_summary('#CLUB',ARRAY['#PLAYER'])")).rows[0].possible_gap, true);
     assert.equal((await client.query("SELECT owner_user_id,normalized_owner FROM public.profiles")).rows[0].owner_user_id, "owner-A");
     assert.equal((await client.query("SELECT normalized_owner FROM public.profiles")).rows[0].normalized_owner, "OWNER-A");
@@ -267,7 +270,7 @@ test("encrypted backup restores actual schema, rows and private permissions into
           await assert.rejects(client.query(`SELECT * FROM public.${name}`),error=>error.code==='42501');
           await assert.rejects(client.query(`DELETE FROM public.${name}`),error=>error.code==='42501');
         }
-        for(const query of ["SELECT public.member_inactivity_exempt('#CLUB','#PLAYER',now())","SELECT public.club_intelligence_read(7,now())","SELECT public.club_planning_refresh_goals('#CLUB')","SELECT public.claim_club_rival('#PYLQ','#GGRR','00000000-0000-4000-8000-000000000001')"])
+        for(const query of ["SELECT public.member_inactivity_exempt('#CLUB','#PLAYER',now())","SELECT public.club_intelligence_read(7,now())","SELECT public.club_planning_refresh_goals('#CLUB')","SELECT public.claim_club_rival('#PYLQ','#GGRR','00000000-0000-4000-8000-000000000001')","SELECT public.member_comparison_read('#CLUB',7,now())"])
           await assert.rejects(client.query(query),error=>error.code==='42501');
         assert.deepEqual(Object.keys((await client.query("SELECT * FROM public.club_sync_signals")).rows[0]).sort(),['completed_at','datasets','id','version']);
         await assert.rejects(client.query('UPDATE public.club_sync_signals SET version=NULL,completed_at=NULL'),error=>error.code==='42501');

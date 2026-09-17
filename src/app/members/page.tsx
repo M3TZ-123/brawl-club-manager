@@ -853,6 +853,7 @@ export default function MembersPage() {
               <div className="mt-6 space-y-5">
                 {!currentSelectedMember && <p role="status" className="text-sm text-muted-foreground"><T text="This member is no longer in the current roster. Showing their last loaded details." /></p>}
                 <MemberReviewButton prominent member={selectedMember} initialRange={timeRange} />
+                {isAdmin && currentSelectedMember && <Button asChild variant="outline" size="sm"><Link href={`/recruitment?view=comparison&member=${encodeURIComponent(selectedMember.player_tag)}&range=${timeRange === "30d" || timeRange === "90d" ? timeRange : "7d"}`}><T text="Compare with a member or candidate" /></Link></Button>}
                 <div className="flex flex-wrap items-center gap-2">
                   <Badge variant="secondary">{<T text={clubRoleLabel(selectedMember.role)} />}</Badge>
                   <span className={cn("rounded-full border px-2.5 py-0.5 text-xs font-semibold", getActivityClass(getActivityStatus(selectedMember)))}>

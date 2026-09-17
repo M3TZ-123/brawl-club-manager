@@ -215,6 +215,7 @@ test("visitor member details expose the notes entry point while sync controls st
   assert.equal(elements(tree).some(element => element.type === "MemberReviewButton"), true);
   assert.doesNotMatch(textContent(tree), /Sync Now/);
   assert.equal(elements(tree).some(element => element.type === "Link" && element.props.href === "/reviews"), false);
+  assert.equal(elements(tree).some(element => element.type === "Link" && element.props.href?.startsWith("/recruitment?view=comparison")), false);
   const adminPage = pageHarness({ isAdmin: true });
   tree = await adminPage.render();
   find(tree, "TimeRangePicker").props.onChange("30d"); tree = await adminPage.render();
@@ -223,6 +224,7 @@ test("visitor member details expose the notes entry point while sync controls st
   assert.match(textContent(tree), /Sync Now/);
   assert.equal(elements(tree).some(element => element.type === "Link" && element.props.href === "/reviews"), true);
   assert.equal(find(tree, "MemberReviewButton").props.prominent, true);
+  assert.equal(elements(tree).some(element => element.type === "Link" && element.props.href === "/recruitment?view=comparison&member=%23Alpha&range=30d"), true);
   assert.doesNotMatch(textContent(tree), /Member reviews/);
 });
 

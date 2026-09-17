@@ -1,5 +1,6 @@
 "use client";
-import { FormEvent, useCallback, useEffect, useRef, useState } from "react";
+import { FormEvent, Suspense, useCallback, useEffect, useRef, useState } from "react";
+import { useSearchParams } from "next/navigation";
 import { UserPlus } from "lucide-react";
 import { AdminGate } from "@/components/admin-gate";
 import { LayoutWrapper } from "@/components/layout-wrapper";
@@ -13,11 +14,12 @@ import { RecruitmentApplications } from "@/components/recruitment-applications";
 import { recruitmentFit } from "@/lib/recruitment-fit";
 import type { ClubAdministration } from "@/lib/club-administration-data";
 import type { CandidateCompatibility } from "@/lib/recruitment-data";
+import { RecruitmentComparison, type ComparisonSelection } from "@/components/recruitment-comparison";
 
 const statusLabels = { watching:"Watching",shortlisted:"Shortlisted",contacted:"Contacted",joined:"Joined",archived:"Archived" };
 const emptyCompatibility:CandidateCompatibility={language:"unknown",time:"unknown",languages:"",availability:""};
 const fitLabels:Record<string,string>={met:"Meets criterion",not_met:"Does not meet criterion",unknown:"Unknown",not_required:"Not required"};
-function CandidateCard({candidate,onChange,onError,criteria}:{candidate:Candidate;onChange:(value:Candidate)=>void;onError:(value:string)=>void;criteria?:ClubAdministration|null}) {
+function CandidateCard({candidate,onChange,onError,onCompare,criteria}:{candidate:Candidate;onChange:(value:Candidate)=>void;onError:(value:string)=>void;onCompare:(tag:string)=>void;criteria?:ClubAdministration|null}) {
   const {t,number,dateTime} = useI18n();
   const [draft,setDraft] = useState({ baseline: candidate, notes: candidate.notes, status: candidate.status, manual:candidate.manual_compatibility??emptyCompatibility });
   const [busy,setBusy] = useState(false);
@@ -47,7 +49,7 @@ function CandidateCard({candidate,onChange,onError,criteria}:{candidate:Candidat
   return <article className="border rounded-lg bg-card p-5 space-y-4">
     <div className="flex flex-wrap justify-between gap-2"><div><h2 className="font-bold text-lg break-words">{p?.name || candidate.player_tag}</h2><p className="text-xs text-muted-foreground" dir="ltr">{candidate.player_tag}</p></div><span className="text-xs text-muted-foreground">{t(statusLabels[candidate.status])}</span></div>
     {p ? <dl className="grid grid-cols-2 gap-3 text-sm"><div><dt className="text-muted-foreground">{t("Trophies")}</dt><dd>{number(p.trophies)}</dd></div><div><dt className="text-muted-foreground">{t("Highest trophies")}</dt><dd>{number(p.highestTrophies)}</dd></div><div><dt className="text-muted-foreground">{t("Power 11 brawlers")}</dt><dd>{number(p.power11)} / {number(p.brawlers)}</dd></div><div><dt className="text-muted-foreground">{t("Ranked")}</dt><dd>{p.rank ? t(p.rank) : t("Unknown")}{p.rankedPoints !== null ? ` · ${number(p.rankedPoints)}` : ""}</dd></div>{p.clubName && <div className="col-span-2"><dt className="text-muted-foreground">{t("Club")}</dt><dd>{p.clubName}</dd></div>}</dl> : <p className="text-sm text-muted-foreground">{t("Load this player's public profile to compare them")}</p>}
-    <Button variant="outline" size="sm" disabled={busy} onClick={()=>void refresh()}>{t("Load profile")}</Button>
+    <div className="flex flex-wrap gap-2"><Button variant="outline" size="sm" disabled={busy} onClick={()=>void refresh()}>{t("Load profile")}</Button><Button variant="outline" size="sm" disabled={busy} onClick={()=>onCompare(candidate.player_tag)}>{t("Compare")}</Button></div>
     <details className="border-t pt-3"><summary className="cursor-pointer text-sm font-medium text-primary">{t("Review candidate")}</summary><div className="mt-3 space-y-3">
     {candidate.profile_checked_at && <p className="text-xs text-muted-foreground">{t("Profile checked")}: {dateTime(candidate.profile_checked_at)}</p>}
     {criteria&&<details className="text-sm"><summary className="cursor-pointer">{t("Compare with club requirements")}</summary><div className="mt-2 space-y-1">{recruitmentFit({...candidate,manual_compatibility:manual},criteria).map(row=><p key={row.key}>{t(row.label)}: {t(fitLabels[row.status])}</p>)}<p className="text-xs text-muted-foreground">{t("Profile criteria use the last checked profile. Language and time compatibility are assessed manually; no commitment score is inferred.")}</p></div></details>}
@@ -63,14 +65,17 @@ function CandidateCard({candidate,onChange,onError,criteria}:{candidate:Candidat
     </div></details>
   </article>;
 }
-function RecruitmentWorkspace() {
+function RecruitmentWorkspace({initialComparison}:{initialComparison?:ComparisonSelection}={}) {
   const {t,number} = useI18n();
   const [candidates,setCandidates] = useState<Candidate[] | null>(null),[error,setError] = useState(""),[tag,setTag] = useState(""),[busy,setBusy] = useState(false);
   const [loading,setLoading] = useState(true);
   const sequence = useRef(0), listRequest = useRef(0), controller = useRef<AbortController | null>(null), pendingAdd = useRef(false);
   const [minimum,setMinimum] = useState(0),[power,setPower] = useState(0),[archived,setArchived] = useState(false);
   const [criteria,setCriteria]=useState<ClubAdministration|null>(null);
-  const [view,setView]=useState<"candidates"|"applications"|"settings">("candidates"),[applicationsOpened,setApplicationsOpened]=useState(false);
+  const [view,setView]=useState<"candidates"|"applications"|"settings"|"comparison">(initialComparison?"comparison":"candidates"),[applicationsOpened,setApplicationsOpened]=useState(false);
+  const [comparisonOpened,setComparisonOpened]=useState(Boolean(initialComparison)),[comparisonSelection,setComparisonSelection]=useState<ComparisonSelection|undefined>(initialComparison);
+  const [comparisonRevision,setComparisonRevision]=useState(0);
+  const compareCandidate=(candidateTag:string)=>{setComparisonSelection({candidateTag});setComparisonRevision(value=>value+1);setComparisonOpened(true);setView("comparison");};
   const readList = useCallback((current: AbortController) => {
     const request = ++sequence.current; listRequest.current = request;
     return fetchJsonWithTimeout<{candidates:Candidate[]}>("/api/recruitment",{cache:"no-store",signal:current.signal}).then(data=>{
@@ -99,7 +104,7 @@ function RecruitmentWorkspace() {
   const visibleTags=new Set(rows.map(candidate=>candidate.player_tag));
   return <div className="space-y-5">
     <header><h1 className="text-3xl font-bold flex gap-3 items-center"><UserPlus className="text-primary" />{t("Recruitment")}</h1><p className="text-sm text-muted-foreground mt-2">{t("Review potential members and incoming applications in one place.")}</p></header>
-    <div className="flex flex-wrap gap-2" role="group" aria-label={t("Recruitment view")}>{([["candidates","Candidates"],["applications","Applications"],["settings","Recruitment settings"]] as const).map(([key,label])=><Button key={key} variant={view===key?"default":"outline"} aria-pressed={view===key} onClick={()=>{setView(key);if(key==="applications")setApplicationsOpened(true);}}>{t(label)}</Button>)}</div>
+    <div className="flex flex-wrap gap-2" role="group" aria-label={t("Recruitment view")}>{([["candidates","Candidates"],["applications","Applications"],["comparison","Comparison"],["settings","Recruitment settings"]] as const).map(([key,label])=><Button key={key} variant={view===key?"default":"outline"} aria-pressed={view===key} onClick={()=>{setView(key);if(key==="applications")setApplicationsOpened(true);if(key==="comparison")setComparisonOpened(true);}}>{t(label)}</Button>)}</div>
     <section hidden={view!=="settings"}><ClubAdministrationSettings onChange={setCriteria}/></section>
     <section hidden={view!=="candidates"} className="space-y-4">
     <form onSubmit={add} className="flex flex-wrap items-end gap-3"><label className="text-sm flex-1 min-w-48">{t("Player tag")}<Input value={tag} disabled={busy} onChange={e=>setTag(e.target.value)} maxLength={20} placeholder="#..." dir="ltr" className="mt-1" required /></label><Button disabled={busy || candidates === null || !tag.trim()}>{t("Add candidate")}</Button><Button type="button" variant="outline" disabled={loading} onClick={()=>void reload()}>{t("Reload list")}</Button></form>
@@ -108,10 +113,13 @@ function RecruitmentWorkspace() {
     {loading && <p role="status">{t("Loading...")}</p>}{candidates !== null && <p className="text-sm text-muted-foreground">{t("{count} candidates",{count:rows.length})}</p>}
     {candidates?.length===0 && <p className="rounded-lg border border-dashed p-5 text-sm text-muted-foreground">{t("Add a player tag to start your private watchlist")}</p>}
     {candidates && candidates.length>0 && !rows.length && <p>{t("No candidates match these filters")}</p>}
-    <div className="grid md:grid-cols-2 xl:grid-cols-3 gap-4">{candidates?.map(c=><div key={c.player_tag} hidden={!visibleTags.has(c.player_tag)}><CandidateCard key={c.player_tag} candidate={c} criteria={criteria} onError={setError} onChange={mergeCandidate} /></div>)}</div>
+    <div className="grid md:grid-cols-2 xl:grid-cols-3 gap-4">{candidates?.map(c=><div key={c.player_tag} hidden={!visibleTags.has(c.player_tag)}><CandidateCard key={c.player_tag} candidate={c} criteria={criteria} onError={setError} onChange={mergeCandidate} onCompare={compareCandidate} /></div>)}</div>
     <details className="text-xs text-muted-foreground"><summary className="cursor-pointer">{t("About the watchlist")}</summary><p className="mt-2">{t("Contact and invitation status are entered manually. Profile updates are shared for one hour.")}</p><p className="mt-1">{number(candidates?.length||0)} / {number(100)}</p></details>
     </section>
     <section hidden={view!=="applications"}>{applicationsOpened&&<RecruitmentApplications onCandidate={()=>void reload()}/>}</section>
+    <section hidden={view!=="comparison"}>{comparisonOpened&&<RecruitmentComparison key={`${comparisonSelection?.memberTag||""}|${comparisonSelection?.candidateTag||""}|${comparisonSelection?.range||""}|${comparisonRevision}`} active={view==="comparison"} initialSelection={comparisonSelection} onAddCandidate={()=>setView("candidates")} onCandidateUpdated={mergeCandidate}/>}</section>
   </div>;
 }
-export default function RecruitmentPage(){return <LayoutWrapper><AdminGate><RecruitmentWorkspace /></AdminGate></LayoutWrapper>;}
+function RecruitmentEntry(){const params=useSearchParams();const comparison=params.get("view")==="comparison";return <RecruitmentWorkspace key={params.toString()} initialComparison={comparison?{memberTag:params.get("member")||undefined,candidateTag:params.get("candidate")||undefined,range:params.get("range")||undefined}:undefined}/>;}
+export default function RecruitmentPage(){return <LayoutWrapper><AdminGate><Suspense fallback={<p role="status"><RecruitmentLoading /></p>}><RecruitmentEntry /></Suspense></AdminGate></LayoutWrapper>;}
+function RecruitmentLoading(){const{t}=useI18n();return t("Loading...");}
