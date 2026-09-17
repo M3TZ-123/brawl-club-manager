@@ -48,7 +48,7 @@ const navigation = [
   { group:"Club", name: "Members", href: "/members", icon: Users },
   { group:"Club", name: "Member activity", href: "/activity", icon: Trophy },
   { group:"Club", name: "Battle Feed", href: "/battle-feed", icon: Swords },
-  { group:"Club", name: "Goals and events", href: "/club-planning", icon: CalendarDays },
+  { group:"Club", name: "Club events", href: "/club-planning", icon: CalendarDays },
   { group:"More club tools", name: "Reports", href: "/reports", icon: FileText },
   { group:"More club tools", name: "History", href: "/history", icon: History },
   { group:"More club tools", name: "Analysis", href: "/analysis", icon: BarChart3 },

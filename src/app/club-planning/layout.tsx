@@ -1,8 +1,8 @@
 import type { Metadata } from "next";
 
 export const metadata: Metadata = {
-  title: "Club Goals and Events",
-  description: "Plan club goals, teams and events.",
+  title: "Club events",
+  description: "Follow Mega Pig and organize club events.",
   alternates: { canonical: "/club-planning" }
 };
 

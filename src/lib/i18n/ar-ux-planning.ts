@@ -1,4 +1,11 @@
 const arUxPlanning: Record<string, string> = {
+  "Club events": "فعاليات النادي",
+  "Follow Mega Pig and organize club events.": "تابع Mega Pig ونظّم فعاليات النادي.",
+  "Optional goals": "أهداف اختيارية",
+  "Optional challenges for trophy gains or basic activity.": "تحديات اختيارية لزيادة الكؤوس أو متابعة النشاط الأساسي.",
+  "Sign in to view Mega Pig and manage events": "سجّل الدخول لعرض Mega Pig وإدارة الفعاليات",
+  "Manage club events": "إدارة فعاليات النادي",
+  "View Mega Pig history, organize teams and save event results.": "اطّلع على سجل Mega Pig ونظّم الفرق واحفظ نتائج الفعاليات.",
   "This creation was already saved with different details. Check the goals and events before creating another.": "سبق حفظ هذه العملية بتفاصيل مختلفة. راجع الأهداف والفعاليات قبل إنشاء واحدة أخرى.",
   "This candidate was edited elsewhere. Your draft is preserved; load the saved candidate before saving again.": "عُدّل هذا المرشح من مكان آخر. مسودتك محفوظة؛ حمّل النسخة المحفوظة قبل الحفظ مجددًا.",
   "Discard draft and load saved candidate": "تجاهل المسودة وتحميل المرشح المحفوظ",

@@ -16,7 +16,6 @@ import { StatsCards } from "@/components/stats-cards";
 import { ActivityTimeline } from "@/components/activity-timeline";
 import { ClubIdentity } from "@/components/club-identity";
 import { ClubStrength } from "@/components/club-strength";
-import { ClubGoalsOverview } from "@/components/club-goals-overview";
 import { ClubJoinSummary } from "@/components/club-join-summary";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -169,12 +168,11 @@ export default function DashboardPage() {
         <Card><CardHeader><CardTitle className="flex items-center gap-2 text-base"><ArrowUpRight className="h-5 w-5 text-green-500" />{t("Top trophy gains")}</CardTitle></CardHeader>
           <CardContent><MemberSignalList members={dashboard.topGainers || []} range={range} emptyText={dashboard.summary?.trophyProgressKnownMembers === 0 && dashboard.summary.totalMembers > 0 ? "Not enough history to compare trophies for this period." : "No positive trophy progress recorded for this period."} /></CardContent></Card>
       </div>
-      <ClubGoalsOverview hideWhenEmpty />
       <div className="grid gap-4 lg:grid-cols-2">
         <ActivityTimeline events={(dashboard.recentEvents || []).slice(0, 4)} />
         <nav aria-label={t("Club shortcuts")} className="grid content-start gap-3">{([
           ["/members", "Open Members", "Find a member, check activity or add a note."],
-          ["/club-planning", "Goals and events", "Set a goal or prepare the next club event."],
+          ["/club-planning", "Club events", "Follow Mega Pig and organize club events."],
           ["/history", "History", "See who joined, left or returned."],
         ] as const).map(([href, title, description]) => <Link key={href} href={href} className="rounded-lg border bg-card p-4 transition-colors hover:bg-accent"><p className="font-medium">{t(title)}</p><p className="mt-1 text-sm text-muted-foreground">{t(description)}</p></Link>)}</nav>
       </div>

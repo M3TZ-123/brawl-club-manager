@@ -66,7 +66,7 @@ test('changing a goal or event URL immediately hides the previous record while t
 });
 test('public planning workspace hides editors and exposes only public summary actions',async()=>{
   const renderer=hookRenderer();const resources={goals:[],events:[],roster:[{tag:'#PRIVATE',name:'Should not be rendered'}]};const{PlanningWorkspace}=loadTypeScript('src/app/club-planning/page.tsx',{...componentMocks,react:renderer.react,'@/hooks/use-admin-session':{useAdminSession:()=>({isAdmin:false})},'@/lib/client-fetch':{fetchJsonWithTimeout:async()=>resources}}, {window:windowMock});
-  const tree=await renderer.render(()=>PlanningWorkspace({isAdmin:false}));assert.doesNotMatch(textContent(tree),/Should not be rendered/);assert.match(textContent(tree),/Sign in to plan goals and events/);assert.equal(elements(tree).filter(e=>e.type==='form').length,0);
+  const tree=await renderer.render(()=>PlanningWorkspace({isAdmin:false}));assert.doesNotMatch(textContent(tree),/Should not be rendered/);assert.match(textContent(tree),/Sign in to view Mega Pig and manage events/);assert.equal(elements(tree).filter(e=>e.type==='form').length,0);
 });
 test('changing administrator access remounts the planning workspace instead of retaining private drafts',async()=>{
   const renderer=hookRenderer();let isAdmin=true;

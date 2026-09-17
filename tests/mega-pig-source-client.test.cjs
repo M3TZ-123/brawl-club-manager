@@ -123,7 +123,8 @@ test("source panel is available without a planned cycle only in the admin Events
       "@/components/club-event-editor": { ClubEventEditor: "EventEditor" },
       "@/lib/club-planning-client": { eventKindLabels: {}, usePlanningResource: () => ({ data: { goals: [], events: [], roster: [] }, error: null, loading: false, reload: async () => true }) },
     }, { window: browser });
-    const render = () => renderer.render(() => PlanningWorkspace({ isAdmin })); let tree = await render(); assert.equal(elements(tree).some(node => node.type === "MegaPigSourcePanel"), false);
+    const render = () => renderer.render(() => PlanningWorkspace({ isAdmin })); let tree = await render(); assert.equal(elements(tree).some(node => node.type === "MegaPigSourcePanel"), isAdmin);
+    action(tree, "Optional goals")(); tree = await render(); assert.equal(elements(tree).some(node => node.type === "MegaPigSourcePanel"), false);
     action(tree, "Events")(); tree = await render(); assert.equal(elements(tree).some(node => node.type === "MegaPigSourcePanel"), isAdmin);
     assert.match(textContent(tree), /No club events have been planned yet/);
     if (isAdmin) { action(tree, "Plan event")(); tree = await render(); assert.equal(elements(tree).some(node => node.type === "MegaPigSourcePanel"), false); elements(tree).find(node => node.type === "EventEditor").props.onCancel(); tree = await render(); assert.ok(elements(tree).some(node => node.type === "MegaPigSourcePanel")); }
