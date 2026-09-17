@@ -19,7 +19,7 @@ const privateClubFunctions = new Set([
   "save_club_administration", "append_member_decision", "declare_member_absence", "cancel_member_absence",
   "member_inactivity_exempt", "submit_recruitment_application", "review_recruitment_application", "save_recruitment_candidate_details",
   "club_planning_roster_ready", "club_planning_create_goal", "club_planning_archive_goal", "club_planning_refresh_goals",
-  "club_planning_save_event", "save_club_rival", "claim_club_rival", "finish_club_rival", "capture_club_rank_history", "club_planning_create_once", "member_comparison_read",
+  "club_planning_save_event", "save_club_rival", "claim_club_rival", "finish_club_rival", "capture_club_rank_history", "club_planning_create_once", "member_comparison_read", "club_event_observations_read",
 ]);
 
 function validateRestoreTarget(connectionString) {

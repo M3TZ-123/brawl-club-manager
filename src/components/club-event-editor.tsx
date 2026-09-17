@@ -4,6 +4,7 @@ import { useState } from "react";
 import { useI18n } from "@/components/locale-provider";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { ClubEventObservationsPanel } from "@/components/club-event-observations";
 import { attendanceLabels,eventKindLabels,inputDate,localDateInput,usePlanningMutation } from "@/lib/club-planning-client";
 import { eventKinds,type EventEntry,type EventFields,type PlanningEvent,type PlanningResponse } from "@/lib/club-planning-types";
 const selectClass="mt-1 block w-full min-w-0 rounded border bg-background p-2";
@@ -18,6 +19,7 @@ export function ClubEventEditor({event,data,onSaved,onCancel,onReload}:{event:Pl
   const nameFor=(tag:string)=>data.roster?.find(p=>p.tag===tag)?.name||data.eventDetail?.entries.find(p=>p.playerTag===tag)?.playerName||tag;
   const updateEntry=(index:number,patch:Partial<EventEntry>)=>setEntries(rows=>rows.map((row,i)=>i===index?{...row,...patch}:row));
   const available=(data.roster||[]).filter(p=>!entries.some(e=>e.playerTag===p.tag));
+  const observationDraftChanged=Boolean(event&&(fields.kind!==event.kind||fields.startsAt!==event.startsAt||fields.endsAt!==event.endsAt||fields.status!==event.status||entries.length!==(data.eventDetail?.entries.length||0)||entries.some(e=>!data.eventDetail?.entries.some(saved=>saved.playerTag===e.playerTag))));
   const nullable=(value:string)=>value===""?null:Number(value);
   const needsCorrection=Boolean(data.eventDetail?.entries.some(previous=>{
     if(previous.wins===null&&previous.ticketsRemaining===null&&previous.attendance!=="present"&&previous.attendance!=="absent")return false;
@@ -38,10 +40,20 @@ export function ClubEventEditor({event,data,onSaved,onCancel,onReload}:{event:Pl
       </div>
       {locked&&<p className="text-xs text-muted-foreground">{t("Recorded results lock the cycle and dates. Create a new event for the next cycle.")}</p>}
       {!locked&&hasDraftResults&&<p className="text-xs text-muted-foreground">{t("Clear the manual wins and tickets before changing the event type.")}</p>}
+      {fields.kind==="mega_pig"&&<p className="text-xs text-muted-foreground">{t("Use the dates and rules shown for this edition in the game. Tickets, targets and rewards can change; no old defaults are applied.")} {<a className="text-primary underline" href="https://supercell.com/en/games/brawlstars/blog/release-notes/release-notes-september-2025/" target="_blank" rel="noopener noreferrer">{t("Official ticket rule change")}</a>}</p>}
+      {fields.kind==="mega_pig"&&event?.status!=="cancelled"&&(event?.kind==="mega_pig"?<ClubEventObservationsPanel key={`${event.id}:${event.version}`} eventId={event.id} version={event.version} draftChanged={observationDraftChanged}/>:<p className="text-xs text-muted-foreground">{t("Save a Mega Pig event with its members to start automatic activity observations.")}</p>)}
       <details className="rounded-lg border p-3" open={entries.length>0}><summary className="cursor-pointer font-medium">{t("Teams and attendance")} · {number(entries.length)}</summary><div className="mt-4 space-y-4">
         <div className="grid gap-3 sm:grid-cols-2"><label className="block text-sm">{t("Starters per team")}<Input required type="number" min={1} max={30} value={fields.teamSize} onChange={e=>setFields({...fields,teamSize:Number(e.target.value)})}/></label>
         {fields.kind==="mega_pig"&&<label className="block text-sm">{t("Tickets per member, if known")}<Input type="number" min={0} max={1000} value={fields.ticketAllowance??""} onChange={e=>setFields({...fields,ticketAllowance:nullable(e.target.value)})}/></label>}</div>
       <div className="flex flex-wrap gap-2 items-end"><label className="text-sm flex-1 min-w-40">{t("Add a member")}<select value={addTag} className={selectClass} onChange={e=>setAddTag(e.target.value)}><option value="">{t("Choose a member")}</option>{available.map(p=><option key={p.tag} value={p.tag}>{p.name} ({p.tag})</option>)}</select></label><Button type="button" variant="outline" disabled={!addTag||entries.length>=30} onClick={()=>{setEntries([...entries,{playerTag:addTag,team:1,slot:"starter",attendance:"invited",wins:null,ticketsRemaining:null,observedAt:null,notes:""}]);setLastAdded(addTag);setAddTag("");}}>{t("Add")}</Button></div>
+      {available.length>0&&<Button type="button" variant="outline" size="sm" disabled={entries.length>=30||!Number.isInteger(fields.teamSize)||fields.teamSize<1||fields.teamSize>30} onClick={()=>{
+        const updated=[...entries];
+        for(const player of available.slice(0,30-entries.length)){
+          let team=1;while(team<30&&updated.filter(row=>row.team===team&&row.slot==="starter").length>=fields.teamSize)team++;
+          updated.push({playerTag:player.tag,team,slot:"starter",attendance:"invited",wins:null,ticketsRemaining:null,observedAt:null,notes:""});
+        }
+        setEntries(updated);setAddTag("");setLastAdded("");
+      }}>{t("Add remaining club members")}</Button>}
       <div className="space-y-2">{entries.map((entry,index)=><details key={entry.playerTag} className="rounded-md border p-3 min-w-0" open={entry.playerTag===lastAdded}>
         <summary className="cursor-pointer text-sm"><span className="font-semibold break-words">{nameFor(entry.playerTag)}</span><span className="text-muted-foreground"> · {t("Team {number}",{number:number(entry.team)})} · {t(attendanceLabels[entry.attendance])}</span></summary><div className="mt-3 space-y-3">
         <div className="flex flex-wrap gap-2 justify-between items-center"><p dir="ltr" className="text-xs text-muted-foreground">{entry.playerTag}</p><Button size="sm" type="button" variant="ghost" onClick={()=>setEntries(rows=>rows.filter(row=>row.playerTag!==entry.playerTag))} aria-label={t("Remove {name} from event",{name:nameFor(entry.playerTag)})}>{t("Remove")}</Button></div>

@@ -90,7 +90,7 @@ test("encrypted backup restores actual schema, rows and private permissions into
         sha256(convert_to('{"action":"create_goal","title":"هدف محفوظ","metric":"trophies","cycle":"weekly","endsAt":null,"target":100}'::jsonb::text,'UTF8')),
         '00000000-0000-4000-8000-000000000031');
     INSERT INTO public.club_planned_events(id,club_tag,title,kind,cycle_label,starts_at,ends_at,team_size,ticket_allowance,notes)
-      VALUES('00000000-0000-4000-8000-000000000131','#CLUB','خطة محفوظة','mega_pig','دورة معلنة',now()-interval '1 hour',now()+interval '23 hours',3,15,'تخطيط يدوي خاص');
+      VALUES('00000000-0000-4000-8000-000000000131','#CLUB','خطة محفوظة','mega_pig','دورة معلنة',now()-interval '2 hours',now()+interval '23 hours',3,15,'تخطيط يدوي خاص');
     INSERT INTO public.club_event_entries(event_id,player_tag,player_name,team,slot,attendance,wins,tickets_remaining,observed_at,notes)
       VALUES('00000000-0000-4000-8000-000000000131','#PLAYER','لاعب عربي',1,'starter','present',5,2,now(),'إدخال يدوي');
     INSERT INTO public.club_event_revisions VALUES('00000000-0000-4000-8000-000000000131',1,now(),'سجل أولي','{"event":{"title":"خطة محفوظة"},"entries":[{"playerTag":"#PLAYER","wins":5,"ticketsRemaining":2}]}');
@@ -195,6 +195,10 @@ test("encrypted backup restores actual schema, rows and private permissions into
     const exposed={...backup,manifest:{...backup.manifest,tables:backup.manifest.tables.map(table=>table.name==='recruitment_applications'?{...table,grants:[...table.grants,{role:'anon',privilege:'SELECT',grantable:false}]}:table)}};
     await assert.rejects(restoreBackup(exposed,connectionString),/Private permissions verification failed for recruitment_applications/);
     assert.equal((await client.query("SELECT count(*)::int n FROM pg_tables WHERE schemaname='public'")).rows[0].n,0,'A failed permissions check must roll back the complete restore');
+    assert.ok(backup.manifest.functions.some(fn=>fn.name==='club_event_observations_read'),'New read-only event evidence RPC must be present in the captured schema');
+    const exposedEventRpc={...backup,manifest:{...backup.manifest,functions:backup.manifest.functions.map(fn=>fn.name==='club_event_observations_read'?{...fn,grants:[...fn.grants,{role:'anon',privilege:'EXECUTE',grantable:false}]}:fn)}};
+    await assert.rejects(restoreBackup(exposedEventRpc,connectionString),/Private function permissions verification failed for club_event_observations_read/);
+    assert.equal((await client.query("SELECT count(*)::int n FROM pg_tables WHERE schemaname='public'")).rows[0].n,0,'An exposed event RPC must roll back the complete restore');
     const result = await restoreBackup(backup, connectionString);
     assert.equal(result.verified, true);
     const restoredBattle = (await client.query("SELECT trophy_change,trophy_change_reported,battle_type,event_id,event_mode_id,battle_mode,event_mode,placement_rank FROM public.battle_history")).rows[0];
@@ -240,6 +244,16 @@ test("encrypted backup restores actual schema, rows and private permissions into
     const comparison = (await client.query("SELECT public.member_comparison_read('#CLUB',7,now()) x")).rows[0].x;
     assert.equal(comparison.clubTag,'#CLUB'); assert.ok(Array.isArray(comparison.members)); assert.equal(comparison.candidates.length,1);
     assert.doesNotMatch(JSON.stringify(comparison),/private-member-owner|private-test-key|ملاحظة ترشيح خاصة|سبب مغادرة خاص/);
+    await client.query('BEGIN READ ONLY');
+    try {
+      await client.query('SET LOCAL ROLE service_role');
+      const observations=(await client.query("SELECT public.club_event_observations_read('#CLUB','00000000-0000-4000-8000-000000000131',now()) x")).rows[0].x;
+      assert.equal(observations.eventVersion,1); assert.equal(observations.members.length,1);
+      assert.equal(observations.members[0].observedBattles,1); assert.equal(observations.members[0].explicitMegaPigBattles,0);
+      assert.equal(observations.members[0].authoritativeWins,null); assert.equal(observations.members[0].ticketsRemaining,null);
+      assert.doesNotMatch(JSON.stringify(observations),/private-member-owner|private-test-key|تخطيط يدوي خاص|إدخال يدوي/);
+    } finally { await client.query('ROLLBACK'); }
+    assert.deepEqual((await client.query("SELECT wins,tickets_remaining,source FROM public.club_event_entries")).rows[0],{wins:5,tickets_remaining:2,source:'manual'},'Reading automatic evidence never overwrites the restored manual correction');
     assert.equal((await client.query("SELECT possible_gap FROM public.sync_battle_coverage_summary('#CLUB',ARRAY['#PLAYER'])")).rows[0].possible_gap, true);
     assert.equal((await client.query("SELECT owner_user_id,normalized_owner FROM public.profiles")).rows[0].owner_user_id, "owner-A");
     assert.equal((await client.query("SELECT normalized_owner FROM public.profiles")).rows[0].normalized_owner, "OWNER-A");
@@ -270,7 +284,7 @@ test("encrypted backup restores actual schema, rows and private permissions into
           await assert.rejects(client.query(`SELECT * FROM public.${name}`),error=>error.code==='42501');
           await assert.rejects(client.query(`DELETE FROM public.${name}`),error=>error.code==='42501');
         }
-        for(const query of ["SELECT public.member_inactivity_exempt('#CLUB','#PLAYER',now())","SELECT public.club_intelligence_read(7,now())","SELECT public.club_planning_refresh_goals('#CLUB')","SELECT public.claim_club_rival('#PYLQ','#GGRR','00000000-0000-4000-8000-000000000001')","SELECT public.member_comparison_read('#CLUB',7,now())"])
+        for(const query of ["SELECT public.member_inactivity_exempt('#CLUB','#PLAYER',now())","SELECT public.club_intelligence_read(7,now())","SELECT public.club_planning_refresh_goals('#CLUB')","SELECT public.claim_club_rival('#PYLQ','#GGRR','00000000-0000-4000-8000-000000000001')","SELECT public.member_comparison_read('#CLUB',7,now())","SELECT public.club_event_observations_read('#CLUB','00000000-0000-4000-8000-000000000131',now())"])
           await assert.rejects(client.query(query),error=>error.code==='42501');
         assert.deepEqual(Object.keys((await client.query("SELECT * FROM public.club_sync_signals")).rows[0]).sort(),['completed_at','datasets','id','version']);
         await assert.rejects(client.query('UPDATE public.club_sync_signals SET version=NULL,completed_at=NULL'),error=>error.code==='42501');
