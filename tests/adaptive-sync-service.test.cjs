@@ -37,7 +37,7 @@ function fixture(options = {}) {
     async getPlayerRankedData() {calls.push({name:'ranked'});return options.rank || {currentRank:'Gold I',highestRank:'Gold II',currentPoints:1500,highestPoints:1800,available:true};},
     processBattleLog:()=>{if(options.processError)throw options.processError;return [];},calculateWinRateFromBattleLog:()=>({winRate:null}),
   };
-  const service=loadTypeScript('src/lib/sync-service.ts',{'@/lib/supabase-admin':{supabaseAdmin:db},'@/lib/brawl-api':api,'@/lib/upstream-rate-limit':{getUpstreamCooldownMs:()=>0}},{console:{error(){},warn(){},log(){}}});
+  const service=loadTypeScript('src/lib/sync-service.ts',{'@/lib/supabase-admin':{supabaseAdmin:db},'@/lib/brawl-api':api,'@/lib/upstream-rate-limit':{getUpstreamCooldownMs:()=>0},'@/lib/mega-pig-source-cache':{refreshMegaPigSource:async()=>{}}},{console:{error(){},warn(){},log(){}}});
   return {service,calls,now};
 }
 

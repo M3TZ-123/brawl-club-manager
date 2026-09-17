@@ -1,0 +1,22 @@
+const arMegaPigSource: Record<string, string> = {
+  "Mega Pig counters": "عدادات Mega Pig",
+  "Reported by BrawlAce · third-party source": "بحسب BrawlAce · مصدر خارجي",
+  "Loading counters...": "جارٍ تحميل العدادات...",
+  "Mega Pig counters are unavailable. Try again later.": "عدادات Mega Pig غير متاحة حاليًا. حاول لاحقًا.",
+  "The source is being checked. Counters will appear when available.": "جارٍ التحقق من المصدر. ستظهر العدادات عند توفرها.",
+  "Reported total wins": "إجمالي الانتصارات بحسب المصدر",
+  "Players reported by source": "عدد اللاعبين بحسب المصدر",
+  "Showing saved counters; the source refresh is delayed.": "نعرض آخر عدادات محفوظة؛ تأخر تحديث المصدر.",
+  "Matched {matched} of {total} current members. Missing members have unknown counters.": "تمت مطابقة {matched} من أصل {total} عضوًا حاليًا. عدادات الأعضاء غير الموجودين في المصدر غير معروفة.",
+  "View member counters and source": "عرض عدادات الأعضاء والمصدر",
+  "The source lists {source} members; {matched} match the current roster.": "يسرد المصدر {source} عضوًا؛ يطابق {matched} منهم قائمة النادي الحالية.",
+  "Matching a member does not mean their wins or tickets are available.": "مطابقة العضو لا تعني توفر أرقام انتصاراته أو تذاكره.",
+  "Reported counters for current members": "عدادات الأعضاء الحاليين بحسب المصدر",
+  "Tickets remaining": "التذاكر المتبقية",
+  "Open BrawlAce source": "فتح المصدر في BrawlAce",
+  "Refresh reads the app cache. Source checks run automatically; this button does not force a provider update.": "يعرض زر التحديث أحدث بيانات التطبيق المحفوظة. يُفحص المصدر تلقائيًا؛ الضغط على الزر لا يفرض تحديثه.",
+  "Last fetched from source": "آخر جلب من المصدر",
+  "Checking source...": "جارٍ فحص المصدر...",
+  "The source does not identify the cycle or when its counters changed. These figures do not record attendance or affect member comparison.": "لا يحدد المصدر دورة الفعالية أو وقت تغيّر عداداته. هذه الأرقام لا تسجّل الحضور ولا تؤثر في مقارنة الأعضاء.",
+};
+export default arMegaPigSource;

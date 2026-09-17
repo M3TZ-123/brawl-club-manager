@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button";
 import { ClubGoalCard } from "@/components/club-goals-overview";
 import { ClubGoalEditor,ClubGoalDetails } from "@/components/club-goal-editor";
 import { ClubEventEditor } from "@/components/club-event-editor";
+import { MegaPigSourcePanel } from "@/components/mega-pig-source-panel";
 import { useAdminSession } from "@/hooks/use-admin-session";
 import { eventKindLabels,usePlanningResource } from "@/lib/club-planning-client";
 import type { PlanningResponse } from "@/lib/club-planning-types";
@@ -27,6 +28,7 @@ export function PlanningWorkspace({isAdmin}:{isAdmin:boolean}){
     {!editing&&<div className="flex flex-wrap items-center justify-between gap-3"><div className="flex gap-2" role="group" aria-label={t("Planning view")}><Button variant={view==="goal"?"default":"outline"} aria-pressed={view==="goal"} onClick={()=>setView("goal")}>{t("Goals")}</Button><Button variant={view==="event"?"default":"outline"} aria-pressed={view==="event"} onClick={()=>setView("event")}>{t("Events")}</Button></div><div className="flex gap-2">{isAdmin&&<Button disabled={!data} onClick={()=>setCreating(view)}>{t(view==="goal"?"Create goal":"Plan event")}</Button>}<Button variant="ghost" disabled={loading} onClick={()=>void reload()}>{t("Refresh")}</Button></div></div>}
     {error&&<p role="alert" className="text-destructive">{t(error)}</p>}{loading&&<p role="status">{t("Loading...")}</p>}
     {data?.refreshDeferred&&<p role="status" className="text-sm text-amber-600">{t("Progress refresh delayed. Showing the last saved observations.")}</p>}
+    {isAdmin&&view==="event"&&!editing&&<MegaPigSourcePanel/>}
     {isAdmin&&creating==="goal"&&<ClubGoalEditor onSaved={saved} onCancel={()=>setCreating(null)}/>}
     {isAdmin&&creating==="event"&&<ClubEventEditor event={null} data={blank} onSaved={saved} onCancel={()=>setCreating(null)}/>}
     {isAdmin&&selected&&<PlanningDetail key={`${selected.kind}:${selected.id}`} {...selected} onClose={()=>setSelected(null)} onSaved={saved}/>}

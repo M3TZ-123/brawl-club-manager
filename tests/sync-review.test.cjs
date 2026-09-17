@@ -4,6 +4,8 @@ const { loadTypeScript } = require("./helpers/load-typescript.cjs");
 const quietConsole = { log() {}, warn() {}, error() {} };
 
 function serviceFixture(options = {}) {
+  let elapsed = 0;
+  class ClockDate extends Date { static now() { return Date.now() + elapsed; } }
   const calls = [];
   const rankedRequests = [];
   const tags = options.tags || ["#PLAYER"];
@@ -21,14 +23,16 @@ function serviceFixture(options = {}) {
   };
   const api = {
     getClub: async () => ({members:tags.map(tag=>({tag,name:tag,role:"member",trophies:100})),requiredTrophies:100}),
-    getPlayer: async tag => {if(options.playerError) throw options.playerError;if(options.failPlayer) throw new Error("Bearer secret-test-only upstream response"); return {tag,name:tag,trophies:100,highestTrophies:100,expLevel:10,brawlers:[{id:1,name:"SHELLY",power:1,trophies:100,rank:1}],soloVictories:1,duoVictories:2,"3vs3Victories":3};},
+    getPlayer: async tag => {elapsed+=options.profileElapsedMs||0;if(options.playerError) throw options.playerError;if(options.failPlayer) throw new Error("Bearer secret-test-only upstream response"); return {tag,name:tag,trophies:100,highestTrophies:100,expLevel:10,brawlers:[{id:1,name:"SHELLY",power:1,trophies:100,rank:1}],soloVictories:1,duoVictories:2,"3vs3Victories":3};},
     getPlayerRankedData: async (...args) => {
       rankedRequests.push(calls.map(call => call.name));
       return options.ranked ? options.ranked(...args) : {currentRank:"Unranked",highestRank:"Unranked",currentPoints:0,highestPoints:0,available:true};
     },
     getPlayerBattleLog: async()=>({items:[]}), processBattleLog:()=>[], calculateWinRateFromBattleLog:()=>({winRate:null}),
   };
-  const service = loadTypeScript("src/lib/sync-service.ts", {"@/lib/supabase-admin":{supabaseAdmin:db},"@/lib/brawl-api":api}, {console:quietConsole,setTimeout:fn=>{fn();return 0;}});
+  const service = loadTypeScript("src/lib/sync-service.ts", {"@/lib/supabase-admin":{supabaseAdmin:db},"@/lib/brawl-api":api,
+    "@/lib/mega-pig-source-cache":{refreshMegaPigSource:async(clubTag,refreshOptions)=>{calls.push({name:"source_refresh",args:{clubTag,deadlineAt:refreshOptions.deadlineAt}});if(options.sourceError||refreshOptions.signal.aborted)throw Error("Optional source unavailable");}},
+  }, {Date:ClockDate,console:quietConsole,setTimeout:fn=>{fn();return 0;}});
   return {service,calls,rankedRequests};
 }
 
@@ -36,7 +40,7 @@ test("successful full sync performs one fenced commit with complete fetched data
   const {service,calls,rankedRequests}=serviceFixture();
   const result=await service.executeSync({source:"manual",idempotencyKey:"retry-123"});
   assert.equal(result.success,true);
-  assert.deepEqual(calls.map(c=>c.name),["acquire_sync_run","begin_sync_ranked_fallback","commit_sync_snapshot","club_planning_refresh_goals"]);
+  assert.deepEqual(calls.map(c=>c.name),["acquire_sync_run","begin_sync_ranked_fallback","commit_sync_snapshot","club_planning_refresh_goals","source_refresh"]);
   assert.equal(calls[0].args.p_scope,"full");
   assert.equal(calls[0].args.p_idempotency_key,"retry-123");
   assert.deepEqual(JSON.parse(JSON.stringify(calls[1].args)),{p_run_id:"test-run",p_fence:4,p_player_tags:["#PLAYER"]});
@@ -59,6 +63,19 @@ test("overlapping sync is rejected before any fetch or commit",async()=>{
   const {service,calls}=serviceFixture({acquisition:{acquired:false,busy:true}});
   await assert.rejects(service.executeSync({source:"cron"}),e=>e.code==="sync_busy"&&e.status===409);
   assert.equal(calls.length,1);
+});
+test("optional third-party source failure after commit cannot turn a saved full sync into a failure",async()=>{
+  const {service,calls}=serviceFixture({sourceError:true});
+  const result=await service.executeSync({source:"cron"});
+  assert.equal(result.success,true);assert.equal(calls.at(-1).name,"source_refresh");
+  assert.equal(calls.some(call=>call.name==="fail_sync_run"),false);
+  assert.equal(calls.at(-1).args.clubTag,"#CLUB");assert.ok(calls.at(-1).args.deadlineAt>Date.now());
+});
+test("a slow full sync defers third-party refresh when fewer than eight seconds remain",async()=>{
+  const {service,calls}=serviceFixture({profileElapsedMs:38000});
+  assert.equal((await service.executeSync({source:"cron"})).success,true);
+  assert.equal(calls.some(call=>call.name==="commit_sync_snapshot"),true);
+  assert.equal(calls.some(call=>call.name==="source_refresh"),false);
 });
 
 test("backup admission contention returns temporary503 before upstream work",async()=>{

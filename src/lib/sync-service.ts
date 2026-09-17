@@ -4,6 +4,7 @@ import { getUpstreamCooldownMs } from "@/lib/upstream-rate-limit";
 import { battleObservation, type BattleObservation } from "@/lib/battle-coverage";
 import { normalizeClubSnapshot } from "@/lib/club-intelligence-snapshot";
 import { refreshPlanningAfterSync } from "@/lib/sync-club-planning";
+import { refreshMegaPigSource } from "@/lib/mega-pig-source-cache";
 import { readProfileRankedData, rankedCoreComplete, mergeRankedFallback, rankedSnapshot } from "@/lib/ranked-data";
 import { normalizeProfileProgress, normalizeBrawlerProgress } from "@/lib/player-progress";
 import { getClub, getPlayer, getPlayerBattleLog, getPlayerRankedData, processBattleLog, calculateWinRateFromBattleLog, type BrawlStarsBrawler, type BrawlStarsPlayer } from "@/lib/brawl-api";
@@ -315,7 +316,14 @@ export async function executeSync(options: {
             : "The sync snapshot was not committed. It is safe to retry.", code === "member_not_found" ? 404 : code === "database_unavailable" || code === "database_timeout" ? 503 : 409, undefined,
         { phase: "commit", provider: "database", sqlstate: error.code });
     }
-    if (!playerTag) await refreshPlanningAfterSync(clubTag);
+    if (!playerTag) await Promise.all([
+      refreshPlanningAfterSync(clubTag),
+      // Optional third-party data runs only after commit and fits the existing
+      // sync budget. It cannot turn an accepted official snapshot into failure.
+      deadlineAt-Date.now()>=8000 ? refreshMegaPigSource(clubTag,{deadlineAt,signal}).catch(()=>{
+        console.warn("Third-party club data refresh deferred.");
+      }) : Promise.resolve(),
+    ]);
     return { ...publicSyncResult(data as SyncResult), ...(playerTag ? { brawlers: refreshedBrawlers } : {}) };
   } catch (error) {
     controller.abort();
