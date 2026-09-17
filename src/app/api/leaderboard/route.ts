@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { readLeaderboard } from "@/lib/reporting-reads";
 import { parseTimeRange, TIME_RANGES } from "@/lib/time-range";
 import { getReportingPeriod, reportingPeriodMetadata } from "@/lib/reporting-period";
+import { requireAcceptedClubRoster, assertAcceptedClubRoster, ClubRosterUnavailableError } from "@/lib/accepted-club-roster";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -10,6 +11,7 @@ const MIN_WIN_RATE_BATTLES = { "24h": 3, "3d": 5, "7d": 10, "30d": 20, "90d": 30
 
 export async function GET(request: NextRequest) {
   try {
+    const clubTag = await requireAcceptedClubRoster();
     const now = new Date();
     const rangeKey = parseTimeRange(request.nextUrl.searchParams.get("range"));
     const period = getReportingPeriod(rangeKey, now);
@@ -41,6 +43,7 @@ export async function GET(request: NextRequest) {
         .slice(0, 30),
     };
 
+    await assertAcceptedClubRoster(clubTag);
     return NextResponse.json({
       leaderboards,
       memberCount: enriched.length,
@@ -55,6 +58,7 @@ export async function GET(request: NextRequest) {
     }, { headers: { "Cache-Control": "no-store" } });
   } catch (error) {
     console.error("Error fetching leaderboard:", error instanceof Error ? error.name : "database_error");
-    return NextResponse.json({ error: "Failed to fetch leaderboard" }, { status: 500, headers: { "Cache-Control": "no-store" } });
+    return NextResponse.json({ error: error instanceof ClubRosterUnavailableError ? error.message : "Failed to fetch leaderboard" },
+      { status: error instanceof ClubRosterUnavailableError ? 409 : 500, headers: { "Cache-Control": "no-store" } });
   }
 }

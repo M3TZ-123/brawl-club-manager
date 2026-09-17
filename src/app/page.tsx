@@ -112,10 +112,14 @@ export default function DashboardPage() {
       fetchJsonCached<{ insights: ClubInsights | null; period?: ClubInsights["period"] }>(`/api/insights?range=${range}`, { staleMs: 30_000, force }),
     ]).then(([summary, detail]) => {
     if (request !== generation.current) return;
+    const rosterUnavailable = [summary, detail].some(result => result.status === "rejected" && result.reason instanceof Error && result.reason.message === "The club roster is awaiting a successful sync.");
     setError(summary.status !== "fulfilled");
     setInsightsError(detail.status !== "fulfilled");
-    if (summary.status === "fulfilled") setDashboard(summary.value);
-    if (detail.status === "fulfilled") setInsights(detail.value.insights ? { ...detail.value.insights, period: detail.value.period } : null);
+    if (rosterUnavailable) { setDashboard(null); setInsights(null); }
+    else {
+      setDashboard(summary.status === "fulfilled" ? summary.value : null);
+      setInsights(detail.status === "fulfilled" && detail.value.insights ? { ...detail.value.insights, period: detail.value.period } : null);
+    }
     setLoadedKey(`${clubTag}:${range}`);
     setIsLoading(false);
     });
@@ -124,7 +128,10 @@ export default function DashboardPage() {
   useEffect(() => {
     if (isLoadingSettings || !hasLoadedSettings || !isSetupComplete) return;
     loadData();
-    const refresh = () => { void loadData(true); };
+    const refresh = (event: Event) => {
+      if ((event as CustomEvent).detail?.clubChanged) { setDashboard(null); setInsights(null); setIsLoading(true); }
+      void loadData(true);
+    };
     window.addEventListener("club-data-updated", refresh);
     return () => { invalidatePending(); window.removeEventListener("club-data-updated", refresh); };
   }, [isLoadingSettings, hasLoadedSettings, isSetupComplete, loadData, invalidatePending]);
@@ -154,7 +161,7 @@ export default function DashboardPage() {
       {insights && <section aria-label={t("Battle summary")} className="flex flex-wrap items-center justify-between gap-3 rounded-lg border bg-card p-4 text-sm">
         <div><p className="flex flex-wrap items-center gap-x-4 gap-y-1"><Swords className="h-4 w-4 text-primary" /><span>{t("{count} recorded participations", { count: number(insights.thisWeekTotal) })}</span><span>{t("Win Rate")}: <strong>{insights.totalBattlesThisWeek > 0 ? `${number(insights.winRate)}%` : "—"}</strong></span></p>
           <p className="mt-1 text-xs text-muted-foreground">{insights.period ? `${reportDate(insights.period.start)} – ${reportDate(insights.period.end)} · UTC` : t("Battle totals use UTC calendar days.")}</p></div>
-        <Link href="/reports" className="font-medium text-primary hover:underline">{t("View full report")}</Link>
+        <Link href={`/reports?range=${range}`} className="font-medium text-primary hover:underline">{t("View full report")}</Link>
       </section>}
       <div className="grid gap-4 lg:grid-cols-2">
         <Card><CardHeader><CardTitle className="flex items-center gap-2 text-base"><ListChecks className="h-5 w-5 text-amber-500" />{t("Needs Attention")}</CardTitle><p className="text-xs text-muted-foreground">{t("Recent activity and trophy progress in the selected period.")}</p></CardHeader>

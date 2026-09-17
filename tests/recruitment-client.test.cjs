@@ -117,3 +117,29 @@ test("switching recruitment views preserves candidate input and mounted private 
   assert.equal(tagInput(tree).props.value,'#UNSAVED');assert.equal(card(tree).key,originalCard.key);
   assert.equal(page.requests.length,1,'view changes do not repeat candidate reads');
 });
+
+test("a candidate draft cannot silently adopt a newer private revision after another administrator edits it", async () => {
+  const page=harness(request=>request.method==='GET'?{candidates:[candidate()]}:{candidate:candidate({version:3,notes:'Reviewed replacement'})});
+  const workspace=await page.render(),original=card(workspace),editor=page.mountCard(original);
+  let tree=await editor.render();textarea(tree).props.onChange({target:{value:'Unsaved private draft'}});tree=await editor.render();
+  editor.setProps({...original.props,candidate:candidate({version:2,notes:'Other administrator note',status:'contacted'})});tree=await editor.render();
+  assert.equal(textarea(tree).props.value,'Unsaved private draft');assert.match(textContent(tree),/edited elsewhere.*draft is preserved/);
+  assert.equal(elements(tree).find(node=>node.type==='Button'&&textContent(node)==='Save').props.disabled,true);
+  action(tree,'Save')();await editor.render();assert.equal(page.requests.filter(request=>request.method==='PATCH').length,0);
+  textarea(tree).props.onChange({target:{value:'Unsaved private draft continued'}});tree=await editor.render();
+  assert.match(textContent(tree),/edited elsewhere/,'Continuing to type cannot silently accept the conflicting revision');
+  action(tree,'Discard draft and load saved candidate')();tree=await editor.render();
+  assert.equal(textarea(tree).props.value,'Other administrator note');assert.equal(elements(tree).find(node=>node.type==='select').props.value,'contacted');
+  textarea(tree).props.onChange({target:{value:'Reviewed replacement'}});tree=await editor.render();action(tree,'Save')();await editor.render();
+  const request=page.requests.find(request=>request.method==='PATCH');assert.equal(request.body.version,2);assert.equal(request.body.notes,'Reviewed replacement');
+});
+
+test("candidate filters hide rather than unmount a card with a private draft",async()=>{
+  const page=harness(()=>({candidates:[candidate()]}));let tree=await page.render();const original=card(tree);
+  const editor=page.mountCard(original);let form=await editor.render();textarea(form).props.onChange({target:{value:'Draft kept through filters'}});await editor.render();
+  const minimum=elements(tree).find(node=>node.type==='Input'&&node.props.max===2000000);minimum.props.onChange({target:{value:'1000'}});tree=await page.render();
+  assert.equal(card(tree).key,original.key);const wrapper=elements(tree).find(node=>node.type==='div'&&node.props.hidden===true&&elements(node).some(child=>child.type?.name==='CandidateCard'));assert.ok(wrapper);
+  assert.match(textContent(tree),/No candidates match these filters/);
+  elements(tree).find(node=>node.type==='Input'&&node.props.max===2000000).props.onChange({target:{value:'0'}});tree=await page.render();
+  editor.setProps(card(tree).props);form=await editor.render();assert.equal(textarea(form).props.value,'Draft kept through filters');
+});

@@ -22,7 +22,7 @@ function loadRoute(path, database) {
 }
 
 function battleDatabase(tables) {
-  const database = readOnlyDatabase(tables);
+  const database = readOnlyDatabase({ ...tables, settings: [{ key: "club_tag", value: "#CLUB" }, { key: "last_roster_sync_time", value: "2026-01-03T00:00:00.000Z" }] });
   return { rpc: battleFeedRpc(tables.battle_history), from(table) {
     const query = database.from(table);
     query.not = (key, operator, value) => {

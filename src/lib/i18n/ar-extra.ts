@@ -269,6 +269,7 @@ export const arExtra: Record<string, string> = {
   "{member} was promoted.": "تمت ترقية {member}.",
   "{member} was demoted.": "تم خفض رتبة {member}.",
   "{member} changed their name.": "غيّر {member} اسمه.",
+  "{before} is now {member}.": "غيّر {before} اسمه إلى {member}.",
   "{member} changed role.": "تغيّرت رتبة {member}.",
   "{member} role changed: {before} → {after}.": "تغيّرت رتبة {member}: {before} → {after}.",
   "{members} — no recorded activity for {hours}+ hours.": "{members} — لم يُسجّل نشاط منذ {hours} ساعة أو أكثر.",

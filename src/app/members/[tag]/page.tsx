@@ -199,6 +199,8 @@ export default function MemberDetailPage({ params }: PageProps) {
 
   const playerTag = useMemo(() => decodeURIComponent(resolvedParams.tag), [resolvedParams.tag]);
   const memberApiUrl = useMemo(() => `/api/members/${encodeURIComponent(playerTag)}`, [playerTag]);
+  const activeMemberUrl = useRef(memberApiUrl);
+  activeMemberUrl.current = memberApiUrl;
 
   const loadMemberData = useCallback(async (force = false) => {
     const sequence = ++loadSequence.current;
@@ -222,7 +224,6 @@ export default function MemberDetailPage({ params }: PageProps) {
       setPeriod(data.period);
       setTopBrawlers(data.topBrawlers || []);
       setRecentMatches(data.recentMatches || []);
-      setShowAllMatches(false);
     } catch (error) {
       if (sequence !== loadSequence.current) return;
       setLoadError(true);
@@ -232,6 +233,19 @@ export default function MemberDetailPage({ params }: PageProps) {
       if (sequence === loadSequence.current) setIsLoading(false);
     }
   }, [memberApiUrl, selectedRange]);
+
+  const loadMemberDataRef = useRef(loadMemberData);
+  loadMemberDataRef.current = loadMemberData;
+
+  useEffect(() => {
+    setShowAllMatches(false);
+  }, [memberApiUrl, selectedRange]);
+
+  useEffect(() => {
+    setAvatarError(false);
+    setRefreshError(null);
+    setIsRefreshing(false);
+  }, [memberApiUrl]);
 
   useEffect(() => {
     loadMemberData();
@@ -247,11 +261,12 @@ export default function MemberDetailPage({ params }: PageProps) {
 
   const handleRefresh = async () => {
     if (!isAdmin) return;
+    const requestedMemberUrl = memberApiUrl;
     setRefreshError(null);
     setIsRefreshing(true);
     let failureMessage = "Could not refresh this member. Please try again.";
     try {
-      const response = await fetch(`/api/members/${encodeURIComponent(playerTag)}`, {
+      const response = await fetch(requestedMemberUrl, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
       });
@@ -260,13 +275,14 @@ export default function MemberDetailPage({ params }: PageProps) {
         failureMessage = syncErrorMessage(await response.json().catch(() => ({}))) || failureMessage;
         throw new Error(failureMessage);
       }
-      invalidateJsonCache(memberApiUrl);
-      await loadMemberData(true);
+      invalidateJsonCache(requestedMemberUrl);
+      if (activeMemberUrl.current !== requestedMemberUrl) return;
+      await loadMemberDataRef.current(true);
     } catch (error) {
-      setRefreshError(failureMessage);
+      if (activeMemberUrl.current === requestedMemberUrl) setRefreshError(failureMessage);
       console.error("Error refreshing member:", error);
     } finally {
-      setIsRefreshing(false);
+      if (activeMemberUrl.current === requestedMemberUrl) setIsRefreshing(false);
     }
   };
 

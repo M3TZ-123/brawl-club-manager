@@ -10,20 +10,25 @@ function date(value:unknown):string {if(typeof value!=="string"||value.length>40
 function nullableInteger(value:unknown) {return value===null?null:integer(value,0,1000);}
 export function planningId(value:unknown) {if(typeof value!=="string"||!planningUuid.test(value))return fail();return value;}
 export function planningInput(value:unknown,now=Date.now()):PlanningMutation {
-  const body=obj(value,["action","title","metric","cycle","endsAt","target","id","version","event","entries","reason"]);
+  const body=obj(value,["action","title","metric","cycle","endsAt","target","id","version","event","entries","reason","request_id"]);
   if(body.action==="archive_goal") {obj(body,["action","id","version"]);return{action:"archive_goal",id:planningId(body.id),version:integer(body.version,1,2147483646)};}
   if(body.action==="create_goal") {
-    obj(body,["action","title","metric","cycle","endsAt","target"]);
+    obj(body,["action","title","metric","cycle","endsAt","target","request_id"]);
+    const requestId=body.request_id===undefined?undefined:planningId(body.request_id);
     const cycle=choice(body.cycle,goalCycles),endsAt=cycle==="custom"?date(body.endsAt):null;
-    if(endsAt&&(Date.parse(endsAt)<=now||Date.parse(endsAt)>now+90*86400000))fail();
-    return{action:"create_goal",title:text(body.title,100,true),metric:choice(body.metric,goalMetrics),cycle,endsAt,target:integer(body.target,1,50000000)};
+    // A committed retry may arrive after its deadline. The atomic create RPC
+    // checks current time only after looking for an existing request receipt.
+    if(!requestId&&endsAt&&(Date.parse(endsAt)<=now||Date.parse(endsAt)>now+90*86400000))fail();
+    return{action:"create_goal",title:text(body.title,100,true),metric:choice(body.metric,goalMetrics),cycle,endsAt,target:integer(body.target,1,50000000),...(requestId?{request_id:requestId}:{})};
   }
   if(body.action!=="save_event")return fail();
-  obj(body,["action","id","version","event","entries","reason"]);
+  obj(body,["action","id","version","event","entries","reason","request_id"]);
+  const requestId=body.request_id===undefined?undefined:planningId(body.request_id);
+  if(requestId&&body.id!==null)fail();
   const raw=obj(body.event,["title","kind","cycleLabel","startsAt","endsAt","teamSize","ticketAllowance","status","notes"]);
   const event:EventFields={title:text(raw.title,100,true),kind:choice(raw.kind,eventKinds),cycleLabel:text(raw.cycleLabel,80,true),startsAt:date(raw.startsAt),endsAt:date(raw.endsAt),teamSize:integer(raw.teamSize,1,30),ticketAllowance:nullableInteger(raw.ticketAllowance),status:choice(raw.status,["planned","completed","cancelled"]),notes:text(raw.notes,1000)};
   const start=Date.parse(event.startsAt),end=Date.parse(event.endsAt);
-  if(end<=start||end>start+31*86400000||start>now+365*86400000||(body.id===null&&start<now-90*86400000)||(event.status==="completed"&&end>now)||(event.kind!=="mega_pig"&&event.ticketAllowance!==null))fail();
+  if(end<=start||end>start+31*86400000||(!requestId&&(start>now+365*86400000||(body.id===null&&start<now-90*86400000)||(event.status==="completed"&&end>now)))||(event.kind!=="mega_pig"&&event.ticketAllowance!==null))fail();
   if(!Array.isArray(body.entries)||body.entries.length>30)fail();
   const tags=new Set<string>(),teams=new Map<number,number>();
   const entries:EventEntry[]=(body.entries as unknown[]).map(value=>{
@@ -31,11 +36,11 @@ export function planningInput(value:unknown,now=Date.now()):PlanningMutation {
     if(!/^#[A-Z0-9]{1,20}$/.test(playerTag)||tags.has(playerTag))fail();tags.add(playerTag);
     const entry:EventEntry={playerTag,team:integer(row.team,1,30),slot:choice(row.slot,["starter","substitute"]),attendance:choice(row.attendance,["invited","confirmed","present","absent"]),wins:nullableInteger(row.wins),ticketsRemaining:nullableInteger(row.ticketsRemaining),observedAt:row.observedAt===null?null:date(row.observedAt),notes:text(row.notes,500)};
     if(entry.slot==="starter"){const count=(teams.get(entry.team)||0)+1;teams.set(entry.team,count);if(count>event.teamSize)fail();}
-    if(entry.observedAt&&(Date.parse(entry.observedAt)<start||Date.parse(entry.observedAt)>end||Date.parse(entry.observedAt)>now+300000))fail();
+    if(entry.observedAt&&(Date.parse(entry.observedAt)<start||Date.parse(entry.observedAt)>end||(!requestId&&Date.parse(entry.observedAt)>now+300000)))fail();
     if((entry.wins!==null||entry.ticketsRemaining!==null||["present","absent"].includes(entry.attendance))&&!entry.observedAt)fail();
     if((entry.wins!==null||entry.ticketsRemaining!==null)&&event.kind!=="mega_pig")fail();
     if(event.ticketAllowance!==null&&((entry.ticketsRemaining??0)>event.ticketAllowance||(entry.wins??0)+(entry.ticketsRemaining??0)>event.ticketAllowance))fail();
     return entry;
   });
-  return{action:"save_event",id:body.id===null?null:planningId(body.id),version:integer(body.version,body.id===null?0:1,2147483646),event,entries,reason:text(body.reason,500)};
+  return{action:"save_event",id:body.id===null?null:planningId(body.id),version:integer(body.version,body.id===null?0:1,2147483646),event,entries,reason:text(body.reason,500),...(requestId?{request_id:requestId}:{})};
 }

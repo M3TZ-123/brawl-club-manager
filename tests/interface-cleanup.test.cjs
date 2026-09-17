@@ -120,6 +120,7 @@ battles.push(
   { player_tag: "#A", battle_time: ago(-1), mode: "brawlBall", map: "Future", teams_json: null },
 );
 const battleTables = {
+  settings: [{ key: "club_tag", value: "#CLUB" }, { key: "last_roster_sync_time", value: new Date(NOW).toISOString() }],
   battle_history: battles,
   members: ["#A", "#B"].map(player_tag => ({ player_tag, player_name: player_tag })),
   member_history: ["#A", "#B"].map(player_tag => ({ player_tag, is_current_member: true })),

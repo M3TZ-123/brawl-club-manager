@@ -4,6 +4,7 @@ import { appendMemberActivityMetrics } from "@/lib/member-activity-metrics";
 import { getReportingPeriod, reportingPeriodMetadata } from "@/lib/reporting-period";
 import { fetchDailyStats } from "@/lib/reporting-data";
 import { parseTimeRange, TIME_RANGES } from "@/lib/time-range";
+import { requireAcceptedClubRoster, assertAcceptedClubRoster, ClubRosterUnavailableError } from "@/lib/accepted-club-roster";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -43,6 +44,7 @@ async function fetchMegaBossBattleSummaries(playerTags: string[], sinceDate: str
 
 export async function GET(request?: Request) {
   try {
+    const clubTag = await requireAcceptedClubRoster();
     const now = new Date();
     const range = parseTimeRange(request ? new URL(request.url).searchParams.get("range") : null);
     const period = getReportingPeriod(range, now);
@@ -136,6 +138,7 @@ export async function GET(request?: Request) {
     const mvpName = mvp?.player_name ?? null;
     const mvpTrophies = mvp?.[metric] ?? null;
 
+    await assertAcceptedClubRoster(clubTag);
     return NextResponse.json(
       {
         period: reportingPeriodMetadata(period),
@@ -169,8 +172,8 @@ export async function GET(request?: Request) {
   } catch (error) {
     console.error("Error fetching club insights:", error);
     return NextResponse.json(
-      { error: "Failed to fetch insights" },
-      { status: 500, headers: { "Cache-Control": "no-store" } }
+      { error: error instanceof ClubRosterUnavailableError ? error.message : "Failed to fetch insights" },
+      { status: error instanceof ClubRosterUnavailableError ? 409 : 500, headers: { "Cache-Control": "no-store" } }
     );
   }
 }

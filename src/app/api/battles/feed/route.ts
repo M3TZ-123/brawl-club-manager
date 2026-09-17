@@ -3,6 +3,7 @@ import { supabaseAdmin } from "@/lib/supabase-admin";
 import { parseTimeRange, TIME_RANGES } from "@/lib/time-range";
 import { battleContextOptions, describeBattleContext, getBattleModeInfo, normalizeBattleMode } from "@/lib/battle-catalog";
 import { battlePointData } from "@/lib/battle-point-data";
+import { requireAcceptedClubRoster, assertAcceptedClubRoster, ClubRosterUnavailableError } from "@/lib/accepted-club-roster";
 
 function parseBoundedInt(value: string | null, fallback: number, min: number, max: number): number {
   const parsed = Number.parseInt(value || "", 10);
@@ -74,6 +75,7 @@ export async function GET(request: Request) {
     if (date && (!/^\d{4}-\d{2}-\d{2}$/.test(date) || !Number.isFinite(Date.parse(date)) || new Date(date).toISOString().slice(0, 10) !== date)) {
       return NextResponse.json({ error: "Invalid date" }, { status: 400 });
     }
+    const clubTag = await requireAcceptedClubRoster();
 
     // Get only current club member tags from member_history
     const { data: currentMemberHistory, error: historyError } = await supabaseAdmin
@@ -365,6 +367,7 @@ export async function GET(request: Request) {
       name: m.player_name,
     })).sort((a, b) => a.name.localeCompare(b.name));
 
+    await assertAcceptedClubRoster(clubTag);
     return NextResponse.json({
       matches: enrichedMatches,
       total: count || 0,
@@ -376,9 +379,10 @@ export async function GET(request: Request) {
       facetsBasis: "member_observations",
       members: memberList,
       serverTime: new Date().toISOString(),
-    });
+    }, { headers: { "Cache-Control": "no-store" } });
   } catch (error) {
     console.error("Error fetching battle feed:", error instanceof Error ? error.name : "database_error");
-    return NextResponse.json({ error: "Failed to fetch battle feed" }, { status: 500 });
+    return NextResponse.json({ error: error instanceof ClubRosterUnavailableError ? error.message : "Failed to fetch battle feed" },
+      { status: error instanceof ClubRosterUnavailableError ? 409 : 500, headers: { "Cache-Control": "no-store" } });
   }
 }

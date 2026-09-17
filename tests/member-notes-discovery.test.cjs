@@ -191,7 +191,7 @@ test("review batches preserve full-data counts and search finds off-page members
   let tree = await page.render();
   assert.equal(queueCards(tree).length, 30);
   assert.match(textContent(tree), /Showing 30 of 94 matching members/);
-  assert.equal(textContent(queueStatus(tree, "pending")), "pending94");
+  assert.equal(textContent(queueStatus(tree, "pending")), "Pending94");
   assert.equal(textContent(queueStatus(tree, "all")), "All reviews95");
   action(tree, "Load More")(); tree = await page.render();
   assert.equal(queueCards(tree).length, 60);
@@ -201,7 +201,7 @@ test("review batches preserve full-data counts and search finds off-page members
   tree = await page.render();
   assert.equal(queueCards(tree).length, 1);
   assert.match(textContent(queueCards(tree)[0]), /Player 88/);
-  assert.equal(textContent(queueStatus(tree, "pending")), "pending94", "Search must not truncate status counts");
+  assert.equal(textContent(queueStatus(tree, "pending")), "Pending94", "Search must not truncate status counts");
   elements(tree).find(element => element.type === "Input").props.onChange({ target: { value: "" } });
   tree = await page.render();
   assert.equal(queueCards(tree).length, 30);
@@ -238,5 +238,23 @@ test("an off-page former-member deep link opens after sign-in without expanding 
   page.window.dispatchEvent({ type: "member-reviews-updated" }); tree = await page.render();
   assert.equal(queueCards(tree).length, 60, "A background refresh preserves the current batch");
   assert.equal(elements(tree).some(element => element.type === "MemberReviewSheet"), false);
+  page.unmount();
+});
+
+test("review filters and badges use readable labels while filtering by unchanged status values", async () => {
+  const rows = [member("#PENDING", { is_current_member: true, activity_status: "minimal" }), member("#FOLLOW", { is_current_member: true, activity_status: "active" }), member("#DONE", { is_current_member: true, activity_status: "inactive" })];
+  const page = queueHarness({ respond: ({ url }) => Promise.resolve(Response.json(url === "/api/member-reviews" ? { reviews: [
+    { player_tag: "#FOLLOW", status: "follow_up" }, { player_tag: "#DONE", status: "reviewed" },
+  ] } : url === "/api/members" ? { members: rows } : { history: rows })) });
+  let tree = await page.render();
+  assert.equal(textContent(queueStatus(tree, "pending")), "Pending1");
+  assert.equal(textContent(queueStatus(tree, "follow_up")), "Follow up1");
+  assert.equal(textContent(queueStatus(tree, "reviewed")), "Reviewed1");
+  assert.match(textContent(queueCards(tree)[0]), /Low activityPending/);
+  assert.doesNotMatch(textContent(tree), /follow_up|minimal|\bpending\b|\breviewed\b/);
+  queueStatus(tree, "follow_up").props.onClick(); tree = await page.render();
+  assert.equal(queueCards(tree).length, 1); assert.match(textContent(queueCards(tree)[0]), /#FOLLOW/);
+  assert.match(textContent(queueCards(tree)[0]), /ActiveFollow up/);
+  assert.equal(page.requests.length, 3, "Changing a display label must not add writes or reads");
   page.unmount();
 });

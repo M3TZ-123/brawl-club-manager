@@ -10,15 +10,18 @@ const labels={note:"Dated note",decision:"Administrative decision",departure_rea
 export function MemberAdministrationPanel({playerTag,isCurrent}:{playerTag:string;isCurrent?:boolean}){
   const {t,dateTime}=useI18n();
   const [data,setData]=useState<MemberAdministration|null>(null),[error,setError]=useState(""),[busy,setBusy]=useState(false);
+  const [loading,setLoading]=useState(true);
   const [kind,setKind]=useState<DecisionKind>("note"),[body,setBody]=useState(""),[departure,setDeparture]=useState(""),[corrects,setCorrects]=useState(""),[followUp,setFollowUp]=useState("");
   const [start,setStart]=useState(""),[end,setEnd]=useState(""),[reason,setReason]=useState("");
   const controller=useRef<AbortController|null>(null),pending=useRef(false),sequence=useRef(0),submission=useRef<{signature:string;id:string}|null>(null);
   const load=useCallback(async(cursor:string|null=null)=>{
     const current=controller.current;if(!current||current.signal.aborted)return;
     const request=++sequence.current;
+    setLoading(true);
     try{const result=await fetchJsonWithTimeout<MemberAdministration>(`/api/member-administration?player_tag=${encodeURIComponent(playerTag)}${cursor?`&cursor=${encodeURIComponent(cursor)}`:""}`,{cache:"no-store",signal:current.signal});
       if(!current.signal.aborted&&sequence.current===request){setData(previous=>cursor&&previous?{...result,decisions:[...previous.decisions,...result.decisions.filter(row=>!previous.decisions.some(old=>old.id===row.id))]}:result);setError("");}}
     catch{if(!current.signal.aborted&&sequence.current===request)setError("Administration data is temporarily unavailable.");}
+    finally{if(!current.signal.aborted&&sequence.current===request)setLoading(false);}
   },[playerTag]);
   useEffect(()=>{const current=new AbortController(),requests=sequence;controller.current=current;void load();return()=>{current.abort();requests.current++;};},[load]);
   const mutate=async(values:Record<string,unknown>,onSuccess?:()=>void)=>{
@@ -48,7 +51,7 @@ export function MemberAdministrationPanel({playerTag,isCurrent}:{playerTag:strin
   return <section className="space-y-4 border-t pt-5">
     <h3 className="font-semibold">{t("Private dated decision log")}</h3>
     {error&&<p role="alert" className="text-sm text-destructive">{t(error)} <Button variant="ghost" onClick={()=>void load()} disabled={busy}>{t("Retry")}</Button></p>}
-    {!data?<p role="status">{t("Loading...")}</p>:<>
+    {!data?(loading?<p role="status">{t("Loading...")}</p>:null):<>
       <details className="rounded-lg border p-3"><summary className="cursor-pointer font-medium">{t("Add a dated decision or departure reason")}</summary><div className="mt-3 space-y-3">
       <p className="text-xs text-muted-foreground">{t("Entries are recorded now and kept unchanged. Add a correction to an earlier entry. The shared administrator login does not identify an individual author.")}</p>
       <label className="block text-sm">{t("Entry type")}<select className="mt-1 w-full rounded border bg-background p-2" value={kind} disabled={busy} onChange={e=>setKind(e.target.value as DecisionKind)}>{decisionKinds.map(value=><option key={value} value={value}>{t(labels[value])}</option>)}</select></label>

@@ -2,7 +2,8 @@
 import { T, useI18n } from "@/components/locale-provider";
 
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
+import { useAdminSession } from "@/hooks/use-admin-session";
 import { useAppStore, type SettingsChanges } from "@/lib/store";
 import { fetchJsonWithTimeout } from "@/lib/client-fetch";
 import { AdminGate } from "@/components/admin-gate";
@@ -25,6 +26,9 @@ import {
 
 export default function SettingsPage() {
   const { t } = useI18n();
+  const { isAdmin, isLoading: sessionLoading } = useAdminSession();
+  const session = useRef({ isAdmin, sessionLoading });
+  session.current = { isAdmin, sessionLoading };
   const {
     clubTag,
     apiKeyConfigured,
@@ -51,6 +55,30 @@ export default function SettingsPage() {
   const [generalStatus, setGeneralStatus] = useState<"idle" | "saving" | "saved">("idle");
   const [activityStatus, setActivityStatus] = useState<"idle" | "saving" | "saved">("idle");
   const [notifStatus, setNotifStatus] = useState<"idle" | "saving" | "saved">("idle");
+  const controller = useRef<AbortController | null>(null);
+  const pendingSave = useRef(false);
+
+  useEffect(() => {
+    controller.current = new AbortController();
+    const reset = () => {
+      controller.current?.abort();
+      controller.current = new AbortController();
+      pendingSave.current = false;
+      setLocalClubTag(null); setLocalApiKey(""); setLocalDiscordWebhook("");
+      setLocalInactivityThreshold(null); setLocalNotificationsEnabled(null);
+      setGeneralError(""); setActivityError(""); setNotifError("");
+      setGeneralStatus("idle"); setActivityStatus("idle"); setNotifStatus("idle");
+    };
+    window.addEventListener("admin-session-changed", reset);
+    return () => { controller.current?.abort(); window.removeEventListener("admin-session-changed", reset); };
+  }, []);
+
+  const beginSave = () => {
+    const current = controller.current;
+    if (!session.current.isAdmin || session.current.sessionLoading || pendingSave.current || !current || current.signal.aborted) return null;
+    pendingSave.current = true;
+    return current;
+  };
 
   useEffect(() => {
     if (!hasLoadedSettings) {
@@ -70,6 +98,7 @@ export default function SettingsPage() {
   };
 
   const handleSaveGeneral = async () => {
+    const current = beginSave(); if (!current) return;
     setGeneralStatus("saving");
     setGeneralError("");
     try {
@@ -77,51 +106,60 @@ export default function SettingsPage() {
       const changes: SettingsChanges = { clubTag: effectiveClubTag };
       if (normalizeTag(effectiveClubTag) !== normalizeTag(clubTag) || localApiKey.trim() || !apiKeyConfigured) {
         const verified = await fetchJsonWithTimeout<{ clubTag: string; clubName: string; requiredTrophies: number }>("/api/verify-club", {
-          method: "POST", headers: { "Content-Type": "application/json" },
+          method: "POST", headers: { "Content-Type": "application/json" }, signal: current.signal,
           body: JSON.stringify({ clubTag: effectiveClubTag, apiKey: localApiKey }),
         });
+        if (current.signal.aborted) return;
         changes.clubTag = verified.clubTag;
         changes.clubName = verified.clubName;
         changes.requiredTrophies = typeof verified.requiredTrophies === "number" ? verified.requiredTrophies : null;
       }
       if (localApiKey.trim()) changes.apiKey = localApiKey;
-      await saveSettingsToDB(changes);
+      await saveSettingsToDB(changes, { signal: current.signal });
+      if (current.signal.aborted) return;
       setLocalClubTag(null);
       setLocalApiKey("");
       setGeneralStatus("saved");
     } catch (error) {
+      if (current.signal.aborted) return;
       setGeneralError(error instanceof Error ? error.message : "Failed to save settings. Please try again.");
       setGeneralStatus("idle");
-    }
+    } finally { if (controller.current === current) pendingSave.current = false; }
   };
 
   const handleSaveNotifications = async () => {
+    const current = beginSave(); if (!current) return;
     setNotifStatus("saving");
     setNotifError("");
     try {
       await saveSettingsToDB({ notificationsEnabled: effectiveNotificationsEnabled,
         ...(localDiscordWebhook.trim() ? { discordWebhook: localDiscordWebhook } : {}),
-      });
+      }, { signal: current.signal });
+      if (current.signal.aborted) return;
       setLocalNotificationsEnabled(null);
       setLocalDiscordWebhook("");
       setNotifStatus("saved");
     } catch (error) {
+      if (current.signal.aborted) return;
       setNotifError(error instanceof Error ? error.message : "Failed to save notification settings. Please try again.");
       setNotifStatus("idle");
-    }
+    } finally { if (controller.current === current) pendingSave.current = false; }
   };
 
   const handleSaveActivity = async () => {
+    const current = beginSave(); if (!current) return;
     setActivityStatus("saving");
     setActivityError("");
     try {
-      await saveSettingsToDB({ inactivityThreshold: effectiveInactivityThreshold });
+      await saveSettingsToDB({ inactivityThreshold: effectiveInactivityThreshold }, { signal: current.signal });
+      if (current.signal.aborted) return;
       setLocalInactivityThreshold(null);
       setActivityStatus("saved");
     } catch (error) {
+      if (current.signal.aborted) return;
       setActivityError(error instanceof Error ? error.message : "Failed to save activity settings. Please try again.");
       setActivityStatus("idle");
-    }
+    } finally { if (controller.current === current) pendingSave.current = false; }
   };
 
   return (

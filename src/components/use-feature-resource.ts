@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { fetchJsonCached } from "@/lib/client-data-cache";
+import { CLUB_ROSTER_UNAVAILABLE_MESSAGE } from "@/lib/club-roster-message";
 
 // These views share bounded reads and ignore responses for an older filter.
 export function useFeatureResource<T>(url: string | null, datasets: string) {
@@ -18,8 +19,10 @@ export function useFeatureResource<T>(url: string | null, datasets: string) {
         data: previous.url === url && previous.response === data ? previous.data : data,
         response: data, loading: false, error: false,
       }));
-    }).catch(() => {
-      if (sequence.current === request) setState(previous => ({ url, data: previous.url === url ? previous.data : null, response: previous.url === url ? previous.response : null, loading: false, error: true }));
+    }).catch(error => {
+      const rosterUnavailable = error instanceof Error && error.message === CLUB_ROSTER_UNAVAILABLE_MESSAGE;
+      if (sequence.current === request) setState(previous => ({ url, data: previous.url === url && !rosterUnavailable ? previous.data : null,
+        response: previous.url === url && !rosterUnavailable ? previous.response : null, loading: false, error: true }));
     });
   }, [url]);
   useEffect(() => {
@@ -28,8 +31,13 @@ export function useFeatureResource<T>(url: string | null, datasets: string) {
     void load();
     let changedWhileHidden = false;
     const changed = (event: Event) => {
-      const changedDatasets = (event as CustomEvent<{ datasets?: string[] }>).detail?.datasets;
+      const detail = (event as CustomEvent<{ datasets?: string[]; clubChanged?: boolean }>).detail;
+      const changedDatasets = detail?.datasets;
       if (changedDatasets && !changedDatasets.some(dataset => datasets.split(",").includes(dataset))) return;
+      if (detail?.clubChanged) {
+        sequence.current++;
+        setState({ url, data: null, response: null, loading: true, error: false });
+      }
       if (document.visibilityState === "hidden") { changedWhileHidden = true; return; }
       void load(true);
     };

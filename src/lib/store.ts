@@ -1,6 +1,7 @@
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
 import { fetchJsonWithTimeout } from "@/lib/client-fetch";
+import { invalidateJsonCache } from "@/lib/client-data-cache";
 
 let settingsRead: Promise<void> | null = null;
 let settingsGeneration = 0;
@@ -48,7 +49,7 @@ interface AppState {
   setDiscordWebhook: (webhook: string) => void;
   setRequiredTrophies: (trophies: number | null) => void;
   loadSettingsFromDB: (force?: boolean) => Promise<void>;
-  saveSettingsToDB: (changes?: SettingsChanges) => Promise<void>;
+  saveSettingsToDB: (changes?: SettingsChanges, options?: { signal?: AbortSignal }) => Promise<void>;
 }
 
 function parseIntegerSetting(value: unknown, fallback: number, min = 1, max = Number.MAX_SAFE_INTEGER): number {
@@ -138,7 +139,8 @@ export const useAppStore = create<AppState>()(
         settingsRead = pending;
         try { await pending; } finally { if (settingsRead === pending) settingsRead = null; }
       },
-      saveSettingsToDB: async (changes) => {
+      saveSettingsToDB: async (changes, { signal } = {}) => {
+        signal?.throwIfAborted();
         const state = get();
         if (state.settingsError) throw new Error(state.settingsError);
         const proposed: SettingsChanges = changes ?? {
@@ -160,8 +162,9 @@ export const useAppStore = create<AppState>()(
         settingsGeneration++; settingsRead = null;
         set({ isLoadingSettings: false });
         const result = await fetchJsonWithTimeout<{ success: boolean; requiresSync?: boolean }>("/api/settings", {
-          method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload),
+          method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload), signal,
         });
+        signal?.throwIfAborted();
         if (result.success !== true) throw new Error("Failed to save settings");
         // A read begun while the POST was pending may still contain the old row.
         settingsGeneration++; settingsRead = null;
@@ -173,6 +176,10 @@ export const useAppStore = create<AppState>()(
           discordWebhookConfigured: payload.discord_webhook ? true : get().discordWebhookConfigured,
           ...(result.requiresSync ? { lastSyncTime: null } : {}),
         });
+        if (result.requiresSync) {
+          invalidateJsonCache("/api/", { cancelPending: true });
+          if (typeof window !== "undefined") window.dispatchEvent(new CustomEvent("club-data-updated", { detail: { clubChanged: true } }));
+        }
       },
     }),
     {

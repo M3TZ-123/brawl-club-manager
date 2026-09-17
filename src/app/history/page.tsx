@@ -196,7 +196,7 @@ export default function HistoryPage() {
 
   const currentCount = history.filter((h) => h.is_current_member).length;
   const formerCount = history.filter((h) => !h.is_current_member).length;
-  const returningCount = history.filter((h) => h.times_joined > 1).length;
+  const returningCount = history.filter((h) => h.times_joined > 1 || (h.is_current_member && h.times_left > 0)).length;
 
   return (
     <LayoutWrapper>
@@ -209,7 +209,7 @@ export default function HistoryPage() {
         {isAdmin && noteError && <p role="alert" className="text-sm text-destructive"><T text={noteError} /></p>}
         {/* Stats */}
         <dl className="grid grid-cols-2 gap-3 rounded-lg border bg-card p-3 text-sm sm:grid-cols-4">
-          {([["Total Records", history.length], ["Current Members", currentCount], ["Former Members", formerCount], ["Returning Members", returningCount]] as const).map(([label, count]) => <div key={label}><dt className="text-xs text-muted-foreground"><T text={label} /></dt><dd className="mt-1 text-lg font-semibold">{isLoading || loadError ? "—" : number(count)}</dd></div>)}
+          {([["Total Records", history.length], ["Current Members", currentCount], ["Former Members", formerCount], ["Known returning members", returningCount]] as const).map(([label, count]) => <div key={label}><dt className="text-xs text-muted-foreground"><T text={label} /></dt><dd className="mt-1 text-lg font-semibold">{isLoading || loadError ? "—" : number(count)}</dd></div>)}
         </dl>
 
             {/* History Table */}

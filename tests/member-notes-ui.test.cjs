@@ -4,7 +4,7 @@ const { loadTypeScript } = require("./helpers/load-typescript.cjs");
 const { hookRenderer, componentMocks, elements, textContent, action } = require("./helpers/client-renderer.cjs");
 const find = (tree, type) => { const found = elements(tree).find(node => node.type === type); assert.ok(found, `Missing ${type}`); return found; };
 const initial = { player_tag: "#OLD", status: "pending", notes: "Earlier reason", follow_up_at: null, updated_at: "2026-09-16T09:10:11.123456+00:00" };
-function harness({ review = initial, read, patch } = {}) {
+function harness({ review = initial, read, patch, activityStatus } = {}) {
   const renderer = hookRenderer(), requests = [], events = [];
   let open = true;
   const loaded = loadTypeScript("src/components/member-review.tsx", {
@@ -21,21 +21,24 @@ function harness({ review = initial, read, patch } = {}) {
     },
     window: { dispatchEvent: event => events.push(event.type) }, CustomEvent: class { constructor(type) { this.type = type; } },
   });
-  const member = { player_tag: "#OLD", player_name: "Former member", is_current_member: false, first_seen: "2025-01-01", times_joined: 2, times_left: 2, last_left_at: "2026-09-01" };
+  const member = { player_tag: "#OLD", player_name: "Former member", activity_status: activityStatus, is_current_member: false, first_seen: "2025-01-01", times_joined: 2, times_left: 2, last_left_at: "2026-09-01" };
   return { requests, events, close: () => { open = false; }, render: () => renderer.render(() => loaded.MemberReviewSheet({ member, open, onOpenChange() {} })) };
 }
 
 test("former-member notes remain editable without a live profile and save the exact revision", async () => {
-  const page = harness(); let tree = await page.render();
+  const page = harness({ activityStatus: "minimal" }); let tree = await page.render();
   assert.equal(find(tree, "textarea").props.value, "Earlier reason");
   assert.match(textContent(tree), /Observed joins: 2 · Observed departures: 2/);
   assert.match(textContent(tree), /Last recorded departure/);
   assert.match(textContent(tree), /Departure reasons are entered manually/);
+  assert.match(textContent(tree), /Recent activity: Low activity/);
+  assert.deepEqual(elements(find(tree, "select")).filter(node => node.type === "option").map(node => [node.props.value, textContent(node)]), [["pending", "Pending"], ["reviewed", "Reviewed"], ["follow_up", "Follow up"]]);
   find(tree, "textarea").props.onChange({ target: { value: "Left to join friends" } }); tree = await page.render();
   await action(tree, "Save review")(); tree = await page.render();
   const sent = JSON.parse(page.requests.find(request => request.method === "PATCH").body);
   assert.equal(sent.expected_updated_at, initial.updated_at);
   assert.equal(sent.notes, "Left to join friends");
+  assert.equal(sent.status, "pending");
   assert.match(textContent(tree), /Review saved/);
   find(tree, "textarea").props.onChange({ target: { value: "A second draft" } }); tree = await page.render();
   assert.doesNotMatch(textContent(tree), /Review saved/);

@@ -9,7 +9,7 @@ const insights = () => ({ insights: { megaBoss: { isTracked: false }, winRate: 5
 const picker = tree => elements(tree).find(element => element.type === "TimeRangePicker");
 const stats = tree => elements(tree).find(element => element.type === "StatsCards");
 
-function fixture(fetchJsonCached) {
+function fixture(fetchJsonCached, browserWindow = windowMock) {
   const renderer = hookRenderer();
   const page = loadTypeScript("src/app/page.tsx", {
     ...componentMocks, react: renderer.react,
@@ -17,7 +17,7 @@ function fixture(fetchJsonCached) {
     "@/components/setup-wizard": { SetupWizard: "SetupWizard" },
     "@/lib/store": { useAppStore: () => ({ clubTag: "#ABC", apiKeyConfigured: true, lastSyncTime: "2026-09-16T10:00:00Z", hasLoadedSettings: true, isLoadingSettings: false, loadSettingsFromDB() {} }) },
     "@/lib/client-data-cache": { fetchJsonCached },
-  }, { window: windowMock }).default;
+  }, { window: browserWindow, Error }).default;
   return () => renderer.render(page);
 }
 
@@ -27,11 +27,27 @@ test("clicking the dashboard's selected period leaves its loaded content visible
   let tree = await render();
   assert.equal(stats(tree).props.totalMembers, 7);
   assert.equal(picker(tree).props.value, "7d");
+  assert.equal(elements(tree).find(element => textContent(element) === "View full report").props.href, "/reports?range=7d");
   picker(tree).props.onChange("7d");
   tree = await render();
   assert.equal(stats(tree).props.totalMembers, 7);
   assert.equal(urls.length, 2, "Clicking the selected button must not clear data or trigger another request");
   assert.match(textContent(tree), /2026-09-10T00:00:00Z.*2026-09-16T10:00:00Z/);
+});
+
+test("a club change clears the previous dashboard before an unavailable new roster response", async () => {
+  const listeners = new Map(), waiting = pending(); let changed = false;
+  const render = fixture(async url => {
+    if (changed) { await waiting.promise; throw new Error("The club roster is awaiting a successful sync."); }
+    return url.startsWith("/api/dashboard") ? summary(30) : insights();
+  }, { ...windowMock, addEventListener: (name, listener) => listeners.set(name, listener), removeEventListener: name => listeners.delete(name) });
+  let tree = await render(); assert.equal(stats(tree).props.totalMembers, 30);
+  changed = true; listeners.get("club-data-updated")({ detail: { clubChanged: true } }); tree = await render();
+  assert.equal(stats(tree), undefined);
+  waiting.resolve(); tree = await render();
+  assert.equal(stats(tree), undefined);
+  assert.match(textContent(tree), /Could not refresh the dashboard/);
+  assert.doesNotMatch(textContent(tree), /recorded participations/);
 });
 
 test("dashboard period races cannot put an older response beneath the newest period", async () => {
@@ -52,6 +68,7 @@ test("dashboard period races cannot put an older response beneath the newest per
   newer.resolve(summary(90));
   tree = await render();
   assert.equal(stats(tree).props.totalMembers, 90);
+  assert.equal(elements(tree).find(element => textContent(element) === "View full report").props.href, "/reports?range=90d");
   older.resolve(summary(30));
   tree = await render();
   assert.equal(picker(tree).props.value, "90d");

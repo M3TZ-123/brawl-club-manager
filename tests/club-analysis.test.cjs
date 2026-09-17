@@ -1,6 +1,7 @@
 const test=require("node:test");
 const assert=require("node:assert/strict");
 const {loadTypeScript}=require("./helpers/load-typescript.cjs");
+const {readOnlyDatabase}=require("./helpers/read-only-database.cjs");
 const at="2026-09-16T12:00:00.000Z";
 class FixedDate extends Date{constructor(...args){super(...(args.length?args:[at]));}static now(){return Date.parse(at);}}
 const next={NextResponse:{json:(body,init)=>Response.json(body,init)}};
@@ -14,7 +15,7 @@ const analysis=()=>({summary:{...stats,notes:"PRIVATE"},modes:[{...stats,context
 const readyRow=()=>({player:{tag:"#A",name:"علي",notes:"PRIVATE"},brawler:{id:16000000,name:"Shelly"},powerLevel:11,trophies:0,highestTrophies:null,rank:1,prestigeLevel:null,currentWinStreak:0,maxWinStreak:null,
   gadgets:[{id:1,name:"Gadget",level:0,token:"PRIVATE"}],starPowers:[],gears:null,hyperCharges:null,buffies:{gadget:false,starPower:true,hyperCharge:null,token:"PRIVATE"},observedAt:at,fieldCheckedAt:{power_level:at,highest_trophies:"2999-01-01T00:00:00Z",secret:"PRIVATE"},owner_user_id:"PRIVATE"});
 const readiness=()=>({members:[{tag:"#A",name:"علي",brawlersObserved:1,power9Plus:1,power10Plus:1,power11:1,observedAt:at,notes:"PRIVATE"}],brawlers:[{id:16000000,name:"Shelly",playersObserved:1}],rows:[readyRow()],total:1});
-function route(endpoint,data,calls=[],error=null){return loadTypeScript(`src/app/api/${endpoint}/route.ts`,{"next/server":next,"@/lib/supabase-admin":{supabaseAdmin:{rpc:async(name,args)=>{calls.push({name,args});return{data:typeof data==="function"?data():data,error};},from(){throw Error("Expected single RPC");}}}},{Date:FixedDate});}
+function route(endpoint,data,calls=[],error=null){return loadTypeScript(`src/app/api/${endpoint}/route.ts`,{"next/server":next,"@/lib/supabase-admin":{supabaseAdmin:{rpc:async(name,args)=>{calls.push({name,args});return{data:typeof data==="function"?data():data,error};},from(table){assert.equal(table,"settings");return readOnlyDatabase({settings:[{key:"club_tag",value:"#CLUB"},{key:"last_sync_time",value:at}]}).from(table);}}}},{Date:FixedDate});}
 const request=query=>new Request(`http://fixture/api?${query}`);
 
 test("analysis uses one bounded RPC for each exact rolling period and canonical filter",async()=>{

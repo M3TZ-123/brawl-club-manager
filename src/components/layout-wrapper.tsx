@@ -404,7 +404,13 @@ function SimpleHeader() {
     }
   };
 
-  const renderMessageWithMemberLinks = (message: string) => {
+  const renderMessageWithMemberLinks = (message: string, messageParts?: ReturnType<typeof localizeNotificationForDisplay>["messageParts"]) => {
+    if (messageParts) return messageParts.map((part, index) => part.tag ? (
+      <Link key={`${part.tag}-${index}`} href={`/members/${encodeURIComponent(part.tag)}`}
+        className="font-medium text-primary hover:underline" onClick={(event) => event.stopPropagation()}>
+        {part.text}
+      </Link>
+    ) : part.text);
     const parts: ReactNode[] = [];
     const regex = /([^,()]+?)\s\((#[A-Z0-9]+)\)/g;
     let lastIndex = 0;
@@ -536,7 +542,7 @@ function SimpleHeader() {
                                 )}
                               </div>
                               <p className="text-sm text-muted-foreground mt-0.5 break-words">
-                                {renderMessageWithMemberLinks(display.message)}
+                                {renderMessageWithMemberLinks(display.message, display.messageParts)}
                               </p>
                               <p className="text-xs text-muted-foreground/70 mt-1">
                                 <LocalDate value={notif.created_at} time />

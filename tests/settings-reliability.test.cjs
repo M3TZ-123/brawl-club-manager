@@ -16,9 +16,10 @@ function pageFixture(store, fetch) {
   const renderer = hookRenderer();
   const Page = loadTypeScript("src/app/settings/page.tsx", { ...componentMocks, react: renderer.react,
     "@/lib/store": { useAppStore: () => store.getState() },
+    "@/hooks/use-admin-session": { useAdminSession: () => ({ isAdmin: true, isLoading: false }) },
     "@/components/ui/switch": { Switch: "Switch" },
     "@/components/ui/tabs": Object.fromEntries(["Tabs", "TabsContent", "TabsList", "TabsTrigger"].map(key => [key, key])),
-  }, { fetch, console: quiet, Error }).default;
+  }, { fetch, console: quiet, Error, window: windowMock }).default;
   return { render: () => renderer.render(Page) };
 }
 const field = (tree, id) => elements(tree).find(node => node.props?.id === id);

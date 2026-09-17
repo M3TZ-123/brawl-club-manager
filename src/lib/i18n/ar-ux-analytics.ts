@@ -1,4 +1,11 @@
 const arUxAnalytics: Record<string, string> = {
+  "Selected brawler": "البراولر المحدد",
+  "matching members": "أعضاء مطابقون",
+  "Known returning members": "أعضاء سُجّل رجوعهم",
+  "The club roster is awaiting a successful sync.": "تشكيلة النادي في انتظار مزامنة ناجحة.",
+  "Account trophy change": "تغيّر كؤوس الحساب",
+  "No trophy change recorded in this period.": "لم يُسجّل تغيّر في الكؤوس خلال هذه الفترة.",
+  "No members have enough recorded battles for this ranking.": "لا يوجد أعضاء لديهم عدد كافٍ من المعارك المسجلة لهذا الترتيب.",
   "Activity view": "عرض النشاط",
   "Daily activity": "النشاط اليومي",
   "Member rankings": "ترتيب الأعضاء",

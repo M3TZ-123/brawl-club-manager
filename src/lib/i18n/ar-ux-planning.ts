@@ -1,4 +1,8 @@
 const arUxPlanning: Record<string, string> = {
+  "This creation was already saved with different details. Check the goals and events before creating another.": "سبق حفظ هذه العملية بتفاصيل مختلفة. راجع الأهداف والفعاليات قبل إنشاء واحدة أخرى.",
+  "This candidate was edited elsewhere. Your draft is preserved; load the saved candidate before saving again.": "عُدّل هذا المرشح من مكان آخر. مسودتك محفوظة؛ حمّل النسخة المحفوظة قبل الحفظ مجددًا.",
+  "Discard draft and load saved candidate": "تجاهل المسودة وتحميل المرشح المحفوظ",
+  "Clear the manual wins and tickets before changing the event type.": "امسح الانتصارات والتذاكر المدخلة يدويًا قبل تغيير نوع الفعالية.",
   "Back to planning": "العودة إلى التخطيط",
   "Choose a shared goal or organize your next club event.": "حدّد هدفًا مشتركًا أو نظّم فعالية النادي القادمة.",
   "Planning view": "عرض التخطيط",

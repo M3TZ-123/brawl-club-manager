@@ -6,7 +6,8 @@ import { ReactNode, useCallback, useEffect, useMemo, useRef, useState } from "re
 import Link from "next/link";
 import { cn } from "@/lib/utils";
 import { fetchJsonCached, invalidateJsonCache } from "@/lib/client-data-cache";
-import { localizeNotificationForDisplay } from "@/lib/notification-display";
+import { fetchJsonWithTimeout } from "@/lib/client-fetch";
+import { localizeNotificationForDisplay, type NotificationMessagePart } from "@/lib/notification-display";
 import { useAdminSession } from "@/hooks/use-admin-session";
 import { LayoutWrapper } from "@/components/layout-wrapper";
 import { TimeRangePicker } from "@/components/time-range-picker";
@@ -39,6 +40,7 @@ interface Notification {
 }
 
 type NotificationMutationResponse = {
+  success?: boolean;
   unreadCount?: number;
   error?: string;
 };
@@ -62,7 +64,12 @@ function getDateHeading(date: Date, locale: string) {
 
 export default function NotificationsPage() {
   const { locale, t, number } = useI18n();
-  const { isAdmin } = useAdminSession();
+  const { isAdmin, isLoading: sessionLoading } = useAdminSession();
+  const session = useRef({ isAdmin, sessionLoading });
+  session.current = { isAdmin, sessionLoading };
+  const mutationController = useRef<AbortController | null>(null);
+  const pendingMutation = useRef(false);
+  const [mutating, setMutating] = useState(false);
   const [notifications, setNotifications] = useState<Notification[]>([]);
   const [unreadCount, setUnreadCount] = useState(0);
   const [loading, setLoading] = useState(true);
@@ -75,6 +82,20 @@ export default function NotificationsPage() {
   const [actionError, setActionError] = useState(false);
   const [filter, setFilter] = useState<"all" | "unread">("all");
   const [category, setCategory] = useState<"all" | "join" | "leave" | "inactive" | "promotion" | "name_change" | "capacity" | "battle_gap">("all");
+
+  useEffect(() => {
+    mutationController.current = new AbortController();
+    const changed = () => {
+      mutationController.current?.abort(); mutationController.current = new AbortController();
+      pendingMutation.current = false; setMutating(false); setActionError(false);
+      setCategory(value => value === "capacity" ? "all" : value);
+    };
+    window.addEventListener("admin-session-changed", changed);
+    return () => {
+      mutationController.current?.abort();
+      window.removeEventListener("admin-session-changed", changed);
+    };
+  }, []);
 
   const loadNotifications = useCallback(async (force = false, page: NotificationPageBoundary | null = null) => {
     const sequence = ++loadSequence.current;
@@ -138,55 +159,30 @@ export default function NotificationsPage() {
     };
   }, [loadNotifications]);
 
-  const markAsRead = async (id: number) => {
-    if (!isAdmin) return;
-    setActionError(false);
+  const markRead = async (id?: number) => {
+    const current = mutationController.current;
+    if (!session.current.isAdmin || session.current.sessionLoading || pendingMutation.current || !current || current.signal.aborted) return;
+    pendingMutation.current = true; setMutating(true); setActionError(false);
     try {
-      const response = await fetch("/api/notifications", {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ ids: [id] }),
+      const data = await fetchJsonWithTimeout<NotificationMutationResponse>("/api/notifications", {
+        method: "PATCH", signal: current.signal, headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(id === undefined ? { all: true } : { ids: [id] }),
       });
-      const data = await response.json().catch(() => ({})) as NotificationMutationResponse;
-      if (!response.ok) {
-        throw new Error(data.error || "Failed to mark notification as read");
-      }
+      if (current.signal.aborted) return;
+      if (data?.success !== true || !Number.isSafeInteger(data.unreadCount) || data.unreadCount! < 0) throw new Error("Invalid notification response");
       invalidateJsonCache("/api/notifications");
-      setNotifications((prev) =>
-        prev.map((n) => (n.id === id ? { ...n, is_read: true } : n))
-      );
-      setUnreadCount((c) =>
-        typeof data.unreadCount === "number" ? data.unreadCount : Math.max(0, c - 1)
-      );
+      setNotifications(previous => previous.map(row => id === undefined || row.id === id ? { ...row, is_read: true } : row));
+      setUnreadCount(data.unreadCount!);
       window.dispatchEvent(new CustomEvent("notifications-updated"));
-    } catch (error) {
-      setActionError(true);
-      console.error("Error marking as read:", error);
+    } catch {
+      if (!current.signal.aborted) setActionError(true);
+    } finally {
+      if (mutationController.current === current) pendingMutation.current = false;
+      if (!current.signal.aborted) setMutating(false);
     }
   };
-
-  const markAllAsRead = async () => {
-    if (!isAdmin) return;
-    setActionError(false);
-    try {
-      const response = await fetch("/api/notifications", {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ all: true }),
-      });
-      const data = await response.json().catch(() => ({})) as NotificationMutationResponse;
-      if (!response.ok) {
-        throw new Error(data.error || "Failed to mark all notifications as read");
-      }
-      invalidateJsonCache("/api/notifications");
-      setNotifications((prev) => prev.map((n) => ({ ...n, is_read: true })));
-      setUnreadCount(typeof data.unreadCount === "number" ? data.unreadCount : 0);
-      window.dispatchEvent(new CustomEvent("notifications-updated"));
-    } catch (error) {
-      setActionError(true);
-      console.error("Error marking all as read:", error);
-    }
-  };
+  const markAsRead = (id: number) => markRead(id);
+  const markAllAsRead = () => markRead();
 
   const getStyle = (type: string) => {
     switch (type) {
@@ -211,7 +207,10 @@ export default function NotificationsPage() {
     }
   };
 
-  const renderMessageWithMemberLinks = (message: string) => {
+  const renderMessageWithMemberLinks = (message: string, messageParts?: NotificationMessagePart[]) => {
+    if (messageParts) return messageParts.map((part, index) => part.tag
+      ? <Link key={`${part.tag}-${index}`} href={`/members/${encodeURIComponent(part.tag)}`} className="font-medium text-primary hover:underline" onClick={event => event.stopPropagation()}>{part.text}</Link>
+      : part.text);
     const parts: ReactNode[] = [];
     const regex = /([^,()]+?)\s\((#[A-Z0-9]+)\)/g;
     let lastIndex = 0;
@@ -316,7 +315,7 @@ export default function NotificationsPage() {
             </button>
           </div>
           {unreadCount > 0 && isAdmin && (
-            <Button variant="outline" size="sm" onClick={markAllAsRead}>
+            <Button variant="outline" size="sm" disabled={mutating} onClick={markAllAsRead}>
               <CheckCheck className="h-4 w-4 me-1" />
               <T text=" Mark all read " /></Button>
           )}
@@ -392,12 +391,12 @@ export default function NotificationsPage() {
                             )}
                           </div>
                           <p className="text-sm text-muted-foreground mt-1 break-words">
-                            {renderMessageWithMemberLinks(display.message)}
+                            {renderMessageWithMemberLinks(display.message, display.messageParts)}
                           </p>
                           <p className="text-xs text-muted-foreground/60 mt-2">
                             <LocalDate value={notif.created_at} time />
                           </p>
-                          {isAdmin && !notif.is_read && <Button variant="ghost" size="sm" className="mt-2" onClick={() => markAsRead(notif.id)}>
+                          {isAdmin && !notif.is_read && <Button variant="ghost" size="sm" className="mt-2" disabled={mutating} onClick={() => markAsRead(notif.id)}>
                             <T text="Mark as read" />
                           </Button>}
                         </div>

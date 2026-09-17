@@ -16,7 +16,7 @@ function tables() {
     battle_history: [{ player_tag: "#A", battle_time: timestamp, mode: "brawlBall", map: "Fixture map", result: "victory", trophy_change: 8, is_star_player: false, brawler_name: "SHELLY", brawler_power: 11, teams_json: [[{tag:"#A",name:"Public fixture",owner_user_id:owner}],[{tag:"#B",name:"Opponent",owner_user_id:owner}]] }],
     daily_stats: [{ player_tag: "#A", date: "2026-09-16", battles: 1, wins: 1, losses: 0, star_player: 0, trophies_gained: 8, trophies_lost: 0 }],
     player_tracking: [{ player_tag: "#A", total_battles: 1, total_wins: 1, active_days: 1 }],
-    settings: [{ key: "last_sync_time", value: timestamp }],
+    settings: [{ key: "club_tag", value: "#CLUB" }, { key: "last_sync_time", value: timestamp }],
   };
   return Object.fromEntries(Object.entries(rows).map(([table, data]) => [table, data.map(row => ({...row, owner_user_id: owner}))]));
 }

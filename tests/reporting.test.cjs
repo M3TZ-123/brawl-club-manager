@@ -13,7 +13,7 @@ const responseMock = { NextResponse: { json: (body, init) => Response.json(body,
 
 function fixture(threshold = "48") {
   return {
-    settings: [{ key: "inactivity_threshold", value: threshold }],
+    settings: [{ key: "inactivity_threshold", value: threshold }, { key: "club_tag", value: "#CLUB" }, { key: "last_sync_time", value: now.toISOString() }],
     activity_summary: [1, 30, 70].map((hours, index) => ({
       player_tag: ["#A", "#B", "#C"][index], last_battle_at: ago(hours), last_activity_at: ago(hours),
       trophies_24h: index === 0 ? 8 : null, trophies_3d: 8, trophies_7d: 8, trophies_30d: index === 0 ? 300 : null, trophies_90d: null,

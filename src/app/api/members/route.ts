@@ -2,12 +2,14 @@ import { NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabase-admin";
 import { appendMemberActivityMetrics } from "@/lib/member-activity-metrics";
 import { PUBLIC_MEMBER_LIST_COLUMNS, publicMemberSnapshot } from "@/lib/sync-public-snapshots";
+import { requireAcceptedClubRoster, assertAcceptedClubRoster, ClubRosterUnavailableError } from "@/lib/accepted-club-roster";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
 
 export async function GET() {
   try {
+    const clubTag = await requireAcceptedClubRoster();
     const { data: currentMemberHistory, error: currentMemberError } = await supabaseAdmin
       .from("member_history")
       .select("player_tag")
@@ -29,6 +31,7 @@ export async function GET() {
     }));
     const membersWithGains = await appendMemberActivityMetrics(publicMembers);
 
+    await assertAcceptedClubRoster(clubTag);
     return NextResponse.json(
       { members: membersWithGains },
       { headers: { "Cache-Control": "no-store" } }
@@ -36,8 +39,8 @@ export async function GET() {
   } catch (error) {
     console.error("Error fetching members:", error);
     return NextResponse.json(
-      { error: "Failed to fetch members" },
-      { status: 500, headers: { "Cache-Control": "no-store" } }
+      { error: error instanceof ClubRosterUnavailableError ? error.message : "Failed to fetch members" },
+      { status: error instanceof ClubRosterUnavailableError ? 409 : 500, headers: { "Cache-Control": "no-store" } }
     );
   }
 }

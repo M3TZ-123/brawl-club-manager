@@ -1,5 +1,6 @@
 import "server-only";
 import { supabaseAdmin } from "@/lib/supabase-admin";
+import { requireAcceptedClubRoster, assertAcceptedClubRoster } from "@/lib/accepted-club-roster";
 import { battleContextOptions, getBattleModeInfo, normalizeBattleMode } from "@/lib/battle-catalog";
 import { parseTimeRange, TIME_RANGES } from "@/lib/time-range";
 import type { AnalysisContext, AnalysisResponse, AnalysisStats, ReadinessResponse, ReadinessRow, ReportedEquipment } from "@/lib/club-analysis-types";
@@ -64,6 +65,7 @@ export async function readClubAnalysis(params: URLSearchParams, now = new Date()
   };
   if (filters.context && !battleContextOptions.some(item => item.key === filters.context)) throw new AnalysisInputError("Invalid battle context");
   if (filters.mode) filters.mode = normalizeBattleMode(filters.mode);
+  const clubTag = await requireAcceptedClubRoster();
   const { data, error } = await supabaseAdmin.rpc("club_analysis_read", {
     p_days: days, p_now: now.toISOString(), p_context: filters.context, p_mode: filters.mode, p_map: filters.map, p_brawler: filters.brawler,
   });
@@ -71,6 +73,7 @@ export async function readClubAnalysis(params: URLSearchParams, now = new Date()
   const body = object(data), facets = object(body.facets), coverage = object(body.coverage), limits = object(body.limits);
   const groupCounts = object(limits.groupCounts), facetCounts = object(limits.facetCounts);
   const plainFacet = (rows: unknown) => array(rows).map(row => ({ key: text(row.key), count: count(row.count) }));
+  await assertAcceptedClubRoster(clubTag);
   return {
     period: { key, days, start: new Date(now.getTime() - days * 86_400_000).toISOString(), end: now.toISOString(), aggregation: "rolling" },
     filters, summary: stats(object(body.summary)),
@@ -135,6 +138,7 @@ export async function readClubReadiness(params: URLSearchParams, now = new Date(
   const brawler = integerFilter(params, "brawler", null, 0, 2_147_483_647);
   const minPower = integerFilter(params, "minPower", 0, 0, 11), offset = integerFilter(params, "offset", 0, 0, 100000)!;
   const limit = integerFilter(params, "limit", 100, 1, 200), search = optionalFilter(params, "search", 100);
+  const clubTag = await requireAcceptedClubRoster();
   const { data, error } = await supabaseAdmin.rpc("club_readiness_read", {
     p_now: now.toISOString(), p_brawler: brawler, p_min_power: minPower, p_search: search, p_offset: offset, p_limit: limit,
   });
@@ -142,6 +146,7 @@ export async function readClubReadiness(params: URLSearchParams, now = new Date(
   const body = object(data), total = count(body.total), rows = array(body.rows, 200).map(row => readinessRow(row, now));
   const hasMore = offset + rows.length < total;
   if (hasMore && rows.length === 0) throw new Error("Invalid readiness page");
+  await assertAcceptedClubRoster(clubTag);
   return {
     members: array(body.members, 100).map(row => ({ tag: text(row.tag, 30), name: text(row.name), brawlersObserved: count(row.brawlersObserved),
       power9Plus: count(row.power9Plus), power10Plus: count(row.power10Plus), power11: count(row.power11), observedAt: timestamp(row.observedAt, now) })),

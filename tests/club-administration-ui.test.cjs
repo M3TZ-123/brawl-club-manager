@@ -73,3 +73,20 @@ test('an application card never adds a candidate or updates its parent after log
   const page=harness('src/components/recruitment-applications.tsx','RecruitmentApplications',{onCandidate(){candidates++;}},request=>request.method==='GET'?{applications:[original],total:1,nextCursor:null}:pending.promise);
   const workspace=await page.render(),editor=page.mountCard(card(workspace));const tree=await editor.render();action(tree,'Add to watchlist')();await editor.render();editor.unmount();page.unmount();assert.ok(page.requests.every(row=>row.signal.aborted));pending.resolve({candidate:{}});await new Promise(resolve=>setImmediate(resolve));assert.equal(candidates,0);
 });
+
+test('failed administration reads stop loading and offer a working retry without a blank editing form',async()=>{
+  for(const [file,name,props,retryLabel,result] of [
+    ['src/components/club-administration-settings.tsx','ClubAdministrationSettings',{},'Reload saved settings',{settings:{...info,grace_hours:0,version:1,updated_at:'2026-09-16T00:00:00Z'}}],
+    ['src/components/member-administration.tsx','MemberAdministrationPanel',{playerTag:'#PYLQ',isCurrent:true},'Retry',administration],
+  ]){
+    let reads=0;const page=harness(file,name,props,()=>++reads===1?Promise.reject(new Error('offline')):result);
+    let tree=await page.render();
+    assert.ok(elements(tree).some(node=>node.props?.role==='alert'));
+    assert.equal(elements(tree).some(node=>node.props?.role==='status'&&textContent(node)==='Loading...'),false);
+    assert.equal(elements(tree).some(node=>node.type==='Input'||node.type==='textarea'),false);
+    action(tree,retryLabel)();tree=await page.render();
+    assert.equal(reads,2);assert.equal(elements(tree).some(node=>node.props?.role==='alert'),false);
+    assert.ok(elements(tree).some(node=>node.type==='Input'||node.type==='textarea'));
+    page.unmount();
+  }
+});

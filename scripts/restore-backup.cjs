@@ -12,14 +12,14 @@ const privateTables = [
   "club_roster_snapshots", "club_profiles", "club_profile_events", "member_decision_log", "member_absences",
   "club_administration_settings", "recruitment_applications", "recruitment_application_limits", "club_goals",
   "club_goal_members", "club_goal_snapshots", "club_planned_events", "club_event_entries", "club_event_revisions",
-  "club_rivals", "club_rival_snapshots", "club_rank_history",
+  "club_rivals", "club_rival_snapshots", "club_rank_history", "club_planning_create_requests",
 ];
 const privateClubFunctions = new Set([
   "capture_club_intelligence", "club_intelligence_read", "reject_member_decision_mutation", "administration_club_tag",
   "save_club_administration", "append_member_decision", "declare_member_absence", "cancel_member_absence",
   "member_inactivity_exempt", "submit_recruitment_application", "review_recruitment_application", "save_recruitment_candidate_details",
   "club_planning_roster_ready", "club_planning_create_goal", "club_planning_archive_goal", "club_planning_refresh_goals",
-  "club_planning_save_event", "save_club_rival", "claim_club_rival", "finish_club_rival", "capture_club_rank_history",
+  "club_planning_save_event", "save_club_rival", "claim_club_rival", "finish_club_rival", "capture_club_rank_history", "club_planning_create_once",
 ]);
 
 function validateRestoreTarget(connectionString) {

@@ -24,10 +24,11 @@ test("configured settings prioritize activity while credential drafts stay mount
   };
   const Page = loadTypeScript("src/app/settings/page.tsx", { ...componentMocks, react: renderer.react,
     "@/lib/store": { useAppStore: () => store },
+    "@/hooks/use-admin-session": { useAdminSession: () => ({ isAdmin: true, isLoading: false }) },
     "@/lib/client-fetch": { fetchJsonWithTimeout: async () => ({ clubTag: "#PYLQ", clubName: "Club", requiredTrophies: 1000 }) },
     "@/components/ui/tabs": Object.fromEntries(["Tabs", "TabsContent", "TabsList", "TabsTrigger"].map(name => [name, name])),
     "@/components/ui/switch": { Switch: "Switch" },
-  }, { Error }).default;
+  }, { Error, window: windowMock }).default;
   let tree = await renderer.render(Page);
   assert.equal(elements(tree).find(node => node.type === "Tabs").props.defaultValue, "activity");
   const apiKey = field(tree, "settings-api-key");

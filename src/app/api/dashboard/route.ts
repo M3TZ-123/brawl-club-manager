@@ -6,6 +6,7 @@ import {
 } from "@/lib/member-activity-metrics";
 import { parseTimeRange, TIME_RANGES, type TrophyPeriodMetric } from "@/lib/time-range";
 import { getReportingPeriod, reportingPeriodMetadata } from "@/lib/reporting-period";
+import { requireAcceptedClubRoster, assertAcceptedClubRoster, ClubRosterUnavailableError } from "@/lib/accepted-club-roster";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -45,6 +46,7 @@ function sortByRisk(a: DashboardMember, b: DashboardMember, metric: TrophyPeriod
 
 export async function GET(request?: Request) {
   try {
+    const clubTag = await requireAcceptedClubRoster();
     const now = new Date();
     const range = parseTimeRange(request ? new URL(request.url).searchParams.get("range") : null);
     const period = getReportingPeriod(range, now);
@@ -86,6 +88,7 @@ export async function GET(request?: Request) {
       since,
     };
 
+    await assertAcceptedClubRoster(clubTag);
     return NextResponse.json(
       {
         period: reportingPeriodMetadata(period),
@@ -106,8 +109,8 @@ export async function GET(request?: Request) {
   } catch (error) {
     console.error("Error fetching dashboard:", error instanceof Error ? error.name : "database_error");
     return NextResponse.json(
-      { error: "Failed to fetch dashboard" },
-      { status: 500, headers: { "Cache-Control": "no-store" } }
+      { error: error instanceof ClubRosterUnavailableError ? error.message : "Failed to fetch dashboard" },
+      { status: error instanceof ClubRosterUnavailableError ? 409 : 500, headers: { "Cache-Control": "no-store" } }
     );
   }
 }

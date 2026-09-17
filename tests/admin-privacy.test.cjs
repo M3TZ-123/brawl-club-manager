@@ -276,6 +276,7 @@ test("settings expose only known public keys and booleans even if a query return
 test("public member roster strips legacy owner fields before adding activity metrics", async () => {
   const route = loadTypeScript("src/app/api/members/route.ts", {
     "next/server": next,
+    "@/lib/accepted-club-roster": { requireAcceptedClubRoster: async () => "#CLUB", assertAcceptedClubRoster: async () => {}, ClubRosterUnavailableError: class extends Error {} },
     "@/lib/supabase-admin": { supabaseAdmin: readOnlyDatabase({
       member_history: [{ player_tag: "#PLAYER", is_current_member: true }],
       members: [{ player_tag: "#PLAYER", player_name: "Member", trophies: 123, owner_user_id: "private-owner", private_future_field: "private" }],

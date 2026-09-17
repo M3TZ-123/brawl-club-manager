@@ -556,6 +556,10 @@ export default function BattleFeedPage() {
   useEffect(() => {
     let refreshWhenVisible = false;
     const handleClubDataUpdated = (event: Event) => {
+      if ((event as CustomEvent).detail?.clubChanged) {
+        loadSequence.current++;
+        setMatches([]); setTotal(0); setModes([]); setContextCounts({}); setMemberList([]); setClubTags(new Set()); setRawOffset(null);
+      }
       const datasets = (event as CustomEvent).detail?.datasets;
       if (Array.isArray(datasets) && !datasets.some(dataset => dataset === "roster" || dataset === "battles")) return;
       if (document.visibilityState === "hidden") { refreshWhenVisible = true; return; }

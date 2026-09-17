@@ -14,6 +14,7 @@ export function ClubEventEditor({event,data,onSaved,onCancel,onReload}:{event:Pl
   const [reason,setReason]=useState(""),[addTag,setAddTag]=useState(""),[lastAdded,setLastAdded]=useState("");
   const {save,busy,error}=usePlanningMutation(onSaved);
   const locked=Boolean(event&&data.eventDetail?.entries.some(e=>e.wins!==null||e.ticketsRemaining!==null||e.attendance==="present"||e.attendance==="absent"));
+  const hasDraftResults=entries.some(entry=>entry.wins!==null||entry.ticketsRemaining!==null);
   const nameFor=(tag:string)=>data.roster?.find(p=>p.tag===tag)?.name||data.eventDetail?.entries.find(p=>p.playerTag===tag)?.playerName||tag;
   const updateEntry=(index:number,patch:Partial<EventEntry>)=>setEntries(rows=>rows.map((row,i)=>i===index?{...row,...patch}:row));
   const available=(data.roster||[]).filter(p=>!entries.some(e=>e.playerTag===p.tag));
@@ -30,12 +31,13 @@ export function ClubEventEditor({event,data,onSaved,onCancel,onReload}:{event:Pl
     <fieldset disabled={busy} className="space-y-4 min-w-0">
       <div className="grid gap-3 sm:grid-cols-2">
         <label className="block text-sm">{t("Event title")}<Input required maxLength={100} value={fields.title} onChange={e=>setFields({...fields,title:e.target.value})}/></label>
-        <label className="block text-sm">{t("Event type")}<select className={selectClass} value={fields.kind} disabled={locked} onChange={e=>setFields({...fields,kind:e.target.value as EventFields["kind"],ticketAllowance:e.target.value==="mega_pig"?fields.ticketAllowance:null})}>{eventKinds.map(k=><option key={k} value={k}>{t(eventKindLabels[k])}</option>)}</select></label>
+        <label className="block text-sm">{t("Event type")}<select className={selectClass} value={fields.kind} disabled={locked||hasDraftResults} onChange={e=>{if(!locked&&!hasDraftResults)setFields({...fields,kind:e.target.value as EventFields["kind"],ticketAllowance:e.target.value==="mega_pig"?fields.ticketAllowance:null});}}>{eventKinds.map(k=><option key={k} value={k}>{t(eventKindLabels[k])}</option>)}</select></label>
         <label className="block text-sm">{t("Cycle or edition")}<Input required disabled={locked} maxLength={80} value={fields.cycleLabel} onChange={e=>setFields({...fields,cycleLabel:e.target.value})}/></label>
         <label className="block text-sm">{t("Starts at")}<Input required type="datetime-local" dir="ltr" disabled={locked} value={localDateInput(fields.startsAt)} onChange={e=>setFields({...fields,startsAt:inputDate(e.target.value)||""})}/></label>
         <label className="block text-sm">{t("Ends at")}<Input required type="datetime-local" dir="ltr" disabled={locked} value={localDateInput(fields.endsAt)} onChange={e=>setFields({...fields,endsAt:inputDate(e.target.value)||""})}/></label>
       </div>
       {locked&&<p className="text-xs text-muted-foreground">{t("Recorded results lock the cycle and dates. Create a new event for the next cycle.")}</p>}
+      {!locked&&hasDraftResults&&<p className="text-xs text-muted-foreground">{t("Clear the manual wins and tickets before changing the event type.")}</p>}
       <details className="rounded-lg border p-3" open={entries.length>0}><summary className="cursor-pointer font-medium">{t("Teams and attendance")} · {number(entries.length)}</summary><div className="mt-4 space-y-4">
         <div className="grid gap-3 sm:grid-cols-2"><label className="block text-sm">{t("Starters per team")}<Input required type="number" min={1} max={30} value={fields.teamSize} onChange={e=>setFields({...fields,teamSize:Number(e.target.value)})}/></label>
         {fields.kind==="mega_pig"&&<label className="block text-sm">{t("Tickets per member, if known")}<Input type="number" min={0} max={1000} value={fields.ticketAllowance??""} onChange={e=>setFields({...fields,ticketAllowance:nullable(e.target.value)})}/></label>}</div>

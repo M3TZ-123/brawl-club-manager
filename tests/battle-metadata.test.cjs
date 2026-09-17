@@ -60,7 +60,7 @@ test("points preserve real zero and nonzero legacy data without assigning unknow
 
 function route(rows, calls = []) {
   const tags=["#A","#B"];
-  const database=readOnlyDatabase({member_history:tags.map(player_tag=>({player_tag,is_current_member:true})),members:tags.map(player_tag=>({player_tag,player_name:player_tag}))});
+  const database=readOnlyDatabase({settings:[{key:"club_tag",value:"#CLUB"},{key:"last_roster_sync_time",value:new Date(now).toISOString()}],member_history:tags.map(player_tag=>({player_tag,is_current_member:true})),members:tags.map(player_tag=>({player_tag,player_name:player_tag}))});
   database.rpc=battleFeedRpc(rows,calls);
   return loadTypeScript("src/app/api/battles/feed/route.ts",{"@/lib/supabase-admin":{supabaseAdmin:database},"next/server":{NextResponse:{json:(body,init)=>Response.json(body,init)}}},{Date:FixedDate});
 }

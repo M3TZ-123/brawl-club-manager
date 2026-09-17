@@ -178,7 +178,12 @@ export async function PATCH(request: NextRequest) {
     const authResponse = rejectUnauthorizedAdminMutation(request);
     if (authResponse) return authResponse;
 
-    const body = await request.json().catch(() => ({}));
+    const body = await request.json().catch(() => null);
+    if (!body || typeof body !== "object" || Array.isArray(body)
+      || Object.keys(body).some(key => key !== "all" && key !== "ids")
+      || (Object.hasOwn(body, "all") && Object.hasOwn(body, "ids"))) {
+      return notificationResponse({ error: "Provide { all: true } or { ids: [1,2,3] }" }, { status: 400 });
+    }
 
     if (body.all === true) {
       const { error } = await supabaseAdmin
@@ -192,17 +197,13 @@ export async function PATCH(request: NextRequest) {
         throw error;
       }
     } else if (Array.isArray(body.ids) && body.ids.length > 0) {
-      const ids = body.ids
-        .map((id: unknown) => Number.parseInt(String(id), 10))
-        .filter((id: number) => Number.isFinite(id) && id > 0)
-        .slice(0, 100);
-
-      if (ids.length === 0) {
+      if (body.ids.length > 100 || !body.ids.every((id: unknown) => typeof id === "number" && Number.isSafeInteger(id) && id > 0 && id <= 2_147_483_647)) {
         return notificationResponse(
           { error: "Provide valid notification ids" },
           { status: 400 }
         );
       }
+      const ids = [...new Set(body.ids as number[])];
 
       const { error } = await supabaseAdmin
         .from("notifications")

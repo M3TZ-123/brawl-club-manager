@@ -4,11 +4,13 @@ import { appendMemberActivityMetrics } from "@/lib/member-activity-metrics";
 import { getReportingPeriod, reportingPeriodMetadata } from "@/lib/reporting-period";
 import { fetchDailyStats, fetchAccountTrophyTrend } from "@/lib/reporting-data";
 import { parseTimeRange, TIME_RANGES } from "@/lib/time-range";
+import { requireAcceptedClubRoster, assertAcceptedClubRoster, ClubRosterUnavailableError } from "@/lib/accepted-club-roster";
 
 export const dynamic = "force-dynamic";
 
 export async function GET(request?: Request) {
   try {
+    const clubTag = await requireAcceptedClubRoster();
     // Get current member tags from member_history (same logic as /api/members)
     const { data: currentMemberHistory, error: currentMemberError } = await supabaseAdmin
       .from("member_history")
@@ -110,12 +112,13 @@ export async function GET(request?: Request) {
       trophyTrend,
     };
 
+    await assertAcceptedClubRoster(clubTag);
     return NextResponse.json(report, { headers: { "Cache-Control": "no-store" } });
   } catch (error) {
     console.error("Error generating report:", error);
     return NextResponse.json(
-      { error: "Failed to generate report" },
-      { status: 500 }
+      { error: error instanceof ClubRosterUnavailableError ? error.message : "Failed to generate report" },
+      { status: error instanceof ClubRosterUnavailableError ? 409 : 500, headers: { "Cache-Control": "no-store" } }
     );
   }
 }

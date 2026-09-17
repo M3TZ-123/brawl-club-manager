@@ -7,6 +7,7 @@ import { useI18n } from "@/components/locale-provider";
 import { Button } from "@/components/ui/button";
 import { fetchJsonCached } from "@/lib/client-data-cache";
 import { getBattleModeInfo } from "@/lib/battle-catalog";
+import { formatBrawlName } from "@/lib/brawl-text";
 import { gameRegions, type GameEvent, type GameRanking, type GameRegion, type GameRankingKind, type GameSnapshot } from "@/lib/game-data";
 
 const regionNames: Record<GameRegion,string> = { global: "Global", TN: "Tunisia", DZ: "Algeria", MA: "Morocco", FR: "France", EG: "Egypt", SA: "Saudi Arabia", US: "United States" };
@@ -88,7 +89,7 @@ export default function GamePage() {
       {!rankings && !rankError && <p role="status">{t("Loading...")}</p>}
       {rankings?.stale && <p className="text-amber-500">{t("Showing the last available update")}</p>}
       {rankings?.fetchedAt && <p className="text-sm text-muted-foreground">{t("Updated")}: {dateTime(rankings.fetchedAt)}</p>}
-      <div className="rounded-lg border overflow-x-auto"><table className="w-full text-sm text-start"><thead className="bg-muted/40"><tr><th className="p-3 text-start">{t("Rank")}</th><th className="p-3 text-start">{t("Name")}</th><th className="p-3 text-end">{t("Trophies")}</th></tr></thead><tbody>{rankings?.data?.map(row => <tr key={row.tag} className="border-t"><td className="p-3">{number(row.rank)}</td><td className="p-3"><span className="font-medium break-words">{row.name}</span><div dir="ltr" className="text-xs text-muted-foreground text-start">{row.tag}</div>{row.clubName && <div className="text-xs text-muted-foreground">{row.clubName}</div>}{row.memberCount !== null && <div className="text-xs text-muted-foreground">{t("{count} members",{count:row.memberCount})}</div>}</td><td className="p-3 text-end tabular-nums">{number(row.trophies)}</td></tr>)}</tbody></table></div>
+      <div className="rounded-lg border overflow-x-auto"><table className="w-full text-sm text-start"><thead className="bg-muted/40"><tr><th className="p-3 text-start">{t("Rank")}</th><th className="p-3 text-start">{t("Name")}</th><th className="p-3 text-end">{t("Trophies")}</th></tr></thead><tbody>{rankings?.data?.map(row => <tr key={row.tag} className="border-t"><td className="p-3">{number(row.rank)}</td><td className="p-3"><span className="font-medium break-words">{formatBrawlName(row.name, t(kind === "clubs" ? "Club" : "Player"))}</span><div dir="ltr" className="text-xs text-muted-foreground text-start">{row.tag}</div>{row.clubName && <div className="text-xs text-muted-foreground">{formatBrawlName(row.clubName, t("Club"))}</div>}{row.memberCount !== null && <div className="text-xs text-muted-foreground">{t("{count} members",{count:row.memberCount})}</div>}</td><td className="p-3 text-end tabular-nums">{number(row.trophies)}</td></tr>)}</tbody></table></div>
       {rankings?.data?.length === 0 && <p>{t("No rankings available for this region")}</p>}
     </section>
   </div></LayoutWrapper>;

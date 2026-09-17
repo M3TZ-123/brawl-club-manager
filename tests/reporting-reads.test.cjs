@@ -2,6 +2,7 @@ const test=require("node:test");
 const assert=require("node:assert/strict");
 const {loadTypeScript}=require("./helpers/load-typescript.cjs");
 const {reportingReadRpc}=require("./helpers/reporting-reads-database.cjs");
+const {readOnlyDatabase}=require("./helpers/read-only-database.cjs");
 const timestamp="2026-09-16T12:00:00.000Z";
 class FixedDate extends Date {constructor(...args){super(...(args.length?args:[timestamp]));}static now(){return Date.parse(timestamp);}}
 const next={NextResponse:{json:(body,init)=>Response.json(body,init)}};
@@ -10,13 +11,13 @@ function fixture(){return {
   members:[{player_tag:"#A",player_name:"علي",role:"member",trophies:1000,highest_trophies:1200,brawlers_count:20,owner_user_id:"PRIVATE",private_future:"SECRET"}],
   member_history:[{player_tag:"#A",is_current_member:true}],
   activity_summary:[{player_tag:"#A",last_activity_at:"2026-09-13T12:00:00.000Z",last_battle_at:"2026-09-13T12:00:00.000Z",trophies_24h:0,trophies_3d:-3,trophies_7d:7,trophies_30d:null,trophies_90d:null,trophy_baselines:{"7d":"2026-09-09T12:00:00.000Z",owner_user_id:"PRIVATE"}}],
-  settings:[{key:"inactivity_threshold",value:"96"},{key:"last_sync_time",value:timestamp},{key:"scheduler_token",value:"SECRET"}],
+  settings:[{key:"club_tag",value:"#CLUB"},{key:"inactivity_threshold",value:"96"},{key:"last_sync_time",value:timestamp},{key:"scheduler_token",value:"SECRET"}],
   daily_stats:[{player_tag:"#A",date:"2026-09-16",battles:3,wins:2,losses:1,star_player:1},{player_tag:"#A",date:"2026-09-14",battles:5,wins:3,losses:2,star_player:2}],
   player_tracking:[{player_tag:"#A",total_battles:999999,current_streak:999}],
   club_events:[{id:1,player_tag:"#A",player_name:"علي",event_type:"join",event_time:timestamp,owner_user_id:"PRIVATE"}],notifications:[],
 };}
 function route(name,tables,calls){return loadTypeScript(`src/app/api/${name}/route.ts`,{"next/server":next,"@/lib/supabase-admin":{supabaseAdmin:{
-  rpc:reportingReadRpc(tables,calls),from(){throw Error("Reporting must use one RPC, not table requests");},
+  rpc:reportingReadRpc(tables,calls),from(table){assert.equal(table,"settings");return readOnlyDatabase(tables).from(table);},
 }}},{Date:FixedDate});}
 
 test("dashboard performs one snapshot read and preserves public summaries, unknowns and configured activity",async()=>{
@@ -52,7 +53,7 @@ test("uncached reads cannot reuse a previous roster or activity result after a c
 
 test("reporting failures return no partial public snapshot or sensitive database details",async()=>{
   for(const endpoint of ["dashboard","leaderboard"]){
-    const source=loadTypeScript(`src/app/api/${endpoint}/route.ts`,{"next/server":next,"@/lib/supabase-admin":{supabaseAdmin:{rpc:async()=>({data:null,error:{message:"SECRET database details",code:"XX000"}})}}},{Date:FixedDate,console:{error(){}}});
+    const source=loadTypeScript(`src/app/api/${endpoint}/route.ts`,{"next/server":next,"@/lib/supabase-admin":{supabaseAdmin:{from:table=>readOnlyDatabase(fixture()).from(table),rpc:async()=>({data:null,error:{message:"SECRET database details",code:"XX000"}})}}},{Date:FixedDate,console:{error(){}}});
     const response=await source.GET(request("7d"));assert.equal(response.status,500);assert.equal(response.headers.get("cache-control"),"no-store");
     assert.doesNotMatch(JSON.stringify(await response.json()),/SECRET|XX000/);
   }

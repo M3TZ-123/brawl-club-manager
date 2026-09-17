@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { rejectUnauthorizedAdminMutation, rejectUnauthorizedAdminRequest } from "@/lib/admin-auth";
+import { rejectUnauthorizedAdminMutation } from "@/lib/admin-auth";
 import { isAuthorizedSchedulerRequest } from "@/lib/scheduler-auth";
 import { executeSync, SyncError } from "@/lib/sync-service";
 
@@ -14,16 +14,18 @@ function failed(error: unknown) {
 }
 export async function GET(request: NextRequest) {
   try {
-    const scheduler = await isAuthorizedSchedulerRequest(request);
-    if (!scheduler) { const denied = rejectUnauthorizedAdminRequest(request); if (denied) return denied; }
+    // GET is retained for authenticated schedulers only. Admin cookies are
+    // sent on cross-site top-level navigations, so manual sync must use POST.
+    if (!await isAuthorizedSchedulerRequest(request)) return NextResponse.json({ error: "Scheduler authorization required" }, { status: 401, headers: { "Cache-Control": "no-store" } });
     const adaptive = request.nextUrl.searchParams.get("mode") === "auto";
-    return NextResponse.json(await executeSync({ source: scheduler ? "cron" : "manual", scope: adaptive ? "auto" : "full", idempotencyKey: request.headers.get("idempotency-key") }));
+    return NextResponse.json(await executeSync({ source: "cron", scope: adaptive ? "auto" : "full", idempotencyKey: request.headers.get("idempotency-key") }));
   } catch (error) { return failed(error); }
 }
 export async function POST(request: NextRequest) {
   try {
     const denied = rejectUnauthorizedAdminMutation(request); if (denied) return denied;
-    const body = await request.json().catch(() => ({}));
+    const body = await request.json().catch(() => null);
+    if (!body || typeof body !== "object" || Array.isArray(body)) return NextResponse.json({ error: "Invalid sync request" }, { status: 400, headers: { "Cache-Control": "no-store" } });
     return NextResponse.json(await executeSync({ source: "manual", clubTag: body.clubTag, initialSetup: body.initialSetup === true,
       idempotencyKey: request.headers.get("idempotency-key") }));
   } catch (error) { return failed(error); }

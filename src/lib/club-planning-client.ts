@@ -20,10 +20,13 @@ export function usePlanningResource(url:string){
 }
 export function usePlanningMutation(onSaved:(id:string)=>void){
   const [busy,setBusy]=useState(false),[error,setError]=useState("");
-  const controller=useRef<AbortController|null>(null),pending=useRef(false);
+  const controller=useRef<AbortController|null>(null),pending=useRef(false),createRequestId=useRef<string|null>(null);
   useEffect(()=>{const current=new AbortController();controller.current=current;return()=>current.abort();},[]);
   const save=async(body:PlanningMutation)=>{const current=controller.current;if(!current||current.signal.aborted||pending.current)return;pending.current=true;setBusy(true);setError("");
-    try{const result=await fetchJsonWithTimeout<{id:string}>("/api/club-planning",{method:body.action==="create_goal"?"POST":"PATCH",headers:{"Content-Type":"application/json"},body:JSON.stringify(body),signal:current.signal});if(!current.signal.aborted)onSaved(result.id);}
+    try{const creating=body.action==="create_goal"||(body.action==="save_event"&&body.id===null);
+      if(creating&&!createRequestId.current)createRequestId.current=crypto.randomUUID();
+      const payload=creating?{...body,request_id:createRequestId.current}:body;
+      const result=await fetchJsonWithTimeout<{id:string}>("/api/club-planning",{method:body.action==="create_goal"?"POST":"PATCH",headers:{"Content-Type":"application/json"},body:JSON.stringify(payload),signal:current.signal});if(!current.signal.aborted)onSaved(result.id);}
     catch(e){if(!current.signal.aborted)setError(e instanceof Error?e.message:"Club planning is unavailable. Please try again.");}
     finally{pending.current=false;if(!current.signal.aborted)setBusy(false);}
   };

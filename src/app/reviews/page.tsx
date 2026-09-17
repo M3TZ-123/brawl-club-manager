@@ -16,6 +16,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { ClubAdministrationSettings } from "@/components/club-administration-settings";
+import { memberReviewActivityLabel, memberReviewStatusLabel } from "@/lib/member-review-labels";
 
 type QueueMember = ReviewMember & { is_current_member: boolean };
 const REVIEW_PAGE_SIZE = 30;
@@ -119,7 +120,7 @@ function ReviewQueue() {
       <div role="group" aria-label={t("Review status")} className="flex flex-wrap gap-2">
         {["pending", "follow_up", "reviewed", "all"].map(value => <Button key={value} size="sm"
           variant={filter === value ? "default" : "outline"} aria-pressed={filter === value} onClick={() => { setFilter(value); setVisibleCount(REVIEW_PAGE_SIZE); }}>
-          {t(value === "all" ? "All reviews" : value)}
+          {t(value === "all" ? "All reviews" : memberReviewStatusLabel(value))}
           {!loading && !error && <span className="ms-1.5 opacity-70">{number(membershipRows.filter(member => value === "all" || statusOf(member) === value).length)}</span>}
         </Button>)}
       </div>
@@ -147,8 +148,8 @@ function ReviewQueue() {
             <p className="text-xs text-muted-foreground"><bdi dir="ltr">{member.player_tag}</bdi></p>
             <div className="flex flex-wrap gap-2 text-sm">
               <Badge variant={member.is_current_member ? "outline" : "destructive"}>{t(member.is_current_member ? "Current" : "Former")}</Badge>
-              {member.is_current_member && <Badge variant="outline">{t(member.activity_status || "Unknown")}</Badge>}
-              <Badge variant="secondary">{t(review?.status || "pending")}</Badge>
+              {member.is_current_member && <Badge variant="outline">{t(memberReviewActivityLabel(member.activity_status))}</Badge>}
+              <Badge variant="secondary">{t(memberReviewStatusLabel(review?.status || "pending"))}</Badge>
             </div>
             {review?.notes && <p className="line-clamp-2 break-words text-sm text-muted-foreground">{review.notes}</p>}
             {review?.follow_up_at && <p className="text-sm text-muted-foreground">{t("Follow-up date")}: <LocalDate value={review.follow_up_at} time /></p>}

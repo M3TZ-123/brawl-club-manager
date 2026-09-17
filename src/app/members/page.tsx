@@ -284,11 +284,19 @@ export default function MembersPage() {
   const [showColumns, setShowColumns] = useState(false);
   const [columnVisibility, setColumnVisibility] = useState<MemberColumnVisibility>(DEFAULT_MEMBER_COLUMNS);
   const [sortState, setSortState] = useState<MemberSortState>({ key: "progress", direction: "desc" });
-  const [selectedMember, setSelectedMember] = useState<MemberWithGains | null>(null);
+  const [selectedMemberSnapshot, setSelectedMember] = useState<MemberWithGains | null>(null);
+  const currentSelectedMember = members.find(member => member.player_tag === selectedMemberSnapshot?.player_tag);
+  const selectedMember = currentSelectedMember || selectedMemberSnapshot;
+  useEffect(() => {
+    setSelectedMember(previous => previous ? members.find(member => member.player_tag === previous.player_tag) || previous : null);
+  }, [members]);
   const [copied, setCopied] = useState<"tag" | null>(null);
   const copyResetTimeoutRef = useRef<number | null>(null);
+  const memberLoadSequence = useRef(0);
+  const invalidateMemberLoads = useCallback(() => { memberLoadSequence.current++; }, []);
 
   const loadMembers = useCallback(async (force = false) => {
+    const sequence = ++memberLoadSequence.current;
     try {
       setErrorMessage(null);
       setIsRefreshing(true);
@@ -300,22 +308,26 @@ export default function MembersPage() {
       }
 
       const membersData = await fetchJsonCached<{ members: MemberWithGains[] }>("/api/members", { staleMs: 30_000, force });
+      if (sequence !== memberLoadSequence.current) return;
       setMembers(membersData.members || []);
     } catch (error) {
+      if (sequence !== memberLoadSequence.current) return;
+      if (error instanceof Error && error.message === "The club roster is awaiting a successful sync.") setMembers([]);
       console.error("Error loading members:", error);
       setErrorMessage(error instanceof Error ? error.message : "Failed to load members");
     } finally {
-      setIsLoading(false);
-      setIsRefreshing(false);
+      if (sequence === memberLoadSequence.current) { setIsLoading(false); setIsRefreshing(false); }
     }
   }, []);
 
   useEffect(() => {
     loadMembers();
-  }, [loadMembers]);
+    return invalidateMemberLoads;
+  }, [loadMembers, invalidateMemberLoads]);
 
   useEffect(() => {
     const handleClubDataUpdated = (event: Event) => {
+      if ((event as CustomEvent).detail?.clubChanged) { setMembers([]); setIsLoading(true); }
       if (event instanceof CustomEvent && event.detail?.source === "members-page") {
         return;
       }
@@ -839,6 +851,7 @@ export default function MembersPage() {
               </SheetHeader>
 
               <div className="mt-6 space-y-5">
+                {!currentSelectedMember && <p role="status" className="text-sm text-muted-foreground"><T text="This member is no longer in the current roster. Showing their last loaded details." /></p>}
                 <MemberReviewButton prominent member={selectedMember} initialRange={timeRange} />
                 <div className="flex flex-wrap items-center gap-2">
                   <Badge variant="secondary">{<T text={clubRoleLabel(selectedMember.role)} />}</Badge>

@@ -5,7 +5,7 @@ import { T, useI18n } from "@/components/locale-provider";
 import dynamic from "next/dynamic";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { TimeRangePicker } from "@/components/time-range-picker";
-import { type TimeRangeKey } from "@/lib/time-range";
+import { parseTimeRange, TIME_RANGES, type TimeRangeKey } from "@/lib/time-range";
 import { DataConfidenceNotice } from "@/components/sync-health";
 import { LayoutWrapper } from "@/components/layout-wrapper";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -95,15 +95,22 @@ const ActivityPieChart = dynamic(
 export default function ReportsPage() {
   const { t, locale, direction } = useI18n();
   const { date: formatDate, reportDate: formatReportDate, number: formatNumber } = useI18n();
-  const [report, setReport] = useState<WeeklyReport | null>(null);
+  const [snapshot, setSnapshot] = useState<{ range: TimeRangeKey; report: WeeklyReport } | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [selectedRange, setSelectedRange] = useState<TimeRangeKey>("7d");
+  const [initialRangeReady, setInitialRangeReady] = useState(false);
   const [view, setView] = useState<"report" | "growth">("report");
   const [growthRange, setGrowthRange] = useState<ClubIntelligenceRange>("7d");
   const [showCharts, setShowCharts] = useState(false);
   const [loadError, setLoadError] = useState(false);
   const loadSequence = useRef(0);
+  const report = snapshot?.range === selectedRange ? snapshot.report : null;
+
+  useEffect(() => {
+    setSelectedRange(parseTimeRange(new URLSearchParams(window.location?.search || "").get("range")));
+    setInitialRangeReady(true);
+  }, []);
 
   const loadReport = useCallback(async (force = false) => {
     const sequence = ++loadSequence.current;
@@ -120,11 +127,11 @@ export default function ReportsPage() {
         force,
       });
       if (sequence !== loadSequence.current) return;
-      setReport(data);
+      setSnapshot({ range: selectedRange, report: data });
     } catch (error) {
       if (sequence !== loadSequence.current) return;
       setLoadError(true);
-      setReport(null);
+      setSnapshot(null);
       console.error("Error loading report:", error);
     } finally {
       if (sequence === loadSequence.current) {
@@ -135,16 +142,23 @@ export default function ReportsPage() {
   }, [selectedRange]);
 
   useEffect(() => {
-    loadReport();
-  }, [loadReport]);
+    if (!initialRangeReady) return;
+    const requests = loadSequence;
+    void loadReport();
+    return () => { requests.current++; };
+  }, [loadReport, initialRangeReady]);
 
   useEffect(() => {
-    const handleClubDataUpdated = () => {
-      loadReport(true);
+    const handleClubDataUpdated = (event: Event) => {
+      if ((event as CustomEvent<{ clubChanged?: boolean }>).detail?.clubChanged) {
+        setSnapshot(null);
+        setIsLoading(true);
+      }
+      if (initialRangeReady) void loadReport(true);
     };
     window.addEventListener("club-data-updated", handleClubDataUpdated);
     return () => window.removeEventListener("club-data-updated", handleClubDataUpdated);
-  }, [loadReport]);
+  }, [loadReport, initialRangeReady]);
 
   const handleExportReport = () => {
     // For simplicity, we'll export as text/html that can be printed to PDF
@@ -179,6 +193,7 @@ export default function ReportsPage() {
           <div class="stat">${escapeHtml(t("Active Members"))}: ${report.summary.activeMembers} (${report.summary.activityRate}%)</div>
           
           <h2>${escapeHtml(t("Top Trophy Gainers"))}</h2>
+          <p>${escapeHtml(t("Account trophy change"))} · ${escapeHtml(t(TIME_RANGES[selectedRange].label))}</p>
           <table>
             <tr><th>${escapeHtml(t("Player"))}</th><th>${escapeHtml(t("Change"))}</th></tr>
             ${report.topGainers.map((p) => `<tr><td>${escapeHtml(p.playerName)}</td><td>+${escapeHtml(formatNumber(p.trophyChange))}</td></tr>`).join("")}
@@ -231,7 +246,7 @@ export default function ReportsPage() {
                 onClick={() => loadReport(true)}
                 size="sm"
                 className="sm:size-default"
-                disabled={isRefreshing}
+                disabled={isRefreshing || !initialRangeReady}
               >
                 <RefreshCw className={`h-4 w-4 sm:mr-2 ${isRefreshing ? "animate-spin" : ""}`} />
                 <span className="hidden sm:inline">{isRefreshing ? <T text="Refreshing..." /> : <T text="Refresh" />}</span>
@@ -305,6 +320,7 @@ export default function ReportsPage() {
               </div>
 
               {/* Top Gainers & Losers */}
+              <p className="text-xs text-muted-foreground">{t("Account trophy change")} · {t(TIME_RANGES[selectedRange].label)}</p>
               <div className="grid gap-6 md:grid-cols-2">
                 <Card>
                   <CardHeader>

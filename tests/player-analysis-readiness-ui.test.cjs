@@ -132,6 +132,31 @@ test("readiness filters are current snapshots, pagination preserves filters and 
   assert.equal(elements(tree).filter(node => node.props?.onClick && textContent(node) === "Load more results").length, 0);
 });
 
+test("readiness keeps a translated selected label during loading and errors without displaying the raw brawler ID", async () => {
+  const arabic = loadTypeScript("src/lib/i18n/ar-ux-analytics.ts").default;
+  for (const [locale, label] of [[i18n, "Selected brawler"], [{ ...i18n, t: key => arabic[key] || i18n.t(key) }, "البراولر المحدد"]]) {
+    const pending = deferred();
+    const page = harness("src/app/readiness/page.tsx", params => params.has("brawler") ? pending.promise : readiness({
+      brawlers: [{ id: 16000109, name: "COSMO", playersObserved: 5 }],
+    }), { locale });
+    let tree = await page.render();
+    assert.match(textContent(control(tree, "readiness-brawler")), /COSMO \(5\)/);
+    control(tree, "readiness-brawler").props.onChange({ target: { value: "16000109" } });
+    tree = await page.render();
+    const assertSelection = () => {
+      const select = control(tree, "readiness-brawler");
+      assert.equal(select.props.value, "16000109", "The actual filter value is preserved");
+      assert.ok(textContent(select).includes(label));
+      assert.doesNotMatch(textContent(select), /16000109/);
+    };
+    assertSelection();
+    pending.resolve(Promise.reject(new Error("Readiness unavailable")));
+    tree = await page.render();
+    assert.ok(elements(tree).some(node => node.props?.role === "alert"));
+    assertSelection();
+  }
+});
+
 test("readiness discards an in-flight old page when a filter changes", async () => {
   const next = deferred();
   const page = harness("src/app/readiness/page.tsx", params => params.has("offset") ? next.promise : readiness({ rows: [row(params.get("minPower") ? 16000011 : 16000000)], nextOffset: 24 }));

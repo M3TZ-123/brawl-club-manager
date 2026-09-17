@@ -27,9 +27,12 @@ function CandidateCard({candidate,onChange,onError,criteria}:{candidate:Candidat
   const notes = draft.notes === draft.baseline.notes ? candidate.notes : draft.notes;
   const status = draft.status === draft.baseline.status ? candidate.status : draft.status;
   const manual = JSON.stringify(draft.manual)===JSON.stringify(draft.baseline.manual_compatibility??emptyCompatibility) ? candidate.manual_compatibility??emptyCompatibility : draft.manual;
-  const changeDraft=(values:Partial<typeof draft>)=>setDraft({baseline:candidate,notes,status,manual,...values});
+  const hasDraft=draft.notes!==draft.baseline.notes||draft.status!==draft.baseline.status||JSON.stringify(draft.manual)!==JSON.stringify(draft.baseline.manual_compatibility??emptyCompatibility);
+  const savedFieldsChanged=candidate.notes!==draft.baseline.notes||candidate.status!==draft.baseline.status||JSON.stringify(candidate.manual_compatibility??emptyCompatibility)!==JSON.stringify(draft.baseline.manual_compatibility??emptyCompatibility);
+  const conflict=hasDraft&&savedFieldsChanged;
+  const changeDraft=(values:Partial<typeof draft>)=>setDraft({baseline:hasDraft?draft.baseline:candidate,notes,status,manual,...values});
   const save = async () => {
-    const current = controller.current; if (!current || current.signal.aborted || pending.current) return;
+    const current = controller.current; if (!current || current.signal.aborted || pending.current || conflict) return;
     pending.current = true; setBusy(true); onError("");
     try { const data = await fetchJsonWithTimeout<{candidate:Candidate}>("/api/recruitment", {method:"PATCH",signal:current.signal,headers:{"Content-Type":"application/json"},body:JSON.stringify({player_tag:candidate.player_tag,status,notes,version:candidate.version,...(candidate.manual_compatibility||JSON.stringify(manual)!==JSON.stringify(emptyCompatibility)?{manual_compatibility:manual}:{})})}); if (!current.signal.aborted) { setDraft({ baseline: data.candidate, notes: data.candidate.notes, status: data.candidate.status,manual:data.candidate.manual_compatibility??emptyCompatibility }); onChange(data.candidate); } }
     catch(error) {if (!current.signal.aborted) onError(error instanceof Error ? error.message : "Candidate list unavailable");} finally {pending.current = false; if (!current.signal.aborted) setBusy(false);}
@@ -55,7 +58,8 @@ function CandidateCard({candidate,onChange,onError,criteria}:{candidate:Candidat
       <label className="block text-sm">{t("Languages you use")}<Input maxLength={120} value={manual.languages} disabled={busy} onChange={e=>changeDraft({manual:{...manual,languages:e.target.value}})}/></label>
       <label className="block text-sm">{t("Usual playing times and timezone")}<Input maxLength={240} value={manual.availability} disabled={busy} onChange={e=>changeDraft({manual:{...manual,availability:e.target.value}})}/></label>
     </details>
-    <Button disabled={busy || (notes===candidate.notes && status===candidate.status && JSON.stringify(manual)===JSON.stringify(candidate.manual_compatibility??emptyCompatibility))} onClick={()=>void save()}>{t("Save")}</Button>
+    {conflict&&<div role="alert" className="space-y-2 text-sm"><p>{t("This candidate was edited elsewhere. Your draft is preserved; load the saved candidate before saving again.")}</p><Button variant="outline" disabled={busy} onClick={()=>setDraft({baseline:candidate,notes:candidate.notes,status:candidate.status,manual:candidate.manual_compatibility??emptyCompatibility})}>{t("Discard draft and load saved candidate")}</Button></div>}
+    <Button disabled={busy || conflict || (notes===candidate.notes && status===candidate.status && JSON.stringify(manual)===JSON.stringify(candidate.manual_compatibility??emptyCompatibility))} onClick={()=>void save()}>{t("Save")}</Button>
     </div></details>
   </article>;
 }
@@ -92,6 +96,7 @@ function RecruitmentWorkspace() {
     finally {pendingAdd.current=false;if(!current.signal.aborted)setBusy(false);}
   };
   const rows=(candidates||[]).filter(c=>(archived || c.status!=="archived") && (minimum===0 || (c.profile && c.profile.trophies>=minimum)) && (power===0 || (c.profile && c.profile.power11>=power)));
+  const visibleTags=new Set(rows.map(candidate=>candidate.player_tag));
   return <div className="space-y-5">
     <header><h1 className="text-3xl font-bold flex gap-3 items-center"><UserPlus className="text-primary" />{t("Recruitment")}</h1><p className="text-sm text-muted-foreground mt-2">{t("Review potential members and incoming applications in one place.")}</p></header>
     <div className="flex flex-wrap gap-2" role="group" aria-label={t("Recruitment view")}>{([["candidates","Candidates"],["applications","Applications"],["settings","Recruitment settings"]] as const).map(([key,label])=><Button key={key} variant={view===key?"default":"outline"} aria-pressed={view===key} onClick={()=>{setView(key);if(key==="applications")setApplicationsOpened(true);}}>{t(label)}</Button>)}</div>
@@ -103,7 +108,7 @@ function RecruitmentWorkspace() {
     {loading && <p role="status">{t("Loading...")}</p>}{candidates !== null && <p className="text-sm text-muted-foreground">{t("{count} candidates",{count:rows.length})}</p>}
     {candidates?.length===0 && <p className="rounded-lg border border-dashed p-5 text-sm text-muted-foreground">{t("Add a player tag to start your private watchlist")}</p>}
     {candidates && candidates.length>0 && !rows.length && <p>{t("No candidates match these filters")}</p>}
-    <div className="grid md:grid-cols-2 xl:grid-cols-3 gap-4">{rows.map(c=><CandidateCard key={c.player_tag} candidate={c} criteria={criteria} onError={setError} onChange={mergeCandidate} />)}</div>
+    <div className="grid md:grid-cols-2 xl:grid-cols-3 gap-4">{candidates?.map(c=><div key={c.player_tag} hidden={!visibleTags.has(c.player_tag)}><CandidateCard key={c.player_tag} candidate={c} criteria={criteria} onError={setError} onChange={mergeCandidate} /></div>)}</div>
     <details className="text-xs text-muted-foreground"><summary className="cursor-pointer">{t("About the watchlist")}</summary><p className="mt-2">{t("Contact and invitation status are entered manually. Profile updates are shared for one hour.")}</p><p className="mt-1">{number(candidates?.length||0)} / {number(100)}</p></details>
     </section>
     <section hidden={view!=="applications"}>{applicationsOpened&&<RecruitmentApplications onCandidate={()=>void reload()}/>}</section>

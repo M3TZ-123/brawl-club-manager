@@ -14,6 +14,7 @@ function entryFields(row:Row):EventEntry {return{playerTag:String(row.playerTag)
 async function clubConfiguration(){const result=await supabaseAdmin.from("settings").select("key,value").in("key",["club_tag","last_roster_sync_time","last_sync_time"]);if(result.error)throw new Error("planning unavailable");const settings=Object.fromEntries((result.data||[]).map(row=>[row.key,row.value]));const value=settings.club_tag||process.env.CLUB_TAG;if(typeof value!=="string"||!/^#?[A-Z0-9]{1,20}$/i.test(value.trim().replace(/^%23/i,"#")))throw new PlanningInputError("Configure your club before planning.",409);const marker=settings.last_roster_sync_time||settings.last_sync_time;return{club:`#${value.trim().replace(/^%23/i,"#").replace(/^#/,"").toUpperCase()}`,rosterReady:typeof marker==="string"&&Number.isFinite(Date.parse(marker))&&Date.parse(marker)<=Date.now()};}
 function databaseError(error:{code?:string;message?:string}|null){
   if(!error)return;
+  if(error.code==="40001"&&error.message?.includes("planning_request_changed"))throw new PlanningInputError("This creation was already saved with different details. Check the goals and events before creating another.",409);
   if(error.code==="40001")throw new PlanningInputError("Planning changed. Reload before saving. Your draft is preserved.",409);
   if(error.code==="54000")throw new PlanningInputError("Planning limit reached: 10 open goals, 120 saved goals and 100 events.",409);
   if(error.message?.includes("planning_roster_not_ready"))throw new PlanningInputError("Sync the configured club before adding goals or event members.",409);
@@ -60,6 +61,11 @@ export async function readClubPlanning(isAdmin:boolean,options:{goal?:string;eve
 }
 export async function mutateClubPlanning(value:unknown){
   const input=planningInput(value),{club}=await clubConfiguration();
+  if(input.action!=="archive_goal"&&input.request_id){
+    const {request_id,...payload}=input;
+    const result=await supabaseAdmin.rpc("club_planning_create_once",{p_club:club,p_request_id:request_id,p_payload:payload});
+    databaseError(result.error);return{id:String(result.data)};
+  }
   if(input.action==="create_goal") {const result=await supabaseAdmin.rpc("club_planning_create_goal",{p_club:club,p_title:input.title,p_metric:input.metric,p_cycle:input.cycle,p_end:input.endsAt,p_target:input.target});databaseError(result.error);return{id:String(result.data)};}
   if(input.action==="archive_goal") {const result=await supabaseAdmin.rpc("club_planning_archive_goal",{p_club:club,p_id:input.id,p_version:input.version});databaseError(result.error);return{id:input.id};}
   const result=await supabaseAdmin.rpc("club_planning_save_event",{p_club:club,p_id:input.id,p_version:input.version,p_event:input.event,p_entries:input.entries,p_reason:input.reason});databaseError(result.error);return{id:String(result.data)};

@@ -478,6 +478,16 @@ export default function LeaderboardPage() {
   const battleCategory = activeTab !== "weeklyTrophyGainers" && activeTab !== "trophyLeaders";
   const rangeLabel = selectedRange === "24h" && battleCategory ? "Today (UTC)" : TIME_RANGES[selectedRange].label;
   const minWinRateBattles = rangeMeta?.minWinRateBattles || 10;
+  const emptyCategoryText = (category: keyof Leaderboards, rawCount: number) => {
+    if (rawCount > 0) return "No members match these filters.";
+    if (!memberCount) return "No current members found.";
+    if (category === "weeklyTrophyGainers") {
+      const known = leaderboards?.trophyLeaders.some(member => member.weekly.netTrophies != null);
+      return known ? "No trophy change recorded in this period." : "Not enough history to compare trophies for this period.";
+    }
+    if (category === "weeklyWinRate") return "No members have enough recorded battles for this ranking.";
+    return "No recorded results for this period.";
+  };
 
   return (
     <LayoutWrapper><DataConfidenceNotice />
@@ -606,7 +616,7 @@ export default function LeaderboardPage() {
                         </div>
                         <div className="text-sm text-muted-foreground sm:text-end">
                           <p>
-                            <span className="font-semibold text-foreground">{data.length}</span> <T text=" shown " />{data.length !== rawData.length && ` / ${rawData.length}`}
+                            <span className="font-semibold text-foreground">{data.length}</span> <T text="matching members" />{data.length !== rawData.length && ` / ${rawData.length}`}
                           </p>
                           {cat.key !== "trophyLeaders" && (
                             <p><T text={rangeLabel} />{battleCategory && period && <span className="block">{reportDate(period.start)} – {reportDate(period.end)} (UTC)</span>}</p>
@@ -619,9 +629,9 @@ export default function LeaderboardPage() {
                         members={data}
                         formatValue={cat.formatValue}
                         subtitle={cat.subtitle}
-                        emptyText={rawData.length > 0 ? "No members match these filters." : cat.key === "trophyLeaders" ? "No current members found." : "No recorded results for this period."}
+                        emptyText={emptyCategoryText(cat.key, rawData.length)}
                       />
-                      <LeaderboardTable members={data} columns={cat.columns} />
+                      <LeaderboardTable key={`${cat.key}:${selectedRange}:${searchQuery}:${roleFilter}:${activityFilter}:${minBattles}`} members={data} columns={cat.columns} />
                       <details className="mt-3 text-xs text-muted-foreground"><summary className="cursor-pointer">{t("Ranking details")}</summary><p className="mt-2">{cat.help(t(rangeLabel), minWinRateBattles)}</p></details>
                     </CardContent>
                   </Card>

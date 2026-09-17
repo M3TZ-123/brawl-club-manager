@@ -32,7 +32,7 @@ export function ClubAdministrationSettings({graceOnly=false,onChange}:{graceOnly
   return <section className="space-y-3 rounded-lg border bg-card p-4">
     <h2 className="font-semibold">{t(graceOnly?"New member grace period":"Recruitment criteria and applications")}</h2>
     {error&&<p role="alert" className="text-sm text-destructive">{t(error)} <Button variant="ghost" onClick={()=>void load()} disabled={busy||loading}>{t("Reload saved settings")}</Button></p>}
-    {!draft?<p role="status">{t("Loading...")}</p>:<>
+    {!draft?(loading?<p role="status">{t("Loading...")}</p>:null):<>
       <label className="block text-sm">{t("New member grace hours")}<Input type="number" min={0} max={168} value={draft.grace_hours} disabled={busy||loading} onChange={e=>change({grace_hours:Number(e.target.value)})} className="mt-1 w-32"/></label>
       <p className="text-xs text-muted-foreground">{t("Grace and declared absence pause inactivity alerts, not recorded activity statistics. Zero disables grace.")}</p>
       {!graceOnly&&<>

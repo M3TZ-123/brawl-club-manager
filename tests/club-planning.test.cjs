@@ -52,7 +52,7 @@ test('event editor keeps a draft after conflict and submits the exact loaded rev
 });
 test('planning requests abort on unmount and cannot apply a delayed private mutation',async()=>{
   const renderer=hookRenderer(),cleanups=[];const react={...renderer.react,useEffect:(effect,deps)=>renderer.react.useEffect(()=>{const cleanup=effect();cleanups.push(cleanup);return cleanup;},deps)};let finish,signal,saved=false;
-  const{usePlanningMutation}=loadTypeScript('src/lib/club-planning-client.ts',{react,'@/lib/client-fetch':{fetchJsonWithTimeout:(_url,init)=>{signal=init.signal;return new Promise(resolve=>{finish=resolve;});}}});
+  const{usePlanningMutation}=loadTypeScript('src/lib/club-planning-client.ts',{react,'@/lib/client-fetch':{fetchJsonWithTimeout:(_url,init)=>{signal=init.signal;return new Promise(resolve=>{finish=resolve;});}}},{crypto:{randomUUID}});
   let state;await renderer.render(()=>{state=usePlanningMutation(()=>{saved=true;});return null;});const pending=state.save(mutation);cleanups.forEach(c=>c?.());assert.equal(signal.aborted,true);finish({id:'saved'});await pending;assert.equal(saved,false);
 });
 test('a newer planning read wins and failed reloads report failure without replacing saved data',async()=>{
@@ -96,4 +96,59 @@ test('optional empty goals overview hides only a successful empty result and kee
   assert.match(textContent(await renderer.render(()=>ClubGoalsOverview({hideWhenEmpty:true}))),/Planning unavailable/);
   resource={...resource,error:null,data:{...resource.data,refreshDeferred:true}};
   assert.match(textContent(await renderer.render(()=>ClubGoalsOverview({hideWhenEmpty:true}))),/Progress refresh delayed/);
+});
+
+test('draft Mega Pig results stay visible and prevent a type change until explicitly cleared',async()=>{
+  const renderer=hookRenderer(),calls=[];
+  const{ClubEventEditor}=loadTypeScript('src/components/club-event-editor.tsx',{...componentMocks,react:renderer.react,'@/lib/client-fetch':{fetchJsonWithTimeout:async(url,init)=>{calls.push(JSON.parse(init.body));return{id:'saved'};}}},{crypto:{randomUUID}});
+  const props={event:null,data:{goals:[],events:[],roster:[{tag:'#AAA',name:'Alpha'}]},onSaved(){},onCancel(){}};
+  const input=(tree,label)=>elements(elements(tree).find(node=>node.type==='label'&&textContent(node).startsWith(label))).find(node=>node.type==='Input'||node.type==='select');
+  let tree=await renderer.render(()=>ClubEventEditor(props));input(tree,'Event type').props.onChange({target:{value:'mega_pig'}});tree=await renderer.render(()=>ClubEventEditor(props));
+  input(tree,'Add a member').props.onChange({target:{value:'#AAA'}});tree=await renderer.render(()=>ClubEventEditor(props));elements(tree).find(node=>node.type==='Button'&&textContent(node)==='Add').props.onClick();tree=await renderer.render(()=>ClubEventEditor(props));
+  input(tree,'Manual wins').props.onChange({target:{value:'0'}});tree=await renderer.render(()=>ClubEventEditor(props));
+  assert.equal(input(tree,'Event type').props.disabled,true);assert.match(textContent(tree),/Clear the manual wins and tickets/);
+  input(tree,'Event type').props.onChange({target:{value:'ranked'}});tree=await renderer.render(()=>ClubEventEditor(props));
+  assert.equal(input(tree,'Event type').props.value,'mega_pig');assert.equal(input(tree,'Manual wins').props.value,0);
+  input(tree,'Manual wins').props.onChange({target:{value:''}});tree=await renderer.render(()=>ClubEventEditor(props));assert.equal(input(tree,'Event type').props.disabled,false);
+  input(tree,'Event type').props.onChange({target:{value:'ranked'}});tree=await renderer.render(()=>ClubEventEditor(props));assert.equal(input(tree,'Manual wins'),undefined);
+  elements(tree).find(node=>node.type==='form').props.onSubmit({preventDefault(){}});await renderer.render(()=>ClubEventEditor(props));
+  assert.equal(calls[0].event.kind,'ranked');assert.equal(calls[0].entries[0].wins,null);assert.equal(calls[0].entries[0].ticketsRemaining,null);
+});
+
+test('keyed creation can reach its committed receipt after deadlines without weakening structural validation',()=>{
+  const{planningInput}=loadTypeScript('src/lib/club-planning-input.ts');
+  const goal={action:'create_goal',title:'Goal',metric:'trophies',cycle:'custom',target:1,endsAt:'2026-09-16T11:00:00Z'};
+  assert.throws(()=>planningInput(goal,fixedNow));
+  const request_id=randomUUID();assert.equal(planningInput({...goal,request_id},fixedNow).request_id,request_id);
+  assert.equal(planningInput({...mutation,request_id},fixedNow+100*86400000).request_id,request_id);
+  for(const invalid of [{...goal,request_id:'invalid'},{...goal,request_id,target:0},{...goal,request_id,endsAt:'not a date'},
+    {...mutation,request_id,event:{...sampleEvent,endsAt:sampleEvent.startsAt}},
+    {...mutation,request_id,id:randomUUID(),version:1},{action:'archive_goal',id:randomUUID(),version:1,request_id}])assert.throws(()=>planningInput(invalid,fixedNow));
+});
+
+test('creation routes use the idempotent RPC only for keyed new records and return a clear safe conflict',async()=>{
+  const{route,calls,db,id}=routeFixture(),request_id=randomUUID();
+  const goal={action:'create_goal',title:'Retry-safe goal',metric:'trophies',cycle:'weekly',target:100,endsAt:null,request_id};
+  const response=await route.POST(request('/api/club-planning',{body:goal,admin:true}));
+  assert.equal(response.status,200);assert.equal((await response.json()).id,id);
+  assert.equal(calls[0].name,'club_planning_create_once');assert.equal(calls[0].args.p_request_id,request_id);
+  assert.equal(calls[0].args.p_payload.request_id,undefined);assert.equal(calls[0].args.p_payload.title,goal.title);
+  await route.PATCH(request('/api/club-planning',{body:{...mutation,request_id},admin:true}));assert.equal(calls[1].name,'club_planning_create_once');
+  const{request_id:ignored,...legacy}=goal;assert.ok(ignored);
+  await route.POST(request('/api/club-planning',{body:legacy,admin:true}));assert.equal(calls[2].name,'club_planning_create_goal');
+  await route.PATCH(request('/api/club-planning',{body:{...mutation,id,version:2},admin:true}));assert.equal(calls[3].name,'club_planning_save_event');assert.equal(calls[3].args.p_version,2);
+  db.rpc=async()=>({data:null,error:{code:'40001',message:'planning_request_changed PRIVATE'}});
+  const conflict=await route.POST(request('/api/club-planning',{body:goal,admin:true}));assert.equal(conflict.status,409);
+  const message=(await conflict.json()).error;assert.match(message,/already saved with different details/);assert.doesNotMatch(message,/PRIVATE|request_id|sha256/);
+});
+
+test('creation retries and edited drafts retain one UUID while updates retain their version contract',async()=>{
+  const renderer=hookRenderer(),calls=[],key=randomUUID();let generated=0,fail=true,saved=0,state;
+  const{usePlanningMutation}=loadTypeScript('src/lib/club-planning-client.ts',{react:renderer.react,'@/lib/client-fetch':{fetchJsonWithTimeout:async(_url,init)=>{calls.push(JSON.parse(init.body));if(fail)throw new Error('Response timed out');return{id:'created'};}}},{crypto:{randomUUID:()=>{generated++;return key;}},Error});
+  const render=()=>renderer.render(()=>{state=usePlanningMutation(()=>{saved++;});return null;});await render();
+  await state.save(mutation);await render();assert.equal(state.busy,false);assert.equal(state.error,'Response timed out');assert.equal(saved,0);
+  await state.save({...mutation,event:{...sampleEvent,title:'Corrected draft'}});await render();
+  fail=false;await state.save({...mutation,event:{...sampleEvent,title:'Corrected draft'}});await render();
+  assert.equal(generated,1);assert.deepEqual(calls.map(call=>call.request_id),[key,key,key]);assert.equal(saved,1);
+  await state.save({...mutation,id:randomUUID(),version:3});assert.equal(calls[3].request_id,undefined);assert.equal(calls[3].version,3);
 });

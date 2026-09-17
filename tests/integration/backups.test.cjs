@@ -11,7 +11,7 @@ const connectionString = process.env.BACKUP_TEST_DATABASE_URL;
 const root = path.resolve(__dirname, "../..");
 const clubFeatureTables = ["club_roster_snapshots","club_profiles","club_profile_events","member_decision_log","member_absences",
   "club_administration_settings","recruitment_applications","recruitment_application_limits","club_goals","club_goal_members",
-  "club_goal_snapshots","club_planned_events","club_event_entries","club_event_revisions","club_rivals","club_rival_snapshots","club_rank_history"];
+  "club_goal_snapshots","club_planned_events","club_event_entries","club_event_revisions","club_rivals","club_rival_snapshots","club_rank_history","club_planning_create_requests"];
 
 test("encrypted backup restores actual schema, rows and private permissions into an empty local database", { skip: !connectionString }, async t => {
   validateRestoreTarget(connectionString);
@@ -85,6 +85,10 @@ test("encrypted backup restores actual schema, rows and private permissions into
     INSERT INTO public.club_goal_members(goal_id,player_tag,player_name,baseline_trophies,baseline_at,latest_trophies,latest_at)
       VALUES('00000000-0000-4000-8000-000000000031','#PLAYER','لاعب عربي',29950,now()-interval '1 day',30000,now());
     INSERT INTO public.club_goal_snapshots VALUES('00000000-0000-4000-8000-000000000031',current_date,now(),50,1,false,false);
+    INSERT INTO public.club_planning_create_requests(club_tag,request_id,action,payload_sha256,result_id)
+      VALUES('#CLUB','00000000-0000-4000-8000-000000000035','create_goal',
+        sha256(convert_to('{"action":"create_goal","title":"هدف محفوظ","metric":"trophies","cycle":"weekly","endsAt":null,"target":100}'::jsonb::text,'UTF8')),
+        '00000000-0000-4000-8000-000000000031');
     INSERT INTO public.club_planned_events(id,club_tag,title,kind,cycle_label,starts_at,ends_at,team_size,ticket_allowance,notes)
       VALUES('00000000-0000-4000-8000-000000000131','#CLUB','خطة محفوظة','mega_pig','دورة معلنة',now()-interval '1 hour',now()+interval '23 hours',3,15,'تخطيط يدوي خاص');
     INSERT INTO public.club_event_entries(event_id,player_tag,player_name,team,slot,attendance,wins,tickets_remaining,observed_at,notes)
@@ -219,6 +223,9 @@ test("encrypted backup restores actual schema, rows and private permissions into
     assert.equal((await client.query("SELECT private_notes FROM public.recruitment_applications")).rows[0].private_notes,'تقييم خاص');
     assert.equal((await client.query("SELECT manual_compatibility->>'language' language FROM public.recruitment_candidates WHERE player_tag='#PYLQ'")).rows[0].language,'compatible');
     assert.equal((await client.query("SELECT baseline_trophies FROM public.club_goal_members")).rows[0].baseline_trophies,29950);
+    assert.deepEqual((await client.query("SELECT request_id::text,action,result_id::text,octet_length(payload_sha256) digest_bytes FROM public.club_planning_create_requests")).rows[0],{
+      request_id:'00000000-0000-4000-8000-000000000035',action:'create_goal',result_id:'00000000-0000-4000-8000-000000000031',digest_bytes:32});
+    assert.equal((await client.query("SELECT public.club_planning_create_once('#CLUB','00000000-0000-4000-8000-000000000035',$1::jsonb) id",[JSON.stringify({action:'create_goal',title:'هدف محفوظ',metric:'trophies',cycle:'weekly',endsAt:null,target:100})])).rows[0].id,'00000000-0000-4000-8000-000000000031');
     assert.deepEqual((await client.query("SELECT wins,tickets_remaining,source FROM public.club_event_entries")).rows[0],{wins:5,tickets_remaining:2,source:'manual'});
     assert.equal((await client.query("SELECT snapshot->'event'->>'title' title FROM public.club_event_revisions")).rows[0].title,'خطة محفوظة');
     assert.equal((await client.query("SELECT profile->>'name' name FROM public.club_rivals")).rows[0].name,'نادي منافس');

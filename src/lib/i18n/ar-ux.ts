@@ -17,6 +17,7 @@ const arUx: Record<string, string> = {
   "Analysis": "تحليل المعارك",
   "Main navigation": "القائمة الرئيسية",
   "Sign in": "تسجيل الدخول",
+  "This member is no longer in the current roster. Showing their last loaded details.": "هذا العضو لم يعد ضمن التشكيلة الحالية. تظهر هنا آخر تفاصيل حُمّلت له.",
   "Maps and rankings": "الخرائط والترتيب",
   "Check the current maps or compare club rankings.": "اطّلع على الخرائط الحالية أو ترتيب الأندية.",
   "Current maps": "الخرائط الحالية",
