@@ -8,8 +8,9 @@ function fixture(reply){
   const data={clubTag:'#CLUB',rivals:[{tag:'#PYLQ',profile:{name:'Rival',description:'',rosterTrophies:1,memberCount:1,medianTrophies:1,requiredTrophies:0},fetchedAt:null,stale:false,history:[]}],ranks:[],rankingAt:null,rankingStale:false};
   const Page=loadTypeScript('src/app/rivals/page.tsx',{...componentMocks,react,
     '@/hooks/use-admin-session':{useAdminSession:()=>({isAdmin})},
-    '@/components/club-trend-line':{ClubTrendLine:'Trend'},
-    '@/components/use-feature-resource':{useFeatureResource:url=>({data:url.startsWith('/api/club-rivals')?data:null,loading:false,error:false,reload:async()=>{reloaded++;}})},
+    '@/components/club-ranking-summary':{ClubRankingSummary:'ClubRankingSummary'},
+    '@/components/club-rivals-comparison':{ClubRivalsComparison:'ClubRivalsComparison'},
+    '@/components/use-feature-resource':{useFeatureResource:url=>({data:url?.startsWith('/api/club-rivals')?data:null,loading:false,error:false,reload:async()=>{reloaded++;}})},
     '@/lib/client-data-cache':{invalidateJsonCache(){invalidated++;}},
     '@/lib/client-fetch':{fetchJsonWithTimeout:async(url,init)=>{const request={url,body:JSON.parse(init.body),signal:init.signal};requests.push(request);return reply(request);}},
   },{Error}).default;
@@ -20,7 +21,7 @@ const tagInput=tree=>elements(tree).find(node=>node.type==='input'&&node.props.p
 test('removing a rival preserves an unrelated typed tag and a completed add cannot erase a newer draft',async()=>{
   const pending=deferred();let writes=0;const page=fixture(()=>++writes===1?{}:pending.promise);
   let tree=await page.render();tagInput(tree).props.onChange({target:{value:'#NEXT'}});tree=await page.render();
-  elements(tree).find(node=>node.props?.['aria-label']==='Stop following Rival').props.onClick();tree=await page.render();assert.equal(tagInput(tree).props.value,'#NEXT');
+  elements(tree).find(node=>node.type==='ClubRivalsComparison').props.onUnfollow('#PYLQ');tree=await page.render();assert.equal(tagInput(tree).props.value,'#NEXT');
   const submit=elements(tree).find(node=>node.type==='form').props.onSubmit;submit({preventDefault(){}});submit({preventDefault(){}});tree=await page.render();
   assert.equal(page.requests.length,2,'Only one add mutation can be pending');
   tagInput(tree).props.onChange({target:{value:'#AFTER'}});tree=await page.render();pending.resolve({});tree=await page.render();

@@ -34,17 +34,22 @@ test('game club and player rankings show cleaned names and nonblank labels witho
   assert.equal(JSON.stringify(rows),original);
 });
 
-test('rival comparisons, history titles and accessible labels use cleaned names including blank-name fallback',async()=>{
+test('rival comparisons, details and accessible labels use cleaned names including blank-name fallback',async()=>{
   const renderer=hookRenderer();
-  const data={clubTag:'#OWN',rivals:[{tag:'#RIVAL',profile:{name:'<c8>TRINITY</c>',description:''},history:[],stale:false},{tag:'#BLANK',profile:{name:' \t ',description:''},history:[],stale:false}],ranks:[]};
+  const data={clubTag:'#OWN',region:'TN',rankingAt:null,rankingStale:false,rivals:[{tag:'#RIVAL',profile:{tag:'#RIVAL',name:'<c8>TRINITY</c>',description:''},fetchedAt:null,history:[],stale:false},{tag:'#BLANK',profile:{tag:'#BLANK',name:' \t ',description:''},fetchedAt:null,history:[],stale:false}],ranks:[]};
   const own={club:{tag:'#OWN',metadata:{name:'<c3> </c>'}},strength:{}};
   const original=JSON.stringify({data,own});
-  const Page=loadTypeScript('src/app/rivals/page.tsx',{...componentMocks,react:renderer.react,'@/components/club-trend-line':{ClubTrendLine:'Trend'},'@/hooks/use-admin-session':{useAdminSession:()=>({isAdmin:true})},'@/components/use-feature-resource':{useFeatureResource:url=>({data:url.startsWith('/api/club-rivals')?data:own,error:false,loading:false})}}).default;
-  const tree=await renderer.render(Page),text=textContent(tree);
+  const {ClubRivalsComparison}=loadTypeScript('src/components/club-rivals-comparison.tsx',{...componentMocks,react:renderer.react,'@/components/club-trend-line':{ClubTrendLine:'Trend'},'@/components/club-ranking-summary':{ClubRankingSummary:'RankingSummary'}});
+  const render=()=>renderer.render(()=>ClubRivalsComparison({data,own,ownLoading:false,ownError:false,onRetryOwn(){},isAdmin:true,saving:false,onUnfollow(){}}));
+  let tree=await render();const text=textContent(tree);
   assert.match(text,/Your club#OWN/);assert.match(text,/TRINITY#RIVAL/);assert.match(text,/Club#BLANK/);assert.doesNotMatch(text,/<c8>|<c3>|<\/c>/);
-  assert.deepEqual(elements(tree).filter(node=>node.type==='h3').map(textContent),['TRINITY','Club','Your club','TRINITY','Club']);
+  elements(tree).find(node=>node.props?.['aria-label']==='Details for TRINITY').props.onClick();tree=await render();
   assert.ok(elements(tree).some(node=>node.props?.['aria-label']==='Stop following TRINITY'));
+  assert.equal(elements(tree).find(node=>node.type==='RankingSummary').props.tag,'#RIVAL');
+  elements(tree).find(node=>node.props?.['aria-label']==='Details for Club').props.onClick();tree=await render();
   assert.ok(elements(tree).some(node=>node.props?.['aria-label']==='Stop following Club'));
+  assert.equal(elements(tree).find(node=>node.type==='RankingSummary').props.tag,'#BLANK');
+  assert.doesNotMatch(textContent(tree),/<c8>|<c3>|<\/c>/);
   assert.equal(JSON.stringify({data,own}),original);
 });
 test('club identity and description history use plain cleaned text without changing raw observations',async()=>{
@@ -53,7 +58,11 @@ test('club identity and description history use plain cleaned text without chang
   const tree=await renderer.render(()=>ClubIdentity({showHistory:true}));const text=textContent(tree);assert.ok(text.includes(expected));assert.ok(text.includes('قديم → جديد <b>نص</b>'));assert.doesNotMatch(text,/<c00ffff>|<c1>|<\/c>/);assert.equal(JSON.stringify(snapshot),initial);assert.equal(elements(tree).some(e=>e.type==='b'||e.props?.dangerouslySetInnerHTML),false);
 });
 test('rival descriptions use the same cleaner and preserve literal HTML as text',async()=>{
-  const renderer=hookRenderer(),description='<c1>منافس ✨</c> <img src=x>';const rival={tag:'#PYY',profile:{name:'Rival',description},history:[],stale:false};
-  const Page=loadTypeScript('src/app/rivals/page.tsx',{...componentMocks,react:renderer.react,'@/components/club-trend-line':{ClubTrendLine:'Trend'},'@/hooks/use-admin-session':{useAdminSession:()=>({isAdmin:false})},'@/components/use-feature-resource':{useFeatureResource:url=>({data:url.startsWith('/api/club-rivals')?{clubTag:'#PYLQ',rivals:[rival],ranks:[]}:null,error:false,loading:false})}}).default;
-  const tree=await renderer.render(Page);assert.ok(textContent(tree).includes('منافس ✨ <img src=x>'));assert.equal(rival.profile.description,description);assert.equal(elements(tree).some(e=>e.type==='img'||e.props?.dangerouslySetInnerHTML),false);
+  const renderer=hookRenderer(),description='<c1>منافس ✨</c> <img src=x>';const rival={tag:'#PYY',profile:{tag:'#PYY',name:'Rival',description},fetchedAt:null,history:[],stale:false};
+  const data={clubTag:'#PYLQ',region:'TN',rankingAt:null,rankingStale:false,rivals:[rival],ranks:[]};
+  const {ClubRivalsComparison}=loadTypeScript('src/components/club-rivals-comparison.tsx',{...componentMocks,react:renderer.react,'@/components/club-trend-line':{ClubTrendLine:'Trend'},'@/components/club-ranking-summary':{ClubRankingSummary:'RankingSummary'}});
+  const render=()=>renderer.render(()=>ClubRivalsComparison({data,own:null,ownLoading:false,ownError:false,onRetryOwn(){},isAdmin:false,saving:false,onUnfollow(){}}));
+  let tree=await render();assert.equal(textContent(tree).includes('منافس ✨ <img src=x>'),false);
+  elements(tree).find(node=>node.props?.['aria-label']==='Details for Rival').props.onClick();tree=await render();
+  assert.ok(textContent(tree).includes('منافس ✨ <img src=x>'));assert.equal(rival.profile.description,description);assert.equal(elements(tree).some(e=>e.type==='img'||e.props?.dangerouslySetInnerHTML),false);
 });

@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 
 export const metadata: Metadata = {
   title: "Club Rivals",
-  description: "Compare club rosters and observed ranking history.",
+  description: "Follow your club's ranking and compare selected clubs in one clear view.",
   alternates: { canonical: "/rivals" }
 };
 

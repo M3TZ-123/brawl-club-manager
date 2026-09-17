@@ -16,13 +16,16 @@ import arMegaPigArchive from "./ar-mega-pig-archive";
 import { arHistory } from "./ar-history";
 import { arAnalysis } from "./ar-analysis";
 import { arAnalysisTeammates } from "./ar-analysis-teammates";
+import { arRivalsPage } from "./ar-rivals-page";
+import { arClubRanking } from "./ar-club-ranking";
+import { arRivalsComparison } from "./ar-rivals-comparison";
 
 export type Locale = "en" | "ar";
 export const intlLocale = (locale: Locale) => locale === "ar" ? "ar-TN" : "en-GB";
 
 export function translate(text: string, locale: Locale, values: Record<string, string | number> = {}) {
   const key = text.trim();
-  const message = locale === "ar" ? arAnalysis[key] || arAnalysisTeammates[key] || arHistory[key] || arMegaPigArchive[key] || arMegaPigSource[key] || arMemberComparison[key] || arUx[key] || arUxAnalytics[key] || arUxPlanning[key] || arUxManagement[key] || arClubIntelligence[key] || arClubAdministration[key] || arClubPlanning[key] || arClubRivals[key] || arFeatures[key] || arGame[key] || arExtra[key] || ar[key] || key : key;
+  const message = locale === "ar" ? arRivalsPage[key] || arClubRanking[key] || arRivalsComparison[key] || arAnalysis[key] || arAnalysisTeammates[key] || arHistory[key] || arMegaPigArchive[key] || arMegaPigSource[key] || arMemberComparison[key] || arUx[key] || arUxAnalytics[key] || arUxPlanning[key] || arUxManagement[key] || arClubIntelligence[key] || arClubAdministration[key] || arClubPlanning[key] || arClubRivals[key] || arFeatures[key] || arGame[key] || arExtra[key] || ar[key] || key : key;
   const translated = message.replace(/\{(\w+)\}/g, (match, name) => {
     const value = values[name];
     if (value === undefined) return match;
