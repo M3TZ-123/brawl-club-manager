@@ -442,7 +442,13 @@ export interface Database {
 export type Member = Database["public"]["Tables"]["members"]["Row"];
 export type ActivityLog = Database["public"]["Tables"]["activity_log"]["Row"];
 export type ClubEvent = Database["public"]["Tables"]["club_events"]["Row"];
-export type MemberHistory = Database["public"]["Tables"]["member_history"]["Row"];
+export type MemberHistory = Database["public"]["Tables"]["member_history"]["Row"] & {
+  latest_membership_event?: {
+    type: "join" | "leave" | "initial_seen";
+    at: string;
+    source: "recorded" | "reconstructed" | "unknown";
+  } | null;
+};
 export type Settings = Database["public"]["Tables"]["settings"]["Row"];
 export type BattleHistory = Database["public"]["Tables"]["battle_history"]["Row"];
 export type PlayerTracking = Database["public"]["Tables"]["player_tracking"]["Row"];

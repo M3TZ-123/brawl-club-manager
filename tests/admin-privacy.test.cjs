@@ -20,6 +20,7 @@ function request(path, { admin = false, body, origin } = {}) {
 
 function fixture(overrides = {}, beforeWrite) {
   const tables = {
+    settings: [{ key: "club_tag", value: "#CLUB" }], membership_change_events: [],
     member_history: [{ player_tag: "#PLAYER", player_name: "Member", notes: "Legacy private note", first_seen: "2026-09-01T00:00:00Z" }],
     member_reviews: [{ player_tag: "#PLAYER", status: "follow_up", follow_up_at: "2026-10-01T00:00:00.000Z", notes: "Current private note", updated_at: "2026-09-15T00:00:00Z" }],
     ...overrides,
@@ -66,7 +67,7 @@ test("public history excludes private and legacy notes even if a database query 
   assert.equal(Object.hasOwn(history[0], "notes"), false);
   assert.equal(Object.hasOwn(history[0], "review_status"), false);
   assert.equal(Object.hasOwn(history[0], "review_updated_at"), false);
-  assert.deepEqual(f.calls, ["member_history"]);
+  assert.deepEqual(f.calls, ["settings", "member_history", "membership_change_events", "settings"]);
 });
 
 test("authenticated history uses current private notes and review state", async () => {

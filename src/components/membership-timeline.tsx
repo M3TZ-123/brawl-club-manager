@@ -8,6 +8,16 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 
 type MembershipEvent = { id: string; eventType: string; occurredAt: string; source: "recorded" | "reconstructed" | "unknown"; actor: string; before: Record<string, unknown> | null; after: Record<string, unknown> | null };
+const EVENT_LABELS: Record<string, string> = {
+  initial_seen: "First observed",
+  join: "Joined club",
+  leave: "Left club",
+  name_change: "Name changed",
+  promotion: "Promoted",
+  demotion: "Demoted",
+  role_change: "Club role changed",
+  data_repair: "Historical record corrected",
+};
 export function MembershipTimeline({ playerTag }: { playerTag: string }) {
   const { t, number } = useI18n();
   const [events, setEvents] = useState<MembershipEvent[]>([]);
@@ -57,7 +67,7 @@ export function MembershipTimeline({ playerTag }: { playerTag: string }) {
     return parts.length ? parts.join(" · ") : t("No snapshot");
   };
   return <Card><CardHeader><CardTitle>{t("Membership timeline")}</CardTitle><p className="text-sm text-muted-foreground">{t("Historical events were reconstructed from retained records; missing snapshots are not assumed.")}</p></CardHeader><CardContent className="space-y-4">
-    {events.map(event => <article key={event.id} className="border-s-2 ps-4"><div className="flex flex-wrap items-center justify-between gap-2"><h3 className="font-semibold">{t(event.eventType === "initial_seen" ? "First observed" : event.eventType)}</h3><span className="rounded border px-2 py-0.5 text-xs">{t(event.source === "recorded" ? "Recorded" : event.source === "reconstructed" ? "Reconstructed" : "Unknown source")}</span></div><p className="text-xs text-muted-foreground"><LocalDate value={event.occurredAt} time /></p><dl className="mt-2 space-y-1 text-sm"><div><dt className="inline text-muted-foreground">{t("Before")}: </dt><dd className="inline"><bdi>{snapshot(event.before)}</bdi></dd></div><div><dt className="inline text-muted-foreground">{t("After")}: </dt><dd className="inline"><bdi>{snapshot(event.after)}</bdi></dd></div></dl></article>)}
+    {events.map(event => <article key={event.id} className="border-s-2 ps-4"><div className="flex flex-wrap items-center justify-between gap-2"><h3 className="font-semibold">{t(Object.hasOwn(EVENT_LABELS, event.eventType) ? EVENT_LABELS[event.eventType] : "Other membership event")}</h3><span className="rounded border px-2 py-0.5 text-xs">{t(event.source === "recorded" ? "Recorded" : event.source === "reconstructed" ? "Reconstructed" : "Unknown source")}</span></div><p className="text-xs text-muted-foreground"><LocalDate value={event.occurredAt} time /></p><dl className="mt-2 space-y-1 text-sm"><div><dt className="inline text-muted-foreground">{t("Before")}: </dt><dd className="inline"><bdi>{snapshot(event.before)}</bdi></dd></div><div><dt className="inline text-muted-foreground">{t("After")}: </dt><dd className="inline"><bdi>{snapshot(event.after)}</bdi></dd></div></dl></article>)}
     {loading && <p role="status">{t("Loading timeline...")}</p>}{error && <div role="alert">{t("Timeline unavailable")} <Button variant="ghost" onClick={() => load(failedCursor.current, true)}>{t("Retry")}</Button></div>}
     {!loading && !error && events.length === 0 && <p className="text-sm text-muted-foreground">{t("No membership events are available yet.")}</p>}
     {cursor && !error && <Button variant="outline" disabled={loading} onClick={() => load(cursor)}>{t("Load More")}</Button>}

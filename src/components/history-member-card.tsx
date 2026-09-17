@@ -2,29 +2,23 @@
 
 import Link from "next/link";
 import { useState } from "react";
-import { useI18n, LocalDate } from "@/components/locale-provider";
-import { MembershipTimeline } from "@/components/membership-timeline";
-import { Button } from "@/components/ui/button";
-import { MemberHistory } from "@/types/database";
-import { clubRoleLabel } from "@/lib/club-role";
+import { useI18n } from "@/components/locale-provider";
+import { HistoryMemberStatus, HistoryLatestEvent, HistoryPrivateNote, HistoryMemberDetails } from "@/components/history-member-details";
+import type { MemberHistory } from "@/types/database";
 
 export function HistoryMemberCard({ member, isAdmin, onReview }: { member: MemberHistory; isAdmin: boolean; onReview: () => void }) {
-  const { t, number } = useI18n();
+  const { t } = useI18n();
   const [expanded, setExpanded] = useState(false);
-  return <article className="rounded-lg border p-4"><details onToggle={event => setExpanded(event.currentTarget.open)}>
-    <summary className="cursor-pointer"><span className="flex flex-wrap items-center justify-between gap-2"><bdi className="font-semibold">{member.player_name}</bdi><span className="text-xs text-muted-foreground">{t(member.is_current_member ? "Current" : "Former")}</span></span><bdi dir="ltr" className="text-xs text-muted-foreground">{member.player_tag}</bdi><span className="block mt-2 text-sm text-primary">{t("Details")}</span></summary>
-    {expanded && <div className="mt-4 space-y-4"><dl className="grid grid-cols-2 gap-3 text-sm">
-      <div><dt className="text-muted-foreground">{t("First observed")}</dt><dd><LocalDate value={member.first_seen} /></dd></div>
-      <div><dt className="text-muted-foreground">{t("Left At")}</dt><dd><LocalDate value={member.last_left_at} time /></dd></div>
-      <div><dt className="text-muted-foreground">{t("Recorded joins")}</dt><dd>{member.times_joined == null ? t("Unknown") : number(member.times_joined)}</dd></div>
-      <div><dt className="text-muted-foreground">{t("Recorded departures")}</dt><dd>{member.times_left == null ? t("Unknown") : number(member.times_left)}</dd></div>
-      <div><dt className="text-muted-foreground">{t("Role at departure")}</dt><dd>{t(clubRoleLabel(member.role_at_leave))}</dd></div>
-      <div><dt className="text-muted-foreground">{t("Trophies at departure")}</dt><dd>{member.trophies_at_leave == null ? t("Unknown") : number(member.trophies_at_leave)}</dd></div>
-    </dl>{isAdmin && <div><p className="text-sm font-medium">{t("Private notes")}</p><p className="whitespace-pre-wrap break-words text-sm text-muted-foreground">{member.notes || t("No private notes")}</p></div>}
-    <Button asChild variant="outline"><Link href={`/members/${encodeURIComponent(member.player_tag)}`}>{t("Open Profile")}</Link></Button>
-    <MembershipTimeline playerTag={member.player_tag} /></div>}
-  </details><div className="mt-3">{isAdmin
-    ? <Button variant="outline" size="sm" onClick={onReview}>{t("Member notes")}</Button>
-    : <Button asChild variant="outline" size="sm"><Link href={`/reviews?member=${encodeURIComponent(member.player_tag)}`}>{t("Sign in for member notes")}</Link></Button>}
-  </div></article>;
+  return <article className="space-y-3 rounded-lg border p-4">
+    <div className="flex flex-wrap items-start justify-between gap-2">
+      <div className="min-w-0"><Link href={`/members/${encodeURIComponent(member.player_tag)}`} className="break-words font-semibold"><bdi>{member.player_name}</bdi></Link><p className="text-xs text-muted-foreground"><bdi dir="ltr">{member.player_tag}</bdi></p></div>
+      <HistoryMemberStatus member={member} />
+    </div>
+    <div><p className="mb-1 text-xs text-muted-foreground">{t("Latest recorded event")}</p><HistoryLatestEvent member={member} /></div>
+    <HistoryPrivateNote member={member} isAdmin={isAdmin} onReview={onReview} />
+    <details onToggle={event => setExpanded(event.currentTarget.open)} className="border-t pt-3">
+      <summary className="cursor-pointer text-sm font-medium text-primary">{t("Details")}</summary>
+      {expanded && <div className="pt-4"><HistoryMemberDetails member={member} isAdmin={isAdmin} /></div>}
+    </details>
+  </article>;
 }

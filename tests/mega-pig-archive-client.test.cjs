@@ -44,6 +44,29 @@ test("archive reads only private app data while visible and aborts old navigatio
   const anonymous = harness({ admin: false }); assert.equal(await anonymous.render(), null); assert.equal(anonymous.requests.length, 0); anonymous.unmount();
 });
 
+test("a member-history link opens that player's private archive without a search or mutation", async () => {
+  const page = harness({ props: { initialPlayerTag: " pylq " }, response: request => {
+    const params = new URL(request.url, "https://club.test").searchParams;
+    return params.get("mode") === "player"
+      ? { clubTag: "#PYLQ", playerTag: params.get("player"), history: [], playerReadings: [], nextOffset: null }
+      : { clubTag: "#PYLQ", cycles: [], nextOffset: null };
+  } });
+  let tree = await page.render();
+  assert.equal(page.requests.length, 1);
+  assert.match(page.requests[0].url, /mode=player&player=%23PYLQ/);
+  assert.equal(input(tree, "Find a member").props.value, "#PYLQ");
+  assert.match(textContent(tree), /No saved cycle contributions for this tag yet/);
+  assert.ok(page.requests.every(request => !request.method));
+  action(tree, "Cycles")(); tree = await page.render();
+  assert.match(textContent(tree), /No cycles yet/);
+  assert.doesNotMatch(page.requests.at(-1).url, /mode=player/);
+  page.unmount();
+  const guest = harness({ props: { initialPlayerTag: "#PYLQ" }, admin: false });
+  assert.equal(await guest.render(), null); assert.equal(guest.requests.length, 0); guest.unmount();
+  const invalid = harness({ props: { initialPlayerTag: "not a tag" } });
+  await invalid.render(); assert.doesNotMatch(invalid.requests[0].url, /player=/); invalid.unmount();
+});
+
 test("cycle member pagination appends retained former members and does not silently collapse on background polling", async () => {
   const page = harness({ response: request => {
     const url = new URL(request.url, "https://club.test");

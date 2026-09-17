@@ -92,8 +92,8 @@ test('public planning workspace hides editors and exposes only public summary ac
 });
 test('changing administrator access remounts the planning workspace instead of retaining private drafts',async()=>{
   const renderer=hookRenderer();let isAdmin=true;
-  const Page=loadTypeScript('src/app/club-planning/page.tsx',{...componentMocks,react:renderer.react,'@/hooks/use-admin-session':{useAdminSession:()=>({isAdmin})},'@/lib/client-fetch':{fetchJsonWithTimeout:async()=>({events:[]})}},{window:windowMock}).default;
-  const admin=await renderer.render(Page);const before=elements(admin).find(e=>e.props?.isAdmin===true);assert.equal(before.key,'admin');isAdmin=false;const publicTree=await renderer.render(Page);const after=elements(publicTree).find(e=>e.props?.isAdmin===false);assert.equal(after.key,'public');
+  const {PlanningEntry}=loadTypeScript('src/app/club-planning/page.tsx',{...componentMocks,react:renderer.react,'next/navigation':{useSearchParams:()=>new URLSearchParams()},'@/hooks/use-admin-session':{useAdminSession:()=>({isAdmin})},'@/lib/client-fetch':{fetchJsonWithTimeout:async()=>({events:[]})}},{window:windowMock});
+  const admin=await renderer.render(PlanningEntry);const before=elements(admin).find(e=>e.props?.isAdmin===true);assert.equal(before.key,'admin:');isAdmin=false;const publicTree=await renderer.render(PlanningEntry);const after=elements(publicTree).find(e=>e.props?.isAdmin===false);assert.equal(after.key,'public:');
 });
 
 test('collapsed event sections reveal invalid controls without discarding the draft',async()=>{

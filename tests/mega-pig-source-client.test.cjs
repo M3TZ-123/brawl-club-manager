@@ -131,6 +131,30 @@ test("source panel is available without a planned cycle only in the admin Events
   }
 });
 
+test("member-history deep links select the private player archive and show the guest sign-in gate", async () => {
+  for (const [search, expected] of [["?member=%20%23pylq%20", "#PYLQ"], ["?member=bad%20tag", ""], ["", ""]]) {
+    for (const isAdmin of [true, false]) {
+      const renderer = lifecycleRenderer(), browser = target(), scrolls = [];
+      const { PlanningWorkspace, PlanningEntry } = loadTypeScript("src/app/club-planning/page.tsx", { ...componentMocks, react: renderer.react,
+        "next/navigation": { useSearchParams: () => new URLSearchParams(search) },
+        "@/hooks/use-admin-session": { useAdminSession: () => ({ isAdmin, isLoading: false }) },
+        "@/components/mega-pig-source-panel": { MegaPigSourcePanel: "MegaPigSourcePanel" },
+        "@/components/mega-pig-archive-panel": { MegaPigArchivePanel: "MegaPigArchivePanel" },
+        "@/lib/club-planning-client": { eventKindLabels: {}, usePlanningResource: () => ({ data: { events: [], roster: [] }, error: null, loading: false, reload: async () => true }) },
+      }, { window: browser, document: { getElementById(id) { return { scrollIntoView(options) { scrolls.push({ id, block: options.block }); } }; } } });
+      const entry = PlanningEntry();
+      assert.equal(entry.key, `${isAdmin ? "admin" : "public"}:${expected}`);
+      const tree = await renderer.render(() => PlanningWorkspace(entry.props));
+      const archive = elements(tree).find(node => node.type === "MegaPigArchivePanel");
+      assert.equal(Boolean(archive), isAdmin);
+      if (isAdmin) assert.equal(archive.props.initialPlayerTag, expected);
+      else assert.equal(elements(tree).find(node => node.props?.id === "planning-admin").props.open, Boolean(expected));
+      assert.deepEqual(scrolls, isAdmin && expected ? [{ id: "mega-pig-history", block: "start" }] : []);
+      renderer.unmount();
+    }
+  }
+});
+
 test("the Arabic source panel translates the counters, provenance and unknown member values", async () => {
   const page = harness({ locale: "ar" }); const tree = await page.render(); assert.match(textContent(tree), /عدادات Mega Pig/); assert.match(textContent(tree), /مصدر خارجي/); assert.match(textContent(tree), /إجمالي الانتصارات بحسب المصدر/);
   assert.doesNotMatch(textContent(tree), /Reported total wins|Players reported by source|Unknown|Last fetched/); assert.match(textContent(tree), /لا تسجّل الحضور ولا تؤثر/); page.unmount();

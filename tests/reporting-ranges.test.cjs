@@ -165,13 +165,13 @@ test("range queries reject unbounded periods and UTC dates survive leap-year and
 test("history period excludes future events and legacy timestamps while all-history remains compatible", async () => {
   const future = new Date(now.getTime()+1).toISOString();
   const old = "2020-01-01T00:00:00.000Z";
-  const tables = { member_history:[
+  const tables = { settings: [{ key: "club_tag", value: "#CLUB" }], member_history:[
     {player_tag:"#NOW",first_seen:now.toISOString(),is_current_member:true},
     {player_tag:"#JOIN_FUTURE",first_seen:future,is_current_member:true},
     {player_tag:"#LEFT_FUTURE",first_seen:old,last_left_at:future,is_current_member:false},
     {player_tag:"#LEGACY_FUTURE",first_seen:old,last_seen:future,is_current_member:false},
     {player_tag:"#EVENT_FUTURE",first_seen:old,is_current_member:true},
-  ], club_events:[{id:1,player_tag:"#EVENT_FUTURE",event_type:"join",event_time:future}] };
+  ], membership_change_events:[{id:"1",club_tag:"#CLUB",player_tag:"#EVENT_FUTURE",event_type:"join",occurred_at:future,source:"recorded"}] };
   const route = loadTypeScript("src/app/api/history/route.ts", {
     "next/server":next,"@/lib/supabase-admin":{supabaseAdmin:readOnlyDatabase(tables)},
     "@/lib/admin-auth":{verifyAdminSession:() => false},

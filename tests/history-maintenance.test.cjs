@@ -24,6 +24,7 @@ function historyMember(player_tag, overrides = {}) {
 }
 
 function loadHistory(tables) {
+  tables = { settings: [{ key: "club_tag", value: "#CLUB" }], membership_change_events: [], ...tables };
   return loadTypeScript("src/app/api/history/route.ts", {
     "@/lib/supabase-admin": { supabaseAdmin: readOnlyDatabase(tables) },
     "@/lib/admin-auth": { rejectUnauthorizedAdminMutation: () => null, verifyAdminSession: () => false },
@@ -42,40 +43,43 @@ test("history includes recent returns and real departures without treating routi
       historyMember("#LEFT", { is_current_member: false, last_left_at: recent }),
       historyMember("#LEGACYLEFT", { is_current_member: false, last_left_at: null }),
     ],
-    club_events: [
-      { id: 1, player_tag: "#RETURNED", event_type: "join", event_time: recent },
-      { id: 2, player_tag: "#ROLEONLY", event_type: "promotion", event_time: recent },
-      { id: 3, player_tag: "#OLDRETURN", event_type: "join", event_time: old },
+    membership_change_events: [
+      { id: "1", club_tag: "#CLUB", player_tag: "#RETURNED", event_type: "join", occurred_at: recent, source: "recorded" },
+      { id: "2", club_tag: "#CLUB", player_tag: "#ROLEONLY", event_type: "promotion", occurred_at: recent, source: "recorded" },
+      { id: "3", club_tag: "#CLUB", player_tag: "#OLDRETURN", event_type: "join", occurred_at: old, source: "reconstructed" },
     ],
   };
   const response = await loadHistory(tables).GET(new Request("http://localhost/api/history?days=7"));
   assert.equal(response.status, 200);
   const { history } = await response.json();
-  assert.deepEqual(history.map(row => row.player_tag).sort(), ["#LEFT", "#LEGACYLEFT", "#NEW", "#RETURNED"]);
+  assert.deepEqual(history.map(row => row.player_tag).sort(), ["#LEFT", "#NEW", "#RETURNED"]);
   assert.equal(history.find(row => row.player_tag === "#RETURNED").first_seen, old);
+  assert.deepEqual(history.find(row => row.player_tag === "#RETURNED").latest_membership_event, { type: "join", at: recent, source: "recorded" });
+  assert.deepEqual(history.find(row => row.player_tag === "#LEFT").latest_membership_event, { type: "leave", at: recent, source: "unknown" });
+  assert.deepEqual(history.find(row => row.player_tag === "#NEW").latest_membership_event, { type: "initial_seen", at: recent, source: "unknown" });
   assert.equal(tables.member_history[0].last_left_at, old);
 });
 
 test("history pagination does not lose a return beyond the first 1000 events or records", async () => {
   const tables = {
     member_history: Array.from({ length: 1000 }, (_, id) => historyMember(`#P${String(id).padStart(4, "0")}`)),
-    club_events: Array.from({ length: 1000 }, (_, id) => ({
-      id: id + 2, player_tag: "#NOHISTORY", event_type: "join", event_time: recent,
+    membership_change_events: Array.from({ length: 1000 }, (_, id) => ({
+      id: String(id + 2), club_tag: "#CLUB", player_tag: "#NOHISTORY", event_type: "join", occurred_at: recent, source: "recorded",
     })),
   };
   tables.member_history.push(historyMember("#ZRETURN"));
-  tables.club_events.push({ id: 1, player_tag: "#ZRETURN", event_type: "join", event_time: recent });
+  tables.membership_change_events.push({ id: "1", club_tag: "#CLUB", player_tag: "#ZRETURN", event_type: "join", occurred_at: recent, source: "recorded" });
   const response = await loadHistory(tables).GET(new Request("http://localhost/api/history?days=7"));
   const { history } = await response.json();
   assert.deepEqual(history.map(row => row.player_tag), ["#ZRETURN"]);
 });
 
-test("all-time history needs no events and preserves the stored records", async () => {
-  const tables = { member_history: [historyMember("#OLD", { last_seen: old })] };
+test("all-time history preserves stored records and labels their first observation when the audit is empty", async () => {
+  const tables = { member_history: [historyMember("#OLD", { last_seen: old, last_left_at: null })] };
   const response = await loadHistory(tables).GET(new Request("http://localhost/api/history?days=all"));
   assert.equal(response.status, 200);
   const { history } = await response.json();
-  assert.deepEqual(history, tables.member_history);
+  assert.deepEqual(history, tables.member_history.map(row => ({ ...row, latest_membership_event: { type: "initial_seen", at: old, source: "unknown" } })));
 });
 
 function backfillFixture({ apply = false, serviceKey = "test-service-role", outcomes = ["updated"], settingsError = null } = {}) {

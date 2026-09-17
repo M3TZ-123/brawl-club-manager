@@ -134,10 +134,9 @@ test('history counts an observed return even when the old join count is unknown'
     { player_tag: '#UNKNOWN', player_name: 'Unknown history', is_current_member: true, times_joined: null, times_left: null },
   ] }) }).default;
   const tree = await renderer.render(Page);
-  const summary = elements(tree).find(node => node.type === 'div' && elements(node).some(child => child.type === 'dt' && textContent(child) === 'Known returning members') && elements(node).filter(child => child.type === 'dd').length === 1);
-  assert.ok(summary); assert.equal(textContent(elements(summary).find(node => node.type === 'dd')), '1');
-  assert.ok(elements(tree).some(node => node.type === 'Badge' && textContent(node) === 'Returned'));
-  assert.match(textContent(tree), /Unknown/);
+  assert.match(textContent(tree), /Previously returned: 1 of these members/);
+  const current = elements(tree).find(node => node.type === 'div' && elements(node).some(child => child.type === 'dt' && textContent(child) === 'Current in results') && elements(node).filter(child => child.type === 'dd').length === 1);
+  assert.equal(textContent(elements(current).find(node => node.type === 'dd')), '2');
 });
 
 test('calendar and daily report ranges use the same UTC dates on both sides of midnight and leap day', () => {

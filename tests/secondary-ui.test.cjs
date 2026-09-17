@@ -87,14 +87,14 @@ test("member overview distinguishes insufficient trophy history and no recorded 
   assert.doesNotMatch(textContent(tree), /0%|28 days|\/7/);
 });
 
-test("history defaults to seven days and late responses cannot replace the selected period", async () => {
+test("history defaults to all time and late responses cannot replace the selected period", async () => {
   const renderer = hookRenderer(), requests = [], initial = pending(), newest = pending();
   const component = loadTypeScript("src/app/history/page.tsx", {
     ...mocks, react: renderer.react,
     "@/lib/client-fetch": { fetchJsonWithTimeout: url => { requests.push(url); return url.includes("range=90d") ? newest.promise : initial.promise; } },
   }, { window: windowMock, console: quietConsole }).default;
   let tree = await renderer.render(component);
-  assert.equal(requests[0], "/api/history?range=7d");
+  assert.equal(requests[0], "/api/history?range=all");
   picker(tree).props.onChange("90d");
   await renderer.render(component);
   newest.resolve({ history: [{ player_tag: "#NEW", player_name: "Selected period", is_current_member: true, times_joined: null, times_left: null }] });
@@ -105,7 +105,7 @@ test("history defaults to seven days and late responses cannot replace the selec
   assert.match(textContent(tree), /Selected period/);
   assert.doesNotMatch(textContent(tree), /Wrong period/);
   assert.equal(elements(tree).some(element => element.type === "TableHead" && textContent(element) === "Notes"), false);
-  assert.match(textContent(tree), /Unknown/);
+  assert.equal(elements(tree).some(element => element.type === "TableHead" && textContent(element) === "Latest recorded event"), true);
 });
 
 test("history load failures show a retry rather than an empty history or zero member counts", async () => {

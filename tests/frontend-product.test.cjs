@@ -1,3 +1,4 @@
+const { expandHistory } = require("./helpers/history-renderer.cjs");
 const test = require("node:test");
 const assert = require("node:assert/strict");
 const { loadTypeScript } = require("./helpers/load-typescript.cjs");
@@ -167,7 +168,7 @@ test("mobile history expands dates and departure snapshots while keeping private
   const { HistoryMemberCard } = loadTypeScript("src/components/history-member-card.tsx", { ...componentMocks, react: renderer.react, "@/components/membership-timeline": { MembershipTimeline: "MembershipTimeline" } });
   const member = { ...reviewMember, first_seen: "2025-01-01", last_left_at: null, times_joined: 2, times_left: 1, role_at_leave: "senior", trophies_at_leave: 12345, notes: "Private fixture", is_current_member: true };
   let admin = false;
-  const render = () => renderer.render(() => HistoryMemberCard({ member, isAdmin: admin, onReview() {} }));
+  const render = () => renderer.render(() => expandHistory(HistoryMemberCard({ member, isAdmin: admin, onReview() {} })));
   let tree = await render();
   assert.equal(elements(tree).some(e => e.type === "MembershipTimeline"), false);
   assert.ok(elements(tree).some(e => e.type === "Link" && e.props.href === "/reviews?member=%23ABC"), "Visitors can find the sign-in link before expanding details");
@@ -176,7 +177,7 @@ test("mobile history expands dates and departure snapshots while keeping private
   assert.match(textContent(tree), /First observed/);
   assert.match(textContent(tree), /12,345/);
   assert.doesNotMatch(textContent(tree), /Private fixture/);
-  assert.equal(elements(tree).filter(e => e.type === "LocalDate").find(e => e.props.time).props.value, null);
+  assert.equal(elements(tree).filter(e => e.type === "LocalDate").find(e => e.props.value == null).props.value, null);
   admin = true; tree = await render();
   assert.match(textContent(tree), /Private fixture/);
   assert.equal(elements(tree).some(e => e.type === "MembershipTimeline"), true);
@@ -200,7 +201,30 @@ test("timeline preserves provenance, missing snapshots and opaque pagination cur
   await action(tree, "Load More")(); tree = await render();
   assert.equal(new URL(urls[1], "http://fixture").searchParams.get("cursor"), "opaque+/=");
   assert.match(textContent(tree), /Recorded/);
+  assert.match(textContent(tree), /Club role changed/);
   assert.match(textContent(tree), /Before: MemberAfter: Senior/);
+});
+
+test("timeline names every supported event in English and Arabic without dropping repair records or provenance", async () => {
+  const { translate } = loadTypeScript("src/lib/i18n/messages.ts");
+  const labels = { initial_seen: "First observed", join: "Joined club", leave: "Left club", name_change: "Name changed", promotion: "Promoted", demotion: "Demoted", role_change: "Club role changed", data_repair: "Historical record corrected", future_event: "Other membership event" };
+  const events = Object.keys(labels).map((eventType, index) => ({ id: String(index), eventType, occurredAt: "2026-09-18T12:00:00Z", source: index % 2 ? "reconstructed" : "recorded", before: { player_name: "Before name" }, after: { player_name: "After name" } }));
+  for (const locale of ["en", "ar"]) {
+    const renderer = hookRenderer();
+    const { MembershipTimeline } = loadTypeScript("src/components/membership-timeline.tsx", { ...componentMocks, react: renderer.react,
+      "@/components/locale-provider": { LocalDate: "LocalDate", useI18n: () => ({ number: String, t: key => translate(key, locale) }) },
+      "@/lib/client-data-cache": { fetchJsonCached: async () => ({ events, nextCursor: null }) },
+    }, { window: windowMock, document: { visibilityState: "visible", addEventListener() {}, removeEventListener() {} } });
+    const tree = await renderer.render(() => MembershipTimeline({ playerTag: "#ABC" }));
+    assert.deepEqual(elements(tree).filter(node => node.type === "h3").map(textContent), Object.values(labels).map(label => translate(label, locale)));
+    assert.equal(elements(tree).filter(node => node.type === "article").length, events.length);
+    assert.equal(elements(tree).filter(node => node.type === "LocalDate").length, events.length);
+    assert.ok(textContent(tree).includes(translate("Recorded", locale)));
+    assert.ok(textContent(tree).includes(translate("Reconstructed", locale)));
+    assert.match(textContent(tree), /Before name/);
+    assert.match(textContent(tree), /After name/);
+    assert.doesNotMatch(textContent(tree), /data_repair|name_change|role_change|future_event/);
+  }
 });
 
 test("sync health displays backend attempt and outcome rather than inferring a next scheduled time", async () => {

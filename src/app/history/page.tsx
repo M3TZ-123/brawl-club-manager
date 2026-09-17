@@ -1,58 +1,38 @@
 "use client";
-import { T, useI18n, LocalDate } from "@/components/locale-provider";
-
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import Link from "next/link";
+import { Search } from "lucide-react";
+import { T, useI18n } from "@/components/locale-provider";
 import { LayoutWrapper } from "@/components/layout-wrapper";
 import { TimeRangePicker } from "@/components/time-range-picker";
-import { ClubRetention } from "@/components/club-retention";
-import { ClubIdentity } from "@/components/club-identity";
-import { type TimeRangeKey } from "@/lib/time-range";
-import { clubRoleLabel } from "@/lib/club-role";
-import { invalidateJsonCache } from "@/lib/client-data-cache";
-import { fetchJsonWithTimeout } from "@/lib/client-fetch";
-import { useAdminSession } from "@/hooks/use-admin-session";
+import { HistoryMemberCard } from "@/components/history-member-card";
+import { hasRecordedReturn, HistoryMemberStatus, HistoryLatestEvent, HistoryPrivateNote, HistoryMemberDetailsSheet } from "@/components/history-member-details";
+import { MemberReviewSheet } from "@/components/member-review";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
-import { MemberHistory } from "@/types/database";
-import Link from "next/link";
-import { HistoryMemberCard } from "@/components/history-member-card";
-import { MemberReviewSheet } from "@/components/member-review";
-import { Search, UserPlus, UserMinus, Pencil, Check, X, Trash2 } from "lucide-react";
+import { fetchJsonWithTimeout } from "@/lib/client-fetch";
+import { useAdminSession } from "@/hooks/use-admin-session";
+import type { TimeRangeKey } from "@/lib/time-range";
+import type { MemberHistory } from "@/types/database";
 
 export default function HistoryPage() {
-  const { number } = useI18n();
-  const { t } = useI18n();
+  const { t, number } = useI18n();
   const { isAdmin, isLoading: sessionLoading } = useAdminSession();
   const [history, setHistory] = useState<MemberHistory[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState("");
-  const [filter, setFilter] = useState<"all" | "current" | "former">("all");
-  const [timeRange, setTimeRange] = useState<TimeRangeKey | "all">("7d");
+  const [filter, setFilter] = useState<"all" | "current" | "former" | "returned">("all");
+  const [timeRange, setTimeRange] = useState<TimeRangeKey | "all">("all");
   const [loadError, setLoadError] = useState(false);
-  const [noteError, setNoteError] = useState("");
   const [sessionRevision, setSessionRevision] = useState(0);
+  const [reviewMember, setReviewMember] = useState<MemberHistory | null>(null);
+  const [detailMember, setDetailMember] = useState<MemberHistory | null>(null);
   const loadSequence = useRef(0);
   const readController = useRef<AbortController | null>(null);
-  const writeController = useRef<AbortController | null>(null);
   const authBlocked = useRef(!isAdmin);
-  const mounted = useRef(false);
-  const [noteEditor, setNoteEditor] = useState<{ tag: string; note: string; updatedAt: string | null } | null>(null);
-  const editingTag = noteEditor?.tag ?? null;
-  const editingNote = noteEditor?.note ?? "";
-  const [savingNote, setSavingNote] = useState(false);
-  const noteSaveInFlight = useRef(false);
-  const [reviewMember, setReviewMember] = useState<MemberHistory | null>(null);
   const cancelRead = useCallback(() => { loadSequence.current++; readController.current?.abort(); }, []);
 
   const loadHistory = useCallback(async () => {
@@ -60,19 +40,18 @@ export default function HistoryPage() {
     readController.current?.abort();
     const controller = new AbortController();
     readController.current = controller;
-    setIsLoading(true);
-    setLoadError(false);
+    setIsLoading(true); setLoadError(false);
     try {
-      const query = `?range=${timeRange}`;
-      const data = await fetchJsonWithTimeout<{ history?: MemberHistory[] }>(`/api/history${query}`, {
+      const data = await fetchJsonWithTimeout<{ history?: MemberHistory[] }>(`/api/history?range=${timeRange}`, {
         cache: "no-store", signal: controller.signal,
       });
       if (controller.signal.aborted || sequence !== loadSequence.current) return;
-      setHistory(data.history || []);
+      const next = data.history || [];
+      setHistory(next);
+      setDetailMember(current => current ? next.find(member => member.player_tag === current.player_tag) || null : null);
     } catch (error) {
       if (controller.signal.aborted || sequence !== loadSequence.current) return;
-      setLoadError(true);
-      setHistory([]);
+      setLoadError(true); setHistory([]); setDetailMember(null);
       console.error("Error loading history:", error);
     } finally {
       if (!controller.signal.aborted && sequence === loadSequence.current) setIsLoading(false);
@@ -80,19 +59,15 @@ export default function HistoryPage() {
   }, [timeRange]);
 
   useEffect(() => {
-    mounted.current = true;
     const resetSession = () => {
       authBlocked.current = true;
       cancelRead();
-      writeController.current?.abort();
-      noteSaveInFlight.current = false;
-      setHistory([]); setNoteEditor(null); setReviewMember(null); setNoteError(""); setSavingNote(false);
+      setHistory([]); setReviewMember(null); setDetailMember(null);
       setSessionRevision(value => value + 1);
     };
     window.addEventListener("admin-session-changed", resetSession);
     return () => {
-      mounted.current = false; authBlocked.current = true;
-      cancelRead(); writeController.current?.abort();
+      authBlocked.current = true; cancelRead();
       window.removeEventListener("admin-session-changed", resetSession);
     };
   }, [cancelRead]);
@@ -105,313 +80,77 @@ export default function HistoryPage() {
   }, [loadHistory, isAdmin, sessionLoading, sessionRevision, cancelRead]);
 
   useEffect(() => {
-    const handleClubDataUpdated = () => {
+    const refresh = (event: Event) => {
+      if ((event as CustomEvent).detail?.clubChanged === true) {
+        cancelRead(); setHistory([]); setDetailMember(null); setReviewMember(null);
+      }
       if (!sessionLoading) void loadHistory();
     };
-    window.addEventListener("club-data-updated", handleClubDataUpdated);
-    window.addEventListener("member-reviews-updated", handleClubDataUpdated);
-    return () => { window.removeEventListener("club-data-updated", handleClubDataUpdated); window.removeEventListener("member-reviews-updated", handleClubDataUpdated); };
-  }, [loadHistory, sessionLoading]);
+    window.addEventListener("club-data-updated", refresh);
+    window.addEventListener("member-reviews-updated", refresh);
+    return () => {
+      window.removeEventListener("club-data-updated", refresh);
+      window.removeEventListener("member-reviews-updated", refresh);
+    };
+  }, [loadHistory, sessionLoading, cancelRead]);
 
   const filteredHistory = useMemo(() => {
-    let filtered = [...history];
-
-    // Search filter
-    if (searchQuery) {
-      filtered = filtered.filter(
-        (h) =>
-          h.player_name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-          h.player_tag.toLowerCase().includes(searchQuery.toLowerCase())
-      );
-    }
-
-    // Status filter
-    if (filter === "current") {
-      filtered = filtered.filter((h) => h.is_current_member);
-    } else if (filter === "former") {
-      filtered = filtered.filter((h) => !h.is_current_member);
-    }
-
-    return filtered;
+    const query = searchQuery.trim().toLowerCase();
+    return history.filter(member => (!query || member.player_name.toLowerCase().includes(query) || member.player_tag.toLowerCase().includes(query))
+      && (filter === "all" || filter === "current" && member.is_current_member || filter === "former" && !member.is_current_member || filter === "returned" && hasRecordedReturn(member)));
   }, [history, searchQuery, filter]);
+  const currentCount = filteredHistory.filter(member => member.is_current_member).length;
+  const formerCount = filteredHistory.length - currentCount;
+  const returningCount = filteredHistory.filter(hasRecordedReturn).length;
+  const canReview = isAdmin && !sessionLoading && !authBlocked.current;
+  const openReview = (member: MemberHistory) => { if (isAdmin && !sessionLoading && !authBlocked.current) setReviewMember(member); };
 
-  const getMemberBadge = (h: MemberHistory) => {
-    if (!h.is_current_member) {
-      return <Badge variant="destructive"><T text="Former" /></Badge>;
-    }
-    if (h.times_left > 0 || h.times_joined > 1) {
-      return <Badge variant="warning"><T text="Returned" /></Badge>;
-    }
-    return <Badge variant="success"><T text="Current" /></Badge>;
-  };
-
-  const startEditingNote = (member: MemberHistory) => {
-    if (!isAdmin || authBlocked.current) return;
-    setNoteError("");
-    setNoteEditor({ tag: member.player_tag, note: member.notes || "", updatedAt: member.review_updated_at ?? null });
-  };
-
-  const cancelEditingNote = () => {
-    setNoteEditor(null);
-  };
-
-  const saveNote = async (playerTag: string, value = editingNote) => {
-    if (!isAdmin || sessionLoading || authBlocked.current || !mounted.current || noteSaveInFlight.current) return;
-    const controller = new AbortController();
-    writeController.current = controller;
-    noteSaveInFlight.current = true;
-    setNoteError("");
-    try {
-      setSavingNote(true);
-      const expectedUpdatedAt = noteEditor?.tag === playerTag ? noteEditor.updatedAt : history.find(member => member.player_tag === playerTag)?.review_updated_at ?? null;
-      const data = await fetchJsonWithTimeout<{ review: { notes: string | null; updated_at: string } }>("/api/history", {
-        method: "PATCH",
-        signal: controller.signal,
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ player_tag: playerTag, notes: value.trim(), expected_updated_at: expectedUpdatedAt }),
-      });
-      if (!controller.signal.aborted && mounted.current) {
-        invalidateJsonCache("/api/history");
-        setHistory((prev) =>
-          prev.map((h) =>
-            h.player_tag === playerTag ? { ...h, notes: data.review.notes, review_updated_at: data.review.updated_at } : h
-          )
-        );
-        // A delayed save must not close a different member's editor, or erase
-        // further typing in the same editor while that save was in flight.
-        setNoteEditor(current => current?.tag !== playerTag ? current : current.note.trim() === value.trim() ? null : { ...current, updatedAt: data.review.updated_at });
-        window.dispatchEvent(new CustomEvent("member-reviews-updated"));
-      }
-    } catch (error) {
-      if (controller.signal.aborted || !mounted.current) return;
-      setNoteError(error instanceof Error && error.message === "Review changed. Reload before saving."
-        ? "This note changed elsewhere. Your draft is preserved. Open Member notes to review the latest saved note."
-        : "Could not save the note. Your changes are still available to retry.");
-      console.error("Error saving note:", error);
-    } finally {
-      if (writeController.current === controller) noteSaveInFlight.current = false;
-      if (!controller.signal.aborted && mounted.current) setSavingNote(false);
-    }
-  };
-
-  const currentCount = history.filter((h) => h.is_current_member).length;
-  const formerCount = history.filter((h) => !h.is_current_member).length;
-  const returningCount = history.filter((h) => h.times_joined > 1 || (h.is_current_member && h.times_left > 0)).length;
-
-  return (
-    <LayoutWrapper>
-      <div className="space-y-6">
-        <div className="flex flex-col justify-between gap-4 sm:flex-row sm:items-start">
-          <div><h1 className="text-2xl font-bold"><T text="Member History" /></h1><p className="mt-1 text-sm text-muted-foreground"><T text="Membership records matching this period" /></p></div>
-          <TimeRangePicker value={timeRange} onChange={range => { if (range !== timeRange) { setIsLoading(true); setTimeRange(range); } }} includeAll />
-        </div>
-        {loadError && <div role="alert" className="rounded-lg border border-destructive/40 p-4 text-sm"><T text="Could not load member history." /> <Button variant="ghost" onClick={() => loadHistory()}><T text="Retry" /></Button></div>}
-        {isAdmin && noteError && <p role="alert" className="text-sm text-destructive"><T text={noteError} /></p>}
-        {/* Stats */}
-        <dl className="grid grid-cols-2 gap-3 rounded-lg border bg-card p-3 text-sm sm:grid-cols-4">
-          {([["Total Records", history.length], ["Current Members", currentCount], ["Former Members", formerCount], ["Known returning members", returningCount]] as const).map(([label, count]) => <div key={label}><dt className="text-xs text-muted-foreground"><T text={label} /></dt><dd className="mt-1 text-lg font-semibold">{isLoading || loadError ? "—" : number(count)}</dd></div>)}
-        </dl>
-
-            {/* History Table */}
-            <Card>
-              <CardHeader>
-                <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-                  <div>
-                    <CardTitle><T text="Members" /></CardTitle>
-                  </div>
-                  <div className="flex flex-col sm:flex-row gap-2">
-                    <div className="relative">
-                      <Search className="absolute start-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-                      <Input
-                        placeholder={t("Search players...")} aria-label={t("Search players...")}
-                        value={searchQuery}
-                        onChange={(e) => setSearchQuery(e.target.value)}
-                        className="ps-10 w-full sm:w-64"
-                      />
-                    </div>
-                    <select
-                      aria-label={t("Membership status")}
-                      value={filter}
-                      onChange={(e) => setFilter(e.target.value as typeof filter)}
-                      className="h-10 rounded-md border border-input bg-background px-3 text-sm"
-                    >
-                      <option value="all"><T text="All Members" /></option>
-                      <option value="current"><T text="Current Members" /></option>
-                      <option value="former"><T text="Former Members" /></option>
-                    </select>
-                  </div>
-                </div>
-              </CardHeader>
-              <CardContent>
-                {isLoading ? (
-                  <div className="flex items-center justify-center py-12">
-                    <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
-                  </div>
-                ) : loadError ? null : (
-                  <>
-                  <p className="mb-3 text-xs text-muted-foreground"><T text="First observed is not an exact joining date." /></p>
-                  <div className="space-y-3 md:hidden">{filteredHistory.length ? filteredHistory.map(member => <HistoryMemberCard key={member.player_tag} member={member} isAdmin={isAdmin} onReview={() => setReviewMember(member)} />) : <p><T text="No member history found" /></p>}</div>
-                  <div className="hidden overflow-x-auto md:block">
-                  <Table className="min-w-[700px] sm:min-w-full">
-                    <TableHeader>
-                      <TableRow>
-                        <TableHead><T text="Player" /></TableHead>
-                        <TableHead><T text="Status" /></TableHead>
-                        <TableHead className="hidden sm:table-cell"><T text="First observed" /></TableHead>
-                        <TableHead className="hidden sm:table-cell"><T text="Left At" /></TableHead>
-                        <TableHead className="hidden lg:table-cell"><T text="Role At Leave" /></TableHead>
-                        <TableHead className="hidden lg:table-cell"><T text="Trophies At Leave" /></TableHead>
-                        <TableHead className="text-center"><T text="Joined" /></TableHead>
-                        <TableHead className="text-center"><T text="Left" /></TableHead>
-                        <TableHead><T text="Member notes" /></TableHead>
-                      </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                      {filteredHistory.length === 0 ? (
-                        <TableRow>
-                          <TableCell colSpan={9} className="text-center py-8 text-muted-foreground">
-                            <T text=" No member history found " /></TableCell>
-                        </TableRow>
-                      ) : (
-                        filteredHistory.map((h) => (
-                          <TableRow key={h.player_tag}>
-                            <TableCell>
-                              <div>
-                                <p className="font-medium truncate max-w-[120px] sm:max-w-none"><Link href={`/members/${encodeURIComponent(h.player_tag)}`}><bdi>{h.player_name}</bdi></Link></p>
-                                <p className="text-xs text-muted-foreground"><bdi dir="ltr">{h.player_tag}</bdi></p>
-                              </div>
-                            </TableCell>
-                            <TableCell>{getMemberBadge(h)}</TableCell>
-                            <TableCell className="hidden sm:table-cell text-muted-foreground">
-                              <LocalDate value={h.first_seen} />
-                            </TableCell>
-                            <TableCell className="hidden sm:table-cell text-muted-foreground">
-                              <LocalDate value={h.last_left_at} time />
-                            </TableCell>
-                            <TableCell className="hidden lg:table-cell text-muted-foreground">
-                              {!h.is_current_member ? t(clubRoleLabel(h.role_at_leave)) : "-"}
-                            </TableCell>
-                            <TableCell className="hidden lg:table-cell text-muted-foreground">
-                              {!h.is_current_member
-                                ? (typeof h.trophies_at_leave === "number" ? number(h.trophies_at_leave) : t("Unknown"))
-                                : "-"}
-                            </TableCell>
-                            <TableCell className="text-center">
-                              <span className="inline-flex items-center gap-1 text-green-500">
-                                <UserPlus className="h-3 w-3" />
-                                {h.times_joined == null ? t("Unknown") : number(h.times_joined)}
-                              </span>
-                            </TableCell>
-                            <TableCell className="text-center">
-                              <span className="inline-flex items-center gap-1 text-red-500">
-                                <UserMinus className="h-3 w-3" />
-                                {h.times_left == null ? t("Unknown") : number(h.times_left)}
-                              </span>
-                            </TableCell>
-                            <TableCell className="max-w-[240px]">
-                              {isAdmin ? <div className="space-y-2"><Button variant="outline" size="sm" onClick={() => setReviewMember(h)}><T text="Member notes" /></Button>
-                              {editingTag === h.player_tag ? (
-                                <div className="flex items-center gap-1">
-                                  <Input
-                                    value={editingNote}
-                                    onChange={(e) => setNoteEditor(current => current ? { ...current, note: e.target.value } : current)}
-                                    placeholder={t("Add a note...")}
-                                    aria-label={t("Member notes")}
-                                    maxLength={1000}
-                                    className="h-8 text-sm"
-                                    autoFocus
-                                    onKeyDown={(e) => {
-                                      if (e.key === "Enter") saveNote(h.player_tag);
-                                      if (e.key === "Escape") cancelEditingNote();
-                                    }}
-                                  />
-                                  <Button
-                                    variant="ghost"
-                                    size="icon"
-                                    aria-label={t("Save note")}
-                                    className="h-7 w-7 shrink-0"
-                                    onClick={() => saveNote(h.player_tag)}
-                                    disabled={savingNote}
-                                  >
-                                    <Check className="h-3.5 w-3.5 text-green-500" />
-                                  </Button>
-                                  <Button
-                                    variant="ghost"
-                                    size="icon"
-                                    aria-label={t("Cancel")}
-                                    className="h-7 w-7 shrink-0"
-                                    onClick={cancelEditingNote}
-                                  >
-                                    <X className="h-3.5 w-3.5 text-red-500" />
-                                  </Button>
-                                </div>
-                              ) : (
-                                <div className="flex items-center gap-1 group">
-                                  <button
-                                  className="flex min-w-0 items-center gap-1 text-start"
-                                  onClick={() => startEditingNote(h)}
-                                  title={t("Click to edit note")}
-                                >
-                                  <span className="text-muted-foreground truncate">
-                                    {isAdmin ? h.notes || "-" : "-"}
-                                  </span>
-                                  {isAdmin && (
-                                    <Pencil className="h-3 w-3 text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity shrink-0" />
-                                  )}
-                                  </button>
-                                  {h.notes && isAdmin && (
-                                    <button
-                                      className="h-5 w-5 flex items-center justify-center rounded hover:bg-destructive/20 opacity-0 group-hover:opacity-100 transition-opacity shrink-0"
-                                      title={t("Delete note")}
-                                      onClick={(e) => {
-                                        e.stopPropagation();
-                                        if (!isAdmin) return;
-                                        void saveNote(h.player_tag, "");
-                                      }}
-                                    >
-                                      <Trash2 className="h-3 w-3 text-red-500" />
-                                    </button>
-                                  )}
-                                </div>
-                              )}
-                              </div> : <Button asChild variant="outline" size="sm"><Link href={`/reviews?member=${encodeURIComponent(h.player_tag)}`}><T text="Sign in for member notes" /></Link></Button>}
-                            </TableCell>
-                          </TableRow>
-                        ))
-                      )}
-                    </TableBody>
-                  </Table>
-                  </div></>
-                )}
-              </CardContent>
-            </Card>
-
-            {/* Legend */}
-            <details className="rounded-lg border p-3 text-sm"><summary className="cursor-pointer font-medium"><T text="Understanding member history" /></summary><div className="mt-3 space-y-3">
-                <div className="flex flex-wrap gap-4">
-                  <div className="flex items-center gap-2">
-                    <Badge variant="success"><T text="Current" /></Badge>
-                    <span className="text-sm text-muted-foreground">
-                      <T text=" Currently in the club " /></span>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <Badge variant="warning"><T text="🔄 Returned" /></Badge>
-                    <span className="text-sm text-muted-foreground">
-                      <T text=" Left at least once but came back " /></span>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <Badge variant="destructive"><T text="Former" /></Badge>
-                    <span className="text-sm text-muted-foreground">
-                      <T text=" No longer in the club " /></span>
-                  </div>
-                </div>
-                <p className="text-xs text-muted-foreground"><T text="First observed is the earliest retained evidence, not the actual join date. Counts cover the tracked history only." /></p>
-                <p className="text-xs text-muted-foreground"><T text="Private member notes can record why someone left or was removed. These reasons are entered by administrators." /></p>
-                {!isAdmin && <p className="text-sm"><Link href="/reviews" className="text-primary underline"><T text="Sign in to view or add member notes" /></Link></p>}
-              </div></details>
-            <details className="rounded-xl border bg-card p-4"><summary className="cursor-pointer font-semibold"><T text="Club growth and retention" /></summary><div className="grid gap-4 pt-4 xl:grid-cols-2"><ClubRetention /><ClubIdentity showHistory /></div></details>
+  return <LayoutWrapper><div className="space-y-5">
+    <div className="flex flex-col justify-between gap-4 sm:flex-row sm:items-start">
+      <div><h1 className="text-2xl font-bold">{t("Member History")}</h1><p className="mt-1 text-sm text-muted-foreground">{t(timeRange === "all" ? "All recorded members, including those who left." : "Members with a recorded membership event in this period.")}</p></div>
+      <TimeRangePicker value={timeRange} onChange={range => { if (range !== timeRange) { setIsLoading(true); setDetailMember(null); setTimeRange(range); } }} includeAll />
+    </div>
+    {loadError && <div role="alert" className="rounded-lg border border-destructive/40 p-4 text-sm">{t("Could not load member history.")} <Button variant="ghost" onClick={loadHistory}>{t("Retry")}</Button></div>}
+    <Card>
+      <CardHeader className="gap-4 p-4">
+        <div className="flex flex-col justify-between gap-3 sm:flex-row sm:items-center">
+          <CardTitle className="text-lg">{t("Members")}</CardTitle>
+          <div className="flex flex-col gap-2 sm:flex-row">
+            <div className="relative"><Search className="absolute start-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" /><Input placeholder={t("Search players...")} aria-label={t("Search players...")} value={searchQuery} onChange={event => setSearchQuery(event.target.value)} className="w-full ps-10 sm:w-64" /></div>
+            <select aria-label={t("Membership status")} value={filter} onChange={event => setFilter(event.target.value as typeof filter)} className="h-10 rounded-md border border-input bg-background px-3 text-sm">
+              <option value="all">{t("All Members")}</option><option value="current">{t("Current Members")}</option><option value="former">{t("Former Members")}</option><option value="returned">{t("Previously returned")}</option>
+            </select>
           </div>
-      {isAdmin && reviewMember && <MemberReviewSheet key={reviewMember.player_tag} member={reviewMember} open onOpenChange={open => { if (!open) setReviewMember(null); }} />}
-    </LayoutWrapper>
-  );
+        </div>
+        <dl className="grid grid-cols-3 gap-3 border-t pt-3 text-sm">
+          {([["Matching members", filteredHistory.length], ["Current in results", currentCount], ["Former in results", formerCount]] as const).map(([label, count]) => <div key={label}><dt className="text-xs text-muted-foreground">{t(label)}</dt><dd className="mt-1 text-lg font-semibold">{isLoading || loadError ? "—" : number(count)}</dd></div>)}
+        </dl>
+        {!isLoading && !loadError && returningCount > 0 && <p className="text-xs text-muted-foreground">{t("Previously returned: {count} of these members", { count: number(returningCount) })}</p>}
+      </CardHeader>
+      <CardContent className="p-4 pt-0">
+        {isLoading ? <p role="status" className="py-8 text-center text-sm text-muted-foreground">{t("Loading...")}</p> : loadError ? null : <>
+          <div className="space-y-3 md:hidden">{filteredHistory.length ? filteredHistory.map(member => <HistoryMemberCard key={member.player_tag} member={member} isAdmin={canReview} onReview={() => openReview(member)} />) : <p className="py-6 text-center text-sm text-muted-foreground">{t("No member history found")}</p>}</div>
+          <div className="hidden overflow-x-auto md:block"><Table className="min-w-[760px]">
+            <TableHeader><TableRow>{["Player", "Current status", "Latest recorded event", "Private notes", "Details"].map(label => <TableHead key={label}>{t(label)}</TableHead>)}</TableRow></TableHeader>
+            <TableBody>{filteredHistory.length === 0 ? <TableRow><TableCell colSpan={5} className="py-8 text-center text-muted-foreground">{t("No member history found")}</TableCell></TableRow> : filteredHistory.map(member => <TableRow key={member.player_tag}>
+              <TableCell><Link href={`/members/${encodeURIComponent(member.player_tag)}`} className="font-medium"><bdi>{member.player_name}</bdi></Link><p className="text-xs text-muted-foreground"><bdi dir="ltr">{member.player_tag}</bdi></p></TableCell>
+              <TableCell><HistoryMemberStatus member={member} /></TableCell>
+              <TableCell><HistoryLatestEvent member={member} /></TableCell>
+              <TableCell className="max-w-64"><HistoryPrivateNote member={member} isAdmin={canReview} onReview={() => openReview(member)} /></TableCell>
+              <TableCell><Button variant="ghost" size="sm" onClick={() => setDetailMember(member)} aria-label={t("Details for {player}", { player: member.player_name })}>{t("Details")}</Button></TableCell>
+            </TableRow>)}</TableBody>
+          </Table></div>
+        </>}
+      </CardContent>
+    </Card>
+    <details className="rounded-lg border p-3 text-sm"><summary className="cursor-pointer font-medium">{t("Understanding member history")}</summary><div className="mt-3 space-y-2 text-xs text-muted-foreground">
+      <p>{t("First observed is the earliest retained evidence, not the actual join date. Counts cover the tracked history only.")}</p>
+      <p>{t("Previously returned can include current and former members; it is not a separate membership status.")}</p>
+      <p><T text="Private member notes can record why someone left or was removed. These reasons are entered by administrators." /></p>
+      {!canReview && <Link href="/reviews" className="inline-block text-primary underline">{t("Sign in to view or add member notes")}</Link>}
+    </div></details>
+  </div>
+    {detailMember && <HistoryMemberDetailsSheet key={detailMember.player_tag} member={detailMember} isAdmin={canReview} onClose={() => setDetailMember(null)} />}
+    {canReview && reviewMember && <MemberReviewSheet key={reviewMember.player_tag} member={reviewMember} open onOpenChange={open => { if (!open) setReviewMember(null); }} />}
+  </LayoutWrapper>;
 }

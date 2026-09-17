@@ -1,3 +1,4 @@
+const { expandHistory } = require("./helpers/history-renderer.cjs");
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const { loadTypeScript } = require('./helpers/load-typescript.cjs');
@@ -54,9 +55,9 @@ test('club leadership and former-member cards translate the shared display key',
     '@/components/membership-timeline': { MembershipTimeline: 'Timeline' },
   });
   const member = { player_tag: '#PYLQ', player_name: 'A player', is_current_member: false, role_at_leave: 'vicePresident' };
-  let tree = await cardRenderer.render(() => HistoryMemberCard({ member, isAdmin: false, onReview() {} }));
+  let tree = await cardRenderer.render(() => expandHistory(HistoryMemberCard({ member, isAdmin: false, onReview() {} })));
   elements(tree).find(node => node.type === 'details').props.onToggle({ currentTarget: { open: true } });
-  tree = await cardRenderer.render(() => HistoryMemberCard({ member, isAdmin: false, onReview() {} }));
+  tree = await cardRenderer.render(() => expandHistory(HistoryMemberCard({ member, isAdmin: false, onReview() {} })));
   assert.match(textContent(tree), /Vice President/);
   assert.equal(member.role_at_leave, 'vicePresident');
 });

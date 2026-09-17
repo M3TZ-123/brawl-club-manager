@@ -149,7 +149,7 @@ export default function DashboardPage() {
       </div>
     </div>
     <DataConfidenceNotice />
-    {view === "about" ? <div className="space-y-5"><div className="grid gap-5 xl:grid-cols-2"><ClubIdentity /><ClubJoinSummary /></div><ClubStrength /></div> : <>
+    {view === "about" ? <div className="space-y-5"><div className="grid gap-5 xl:grid-cols-2"><ClubIdentity showHistory /><ClubJoinSummary /></div><ClubStrength /></div> : <>
     <TimeRangePicker value={range} onChange={value => { if (value === range) return; generation.current++; setRange(value); setDashboard(null); setInsights(null); setError(false); setInsightsError(false); setIsLoading(true); }} />
     {error && <div role="alert" className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-destructive/30 bg-destructive/5 p-4 text-sm">
       <p>{t("Could not refresh the dashboard. Please try again.")}</p><Button variant="outline" size="sm" onClick={() => loadData(true)}>{t("Retry")}</Button>

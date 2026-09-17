@@ -3,6 +3,7 @@ import { supabaseAdmin } from "@/lib/supabase-admin";
 import { rejectUnauthorizedAdminMutation, verifyAdminSession } from "@/lib/admin-auth";
 import { loadMemberReviews, ReviewInputError, saveMemberReview } from "@/lib/member-reviews";
 import { parseTimeRange, TIME_RANGES } from "@/lib/time-range";
+import { historyClubTag, latestHistoryMembershipEvents, type HistoryMemberRow } from "@/lib/history-membership";
 
 export const dynamic = "force-dynamic";
 const PUBLIC_HISTORY_COLUMNS = "player_tag, player_name, first_seen, last_seen, last_left_at, times_joined, times_left, is_current_member, role_at_leave, trophies_at_leave";
@@ -11,24 +12,9 @@ function historyResponse(body: unknown, status = 200) {
   return NextResponse.json(body, { status, headers: { "Cache-Control": "no-store", Vary: "Cookie" } });
 }
 
-function parseDate(value: string | null | undefined): Date | null {
-  if (!value) return null;
-  const parsed = new Date(value);
-  if (Number.isNaN(parsed.getTime())) return null;
-  return parsed;
-}
-
-type MemberHistoryRow = Record<string, unknown> & {
-  player_tag: string;
-  first_seen?: string | null;
-  last_left_at?: string | null;
-  last_seen?: string | null;
-  is_current_member?: boolean | null;
-};
-
-async function fetchAllMemberHistory(): Promise<MemberHistoryRow[]> {
+async function fetchAllMemberHistory(): Promise<HistoryMemberRow[]> {
   const pageSize = 1000;
-  const rows: MemberHistoryRow[] = [];
+  const rows: HistoryMemberRow[] = [];
 
   for (let from = 0; ; from += pageSize) {
     const query = supabaseAdmin
@@ -41,34 +27,11 @@ async function fetchAllMemberHistory(): Promise<MemberHistoryRow[]> {
     const { data, error } = await query;
 
     if (error) throw error;
-    rows.push(...((data || []) as MemberHistoryRow[]));
+    rows.push(...((data || []) as HistoryMemberRow[]));
     if (!data || data.length < pageSize) break;
   }
 
   return rows;
-}
-
-async function fetchRecentMembershipTags(cutoffDate: Date, now: Date): Promise<Set<string>> {
-  const pageSize = 1000;
-  const tags = new Set<string>();
-
-  for (let from = 0; ; from += pageSize) {
-    const { data, error } = await supabaseAdmin
-      .from("club_events")
-      .select("player_tag")
-      .in("event_type", ["join", "leave"])
-      .gte("event_time", cutoffDate.toISOString())
-      .lte("event_time", now.toISOString())
-      .order("event_time", { ascending: false })
-      .order("id", { ascending: false })
-      .range(from, from + pageSize - 1);
-
-    if (error) throw error;
-    for (const event of data || []) tags.add(event.player_tag);
-    if (!data || data.length < pageSize) break;
-  }
-
-  return tags;
 }
 
 export async function GET(request: NextRequest) {
@@ -84,34 +47,21 @@ export async function GET(request: NextRequest) {
       ? new Date(now.getTime() - days * 24 * 60 * 60 * 1000)
       : null;
 
-    const [history, recentMembershipTags] = await Promise.all([
-      fetchAllMemberHistory(),
-      cutoffDate ? fetchRecentMembershipTags(cutoffDate, now) : Promise.resolve(new Set<string>()),
-    ]);
-
-    let filteredHistory = history;
-
-    if (cutoffDate) {
-      filteredHistory = filteredHistory.filter((record) => {
-        // first_seen remains the original join date when a member returns.
-        // Events preserve later joins; snapshots also cover initial/legacy records.
-        if (recentMembershipTags.has(record.player_tag)) return true;
-
-        const joinedAt = parseDate(record.first_seen);
-        const leftAt = parseDate(record.last_left_at)
-          || (!record.is_current_member ? parseDate(record.last_seen) : null);
-
-        const joinedInRange = !!joinedAt && joinedAt >= cutoffDate && joinedAt <= now;
-        const leftInRange = !!leftAt && leftAt >= cutoffDate && leftAt <= now;
-
-        return joinedInRange || leftInRange;
-      });
-    }
+    const [clubTag, history] = await Promise.all([historyClubTag(), fetchAllMemberHistory()]);
+    const latestEvents = await latestHistoryMembershipEvents(clubTag, history, now);
+    const filteredHistory = history.filter(record => {
+      if (!cutoffDate) return true;
+      const event = latestEvents.get(record.player_tag);
+      return !!event && Date.parse(event.at) >= cutoffDate.getTime();
+    });
 
     // Whitelist the response too: a future query change must not publish
     // legacy notes or any other private columns through this public route.
     const publicColumns = PUBLIC_HISTORY_COLUMNS.split(", ");
-    let result = filteredHistory.map(row => Object.fromEntries(publicColumns.map(column => [column, row[column]])));
+    let result: Array<Record<string, unknown>> = filteredHistory.map(row => ({
+      ...Object.fromEntries(publicColumns.map(column => [column, row[column]])),
+      latest_membership_event: latestEvents.get(row.player_tag) || null,
+    }));
     if (verifyAdminSession(request)) {
       const reviews = new Map((await loadMemberReviews()).map(review => [review.player_tag, review]));
       result = result.map(row => {
@@ -119,6 +69,7 @@ export async function GET(request: NextRequest) {
         return { ...row, notes: review?.notes || null, review_status: review?.status || "pending", follow_up_at: review?.follow_up_at || null, review_updated_at: review?.updated_at || null };
       });
     }
+    if (await historyClubTag() !== clubTag) throw new Error("Club configuration changed while loading history");
     return historyResponse({ history: result });
   } catch (error) {
     console.error("Error fetching history:", error);

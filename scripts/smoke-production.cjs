@@ -13,6 +13,16 @@ async function main() {
   assert.ok(Number.isFinite(health.expectedIntervalMinutes), "Expected sync interval is available");
   assert.ok(!JSON.stringify(history).includes('"notes":'), "Public history excludes private notes");
   assert.ok(!JSON.stringify(history).includes('"review_updated_at":'), "Public history excludes private review revisions");
+  assert.ok(Array.isArray(history.history), "History returns member records");
+  for (const member of history.history) {
+    assert.ok(Object.hasOwn(member, 'latest_membership_event'), "History exposes the latest dated membership event");
+    const event = member.latest_membership_event;
+    if (!event) continue;
+    assert.deepEqual(Object.keys(event).sort(), ['at', 'source', 'type'], "Membership events expose only public fields");
+    assert.ok(['join', 'leave', 'initial_seen'].includes(event.type));
+    assert.ok(['recorded', 'reconstructed', 'unknown'].includes(event.source));
+    assert.ok(Number.isFinite(Date.parse(event.at)) && Date.parse(event.at) <= Date.now(), "Latest membership events have valid past timestamps");
+  }
   const [analysis, readiness, report] = await Promise.all([get('/api/analysis?range=7d'),get('/api/readiness?limit=1'),get('/api/reports/weekly?range=7d')]);
   assert.ok(Number.isSafeInteger(analysis.summary.observations), 'Club analysis is available');
   assert.equal(analysis.coverage.completeHistory,false,'Analysis declares observed coverage');

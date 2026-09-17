@@ -15,6 +15,7 @@ const next = { NextResponse: { json: (body, init) => Response.json(body, init) }
 const publicAuth = { rejectUnauthorizedAdminMutation: () => null, verifyAdminSession: () => false };
 const forbidden = () => { throw new Error("Unexpected private review or database mutation in range test"); };
 function rangeRoute(path, tables) {
+  if (path === "src/app/api/history/route.ts") tables = { settings: [{ key: "club_tag", value: "#CLUB" }], membership_change_events: [], ...tables };
   const source = readOnlyDatabase(tables);
   const database = { rpc: battleFeedRpc(tables.battle_history || []), from(table) {
     const query = source.from(table);
@@ -45,17 +46,17 @@ history.push(
   { player_tag: "#LEFT", first_seen: ago(400), last_left_at: ago(20), last_seen: ago(0), is_current_member: false },
   { player_tag: "#LEGACY", first_seen: ago(400), last_left_at: null, last_seen: ago(5), is_current_member: false },
 );
-const historyTables = { member_history: history, club_events: [{ id: 1, player_tag: "#RETURN", event_type: "join", event_time: ago(0.25) }] };
+const historyTables = { member_history: history, membership_change_events: [{ id: "1", club_tag: "#CLUB", player_tag: "#RETURN", event_type: "join", occurred_at: ago(0.25), source: "recorded" }] };
 const tags = rows => rows.map(row => row.player_tag).sort();
 
-test("history periods filter observed membership changes, including later rejoins and legacy departures", async () => {
+test("history periods filter observed membership changes and rejoins without inventing legacy departure times", async () => {
   const route = rangeRoute("src/app/api/history/route.ts", historyTables);
   const expected = {
     "24h": ["#P0", "#RETURN"],
     "3d": ["#P0", "#P1", "#RETURN"],
-    "7d": ["#LEGACY", "#P0", "#P1", "#P2", "#RETURN"],
-    "30d": ["#LEFT", "#LEGACY", "#P0", "#P1", "#P2", "#P3", "#RETURN"],
-    "90d": ["#LEFT", "#LEGACY", "#P0", "#P1", "#P2", "#P3", "#P4", "#RETURN"],
+    "7d": ["#P0", "#P1", "#P2", "#RETURN"],
+    "30d": ["#LEFT", "#P0", "#P1", "#P2", "#P3", "#RETURN"],
+    "90d": ["#LEFT", "#P0", "#P1", "#P2", "#P3", "#P4", "#RETURN"],
   };
   for (const [range, expectedTags] of Object.entries(expected)) {
     const body = await get(route, "history", `range=${range}`);

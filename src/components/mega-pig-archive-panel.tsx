@@ -160,10 +160,10 @@ function mergedResponse(previous: MegaPigArchiveResponse, value: MegaPigArchiveR
   return { ...previous, ...value, [field]: combined, ...(mode === "player" ? { playerReadings: [...readings.values()] } : {}) } as MegaPigArchiveResponse;
 }
 
-export function MegaPigArchivePanel() {
+export function MegaPigArchivePanel({ initialPlayerTag = "" }: { initialPlayerTag?: string } = {}) {
   const { t, number, dateTime } = useI18n(), { isAdmin, isLoading: sessionLoading } = useAdminSession();
   const clubTag = canonicalTag(useAppStore(state => state.clubTag));
-  const [view, setView] = useState<View>({ mode: "cycles" }), [revision, setRevision] = useState(0), [edition, setEdition] = useState(0), [search, setSearch] = useState(""), [searchError, setSearchError] = useState(false);
+  const [view, setView] = useState<View>(() => { const tag = canonicalTag(initialPlayerTag); return /^#[0289PYLQGRJCUV]{2,19}$/.test(tag) ? { mode: "player", tag } : { mode: "cycles" }; }), [revision, setRevision] = useState(0), [edition, setEdition] = useState(0), [search, setSearch] = useState(() => view.mode === "player" ? view.tag : ""), [searchError, setSearchError] = useState(false);
   const key = `${clubTag}:${revision}:${viewKey(view)}`;
   const [snapshot, setSnapshot] = useState<{ key: string; value: MegaPigArchiveResponse } | null>(null), [latest, setLatest] = useState<{ key: string; value: MegaPigObservationSummary | null } | null>(null);
   const [loading, setLoading] = useState(false), [error, setError] = useState(false);
@@ -210,7 +210,7 @@ export function MegaPigArchivePanel() {
   const reloadDraft = () => { void load().then(ok => { if (ok) setEdition(value => value + 1); }); };
   const openPlayer = (tag: string) => { setSearch(tag); setSearchError(false); setView({ mode: "player", tag }); };
   const detail = view.mode === "cycle" || view.mode === "reading";
-  return <section className="rounded-lg border p-4 space-y-4 min-w-0" aria-label={t("Mega Pig history")}>
+  return <section id="mega-pig-history" className="rounded-lg border p-4 space-y-4 min-w-0 scroll-mt-20" aria-label={t("Mega Pig history")}>
     <header className="flex flex-wrap items-center justify-between gap-2"><div><h2 className="font-semibold">{t("Mega Pig history")}</h2><p className="text-xs text-muted-foreground">{t("Saved source readings and confirmed cycles stay available when members leave.")}</p></div><Button type="button" size="sm" variant="ghost" disabled={loading} onClick={() => void load()}>{t("Refresh history")}</Button></header>
     {detail ? <Button type="button" variant="outline" size="sm" onClick={() => setView({ mode: view.mode === "reading" ? "readings" : "cycles" })}>{t("Back to history")}</Button> : <div className="flex flex-wrap gap-2" role="group" aria-label={t("Mega Pig history view")}><Button type="button" size="sm" variant={view.mode === "cycles" ? "default" : "outline"} aria-pressed={view.mode === "cycles"} onClick={() => setView({ mode: "cycles" })}>{t("Cycles")}</Button><Button type="button" size="sm" variant={view.mode === "readings" ? "default" : "outline"} aria-pressed={view.mode === "readings"} onClick={() => setView({ mode: "readings" })}>{t("Saved readings")}</Button></div>}
     {!detail && <form className="flex gap-2 items-end" onSubmit={event => { event.preventDefault(); const tag = canonicalTag(search); if (!/^#[0289PYLQGRJCUV]{2,19}$/.test(tag)) { setSearchError(true); return; } openPlayer(tag); }}><label className="min-w-0 flex-1 text-xs">{t("Find a member across cycles by tag")}<Input dir="ltr" value={search} onChange={event => setSearch(event.target.value)} placeholder="#TAG"/></label><Button type="submit" variant="outline" size="sm">{t("Find")}</Button></form>}

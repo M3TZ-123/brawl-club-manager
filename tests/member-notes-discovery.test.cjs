@@ -3,9 +3,9 @@ const assert = require("node:assert/strict");
 const { loadTypeScript } = require("./helpers/load-typescript.cjs");
 const { hookRenderer, componentMocks, elements, textContent, action } = require("./helpers/client-renderer.cjs");
 
+const { expandHistory } = require("./helpers/history-renderer.cjs");
 const tables = Object.fromEntries(["Table", "TableBody", "TableCell", "TableHead", "TableHeader", "TableRow"].map(name => [name, name]));
 const initialRevision = "2026-09-16T12:00:00.123456+00:00";
-const revised = "2026-09-16T12:01:00.654321+00:00";
 const member = (tag, values = {}) => ({ player_tag: tag, player_name: `Player ${tag}`, notes: `Private ${tag}`, review_updated_at: initialRevision,
   first_seen: null, last_left_at: "2026-09-15T12:00:00Z", times_joined: 1, times_left: 1,
   role_at_leave: "member", trophies_at_leave: 1000, is_current_member: false, ...values });
@@ -42,12 +42,8 @@ function historyHarness({ admin = true, respond } = {}) {
     const request = { url, init }; requests.push(request);
     return respond ? respond(request) : Promise.resolve(Response.json({ history: session.isAdmin ? rows : rows.map(row => ({ ...row, notes: undefined, review_updated_at: undefined })) }));
   } }).default;
-  return { requests, session, window, invalidations, unmount: renderer.unmount, setRows(next) { rows = next; }, render: () => renderer.render(page) };
+  return { requests, session, window, invalidations, unmount: renderer.unmount, setRows(next) { rows = next; }, render: () => renderer.render(() => expandHistory(page())) };
 }
-const editor = tree => elements(tree).find(element => element.type === "Input" && element.props.placeholder === "Add a note...");
-const clickAria = (tree, label) => elements(tree).find(element => element.props?.["aria-label"] === label && element.props.onClick).props.onClick();
-const beginEdit = tree => elements(tree).find(element => element.props?.title === "Click to edit note").props.onClick();
-
 test("history offers visible member notes for former members and safe sign-in links to visitors", async () => {
   const admin = historyHarness(); let tree = await admin.render();
   assert.match(textContent(tree), /why someone left or was removed/);
@@ -61,57 +57,36 @@ test("history offers visible member notes for former members and safe sign-in li
   visitor.unmount();
 });
 
-test("inline note conflicts preserve the draft and the original microsecond revision after a background reload", async () => {
-  let current = member("#FORMER"); const patches = [];
-  const page = historyHarness({ respond: async request => {
-    if (request.init.method !== "PATCH") return Response.json({ history: [current] });
-    patches.push(JSON.parse(request.init.body));
-    return Response.json({ error: "Review changed. Reload before saving." }, { status: 409 });
-  } });
-  let tree = await page.render(); beginEdit(tree); tree = await page.render();
-  editor(tree).props.onChange({ target: { value: "Removed after repeated warnings" } }); tree = await page.render();
-  current = { ...current, notes: "Another administrator's note", review_updated_at: revised };
+test("history refreshes note previews without reopening a closed review sheet", async () => {
+  const page = historyHarness(); let tree = await page.render();
+  action(tree, "Member notes")(); tree = await page.render();
+  elements(tree).find(element => element.type === "MemberReviewSheet").props.onOpenChange(false);
+  page.setRows([member("#FORMER", { notes: "Updated private reason" })]);
   page.window.dispatchEvent({ type: "member-reviews-updated" }); tree = await page.render();
-  await clickAria(tree, "Save note"); tree = await page.render();
-  assert.equal(patches[0].expected_updated_at, initialRevision, "A background read cannot silently advance an edited draft's baseline");
-  assert.equal(editor(tree).props.value, "Removed after repeated warnings");
-  assert.match(textContent(tree), /This note changed elsewhere/);
-  assert.deepEqual(page.invalidations, []);
+  assert.match(textContent(tree), /Updated private reason/);
+  assert.equal(elements(tree).some(element => element.type === "MemberReviewSheet"), false);
+  assert.equal(elements(tree).some(element => element.type === "Input" && element.props.placeholder === "Add a note..."), false);
+  assert.equal(elements(tree).some(element => element.props?.['aria-label'] === "Delete note"), false);
+  assert.ok(page.requests.every(request => request.init.method !== "PATCH"));
   page.unmount();
 });
 
-test("a successful earlier note save advances the baseline for further typing without erasing it", async () => {
-  let resolveSave, current = member("#FORMER"); const patches = [];
-  const page = historyHarness({ respond: request => {
-    if (request.init.method !== "PATCH") return Promise.resolve(Response.json({ history: [current] }));
-    patches.push(JSON.parse(request.init.body)); return new Promise(resolve => { resolveSave = resolve; });
+test("an authentication boundary closes member notes and blocks late private history responses", async () => {
+  let resolvePrivate, reads = 0;
+  const page = historyHarness({ respond: () => {
+    if (++reads === 2) return new Promise(resolve => { resolvePrivate = resolve; });
+    return Promise.resolve(Response.json({ history: [member("#FORMER", reads > 2 ? { notes: undefined, review_updated_at: undefined } : {})] }));
   } });
-  let tree = await page.render(); beginEdit(tree); tree = await page.render();
-  editor(tree).props.onChange({ target: { value: "First version" } }); tree = await page.render();
-  const saving = clickAria(tree, "Save note"); tree = await page.render();
-  editor(tree).props.onChange({ target: { value: "Further draft" } });
-  current = { ...current, notes: "First version", review_updated_at: revised };
-  resolveSave(Response.json({ success: true, review: { notes: current.notes, updated_at: revised } })); await saving; tree = await page.render();
-  assert.equal(editor(tree).props.value, "Further draft");
-  const nextSave = clickAria(tree, "Save note");
-  assert.equal(patches[1].expected_updated_at, revised);
-  page.unmount(); await nextSave;
-});
-
-test("an authentication boundary aborts pending note writes and cannot restore private state through late results", async () => {
-  let resolveWrite;
-  const page = historyHarness({ respond: request => request.init.method === "PATCH"
-    ? new Promise(resolve => { resolveWrite = resolve; })
-    : Promise.resolve(Response.json({ history: [member("#FORMER", page.session.isAdmin ? {} : { notes: undefined, review_updated_at: undefined })] })) });
-  let tree = await page.render(); beginEdit(tree); tree = await page.render();
-  editor(tree).props.onChange({ target: { value: "Private pending draft" } }); tree = await page.render();
-  const saving = clickAria(tree, "Save note"); const request = page.requests.at(-1);
+  let tree = await page.render(); action(tree, "Member notes")(); tree = await page.render();
+  assert.ok(elements(tree).some(element => element.type === "MemberReviewSheet"));
+  page.window.dispatchEvent({ type: "member-reviews-updated" }); await page.render();
+  const oldRead = page.requests.at(-1);
   page.session.isAdmin = false; page.window.dispatchEvent({ type: "admin-session-changed" });
-  assert.equal(request.init.signal.aborted, true);
-  resolveWrite(Response.json({ success: true, review: { notes: "Private pending draft", updated_at: revised } }));
-  await saving; tree = await page.render();
-  assert.equal(editor(tree), undefined); assert.doesNotMatch(textContent(tree), /Private pending draft|Private #FORMER/);
-  assert.deepEqual(page.invalidations, []);
+  assert.equal(oldRead.init.signal.aborted, true);
+  resolvePrivate(Response.json({ history: [member("#FORMER", { notes: "Late private result" })] }));
+  tree = await page.render();
+  assert.equal(elements(tree).some(element => element.type === "MemberReviewSheet"), false);
+  assert.doesNotMatch(textContent(tree), /Late private result|Private #FORMER/);
   page.unmount();
 });
 
@@ -123,6 +98,22 @@ test("history unmount cancels the active read and ignores its late private resul
   resolve(Response.json({ history: [member("#FORMER")] }));
   await new Promise(done => setImmediate(done));
   assert.equal(page.requests.length, 1);
+});
+
+test("accepted roster updates refresh open details while a club change closes both member sheets", async () => {
+  const page = historyHarness(); let tree = await page.render();
+  elements(tree).find(element => element.props?.['aria-label'] === 'Details for Player #FORMER').props.onClick();
+  action(tree, "Member notes")(); tree = await page.render();
+  assert.ok(elements(tree).some(element => element.type === 'Sheet'));
+  assert.ok(elements(tree).some(element => element.type === 'MemberReviewSheet'));
+  page.setRows([member('#FORMER', { is_current_member: true, latest_membership_event: { type: 'join', at: '2026-09-18T12:00:00Z', source: 'recorded' } })]);
+  page.window.dispatchEvent({ type: 'club-data-updated' }); tree = await page.render();
+  const details = elements(tree).find(element => element.type === 'Sheet');
+  assert.match(textContent(details), /Current/);
+  assert.match(textContent(details), /Joined club/);
+  page.window.dispatchEvent({ type: 'club-data-updated', detail: { clubChanged: true } }); tree = await page.render();
+  assert.equal(elements(tree).some(element => element.type === 'Sheet' || element.type === 'MemberReviewSheet'), false);
+  page.unmount();
 });
 
 function queueHarness({ admin = true, requested = "", respond } = {}) {
