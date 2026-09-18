@@ -2,7 +2,7 @@ import "server-only";
 import { unstable_cache } from "next/cache";
 import { loadGameData } from "./game-cache";
 import { projectGameSnapshot, type GameEvent } from "./game-data";
-import { boundedMapWork, mapProviderJson } from "./map-http";
+import { boundedMapWork, mapProviderJson, mapStatisticsJson, MapProviderError } from "./map-http";
 import { MAP_CATALOG_SOURCE, mapMinTrophies, normalizeMapCatalog, validMapId, type MapEnrichment, type MapSnapshot, type MapTrophyRange } from "./map-data";
 import { MAP_STATS_SOURCE, mapStatisticsPeriod, mapStatisticsQuery, normalizeMapStatistics, type MapTarget } from "./map-statistics";
 
@@ -23,10 +23,18 @@ async function refresh<T>(key: string, work: () => Promise<T>): Promise<T> {
   const request = work().then(result => {
     cooldowns.delete(key);
     return result;
-  }).catch(() => {
+  }).catch((error: unknown) => {
     // Targets come only from the official rotation; cap old period/rotation keys.
     if (cooldowns.size >= 8) cooldowns.delete(cooldowns.keys().next().value!);
     cooldowns.set(key, Date.now() + RETRY_SECONDS * 1000);
+    const fallbackStage = key === "catalog" ? "catalog" : "stats";
+    // Only allowlisted diagnostics enter server logs. Never log the cache key,
+    // raw exception, response body, query, URL or anonymous authentication token.
+    console.warn("Map provider refresh failed", {
+      stage: error instanceof MapProviderError && error.stage !== "work" ? error.stage : fallbackStage,
+      reason: error instanceof MapProviderError ? error.reason : "invalid_data",
+      status: error instanceof MapProviderError ? error.status : null,
+    });
     throw new Error("Map data temporarily unavailable");
   }).finally(() => { if (pendingRefreshes.get(key) === request) pendingRefreshes.delete(key); });
   pendingRefreshes.set(key, request);
@@ -39,7 +47,7 @@ async function anonymousToken(signal: AbortSignal): Promise<string> {
   const request = mapProviderJson("token", signal).then(value => {
     const data = (value as { result?: { data?: { json?: { token?: unknown; expiresAt?: unknown } } } })?.result?.data?.json;
     const expiry = typeof data?.expiresAt === "number" ? data.expiresAt : typeof data?.expiresAt === "string" ? Date.parse(data.expiresAt) : NaN;
-    if (typeof data?.token !== "string" || !data.token || data.token.length > 16_384 || !Number.isFinite(expiry) || expiry <= Date.now()) throw new Error("Map statistics unavailable");
+    if (typeof data?.token !== "string" || !data.token || data.token.length > 16_384 || !Number.isFinite(expiry) || expiry <= Date.now()) throw new MapProviderError("token", "invalid_data");
     token = { value: data.token, expiresAt: expiry };
     return data.token;
   }).finally(() => { if (pendingToken === request) pendingToken = null; });
@@ -57,10 +65,10 @@ const statisticsSuccess = unstable_cache(async (targets: MapTarget[], period: { 
   () => boundedMapWork(async signal => {
     try {
       const auth = await anonymousToken(signal);
-      const raw = await mapProviderJson("stats", signal, JSON.stringify(mapStatisticsQuery(targets, period, trophyRange)), auth);
+      const raw = await mapStatisticsJson(signal, JSON.stringify(mapStatisticsQuery(targets, period, trophyRange)), auth);
       const now = Date.now();
       return { data: normalizeMapStatistics(raw, targets, period, now, trophyRange), fetchedAt: new Date(now).toISOString() };
-    } catch { token = null; throw new Error("Map statistics unavailable"); }
+    } catch (error) { token = null; throw error; }
   }, 10_000)), ["map-ninja-statistics-v1"], { revalidate: SUCCESS_SECONDS });
 
 async function readMaps(trophyRange: MapTrophyRange): Promise<MapSnapshot> {

@@ -43,6 +43,7 @@ function harness() {
       const bucket = query.filters.find(item => item.member === 'map.trophyRange_dimension')?.values[0];
       const range = bucket === undefined ? 'all' : String(Number(bucket) * 100);
       rangeQueries.push(range);
+      if (typeof failures.stats === 'number') return new Response('PRIVATE_FAILURE_BODY', { status: failures.stats, headers: { 'Content-Type': 'application/json' } });
       if (failures.stats) throw Error('SECRET STATISTICS FAILURE'); value = rangeResponses.get(range) ?? rows;
     } else throw Error('Unexpected URL');
     return new Response(JSON.stringify(value), { headers: { 'Content-Type': 'application/json' } });
@@ -165,6 +166,19 @@ test('cold statistics failures preserve artwork, stay unavailable and retry afte
   assert.equal((await h.request(worker)).data[0].statsStatus, 'available');
   assert.equal(h.calls.stats, 2);
   assert.equal(h.calls.catalog, 1);
+});
+
+test('server diagnostics expose only sanitized failure stage/status and do not repeat on cooldown reads', async t => {
+  const warnings = [];
+  t.mock.method(console, 'warn', (...args) => warnings.push(args));
+  const h = harness(), worker = h.worker();
+  h.failures.stats = 503;
+  await h.request(worker);
+  await h.request(worker);
+  assert.equal(warnings.length, 1);
+  assert.equal(warnings[0][0], 'Map provider refresh failed');
+  assert.deepEqual(JSON.parse(JSON.stringify(warnings[0][1])), { stage: 'stats', reason: 'http', status: 503 });
+  assert.doesNotMatch(JSON.stringify(warnings), /SECRET|PRIVATE|Hard Rock|https:|map\.map_dimension/);
 });
 
 test('concurrent readers coalesce within a worker and absent official rotation cannot create replacement events', async () => {

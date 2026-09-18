@@ -63,6 +63,19 @@ async function main() {
   assert.ok(rivals.rivals.length<=5,'Rival comparison is bounded');
   assert.equal(typeof join.recruitment_open,'boolean');
   assert.ok(!Object.hasOwn(join,'applications'),'Application submissions remain private');
+  const maps = await get('/api/game-maps?trophies=1000');
+  assert.equal(maps.trophyRange, '1000', 'Map picks honor the selected trophy range');
+  assert.equal(maps.minTrophies, 1000);
+  assert.ok(Array.isArray(maps.data) && maps.data.length > 0, 'Current maps are available');
+  assert.ok(maps.data.some(map => map.imageUrl), 'Current map artwork is available');
+  assert.ok(maps.data.some(map => map.brawlers.length > 0), 'Map statistics source is available on the deployed server');
+  for (const map of maps.data) {
+    assert.equal(map.minTrophies, 1000, 'Map statistics do not mix trophy ranges');
+    for (const brawler of map.brawlers) {
+      assert.ok(Number.isSafeInteger(brawler.sampleSize) && brawler.sampleSize >= 0, 'Brawler samples are available');
+      for (const rate of [brawler.winRate, brawler.pickRate]) assert.ok(rate === null || Number.isFinite(rate) && rate >= 0 && rate <= 100, 'Map rates are bounded percentages');
+    }
+  }
   const routes = ["/","/members","/activity","/battle-feed","/history","/reviews","/analysis","/readiness","/game","/reports","/notifications","/recruitment","/settings","/admin","/club-planning","/rivals","/join"];
   if (readiness.rows[0]) routes.push(`/members/${encodeURIComponent(readiness.rows[0].player.tag)}`);
   for (const route of routes) {
@@ -80,6 +93,6 @@ async function main() {
     assert.equal(response.status,401,`${path} requires an administrator`);
     assert.equal(response.headers.get('cache-control'),'no-store',`${path} rejects shared caching`);
   }
-  console.log("Production smoke checks passed: pages, club insights, planning, rivals, applications, freshness and private access boundaries.");
+  console.log("Production smoke checks passed: pages, club insights, planning, rivals, map artwork and statistics, applications, freshness and private access boundaries.");
 }
 main().catch(error => { console.error(error.message); process.exitCode = 1; });
