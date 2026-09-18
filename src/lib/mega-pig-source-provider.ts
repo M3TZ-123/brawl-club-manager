@@ -15,6 +15,7 @@ const MAX_BYTES = 128 * 1024;
 const MAX_MEMBERS = 30;
 const TAG = /^#[0289PYLQGRJCUV]{2,19}$/;
 const ORIGIN = "https://brawlace.com";
+const API_ORIGIN = "https://api.brawltools.net";
 type HtmlNode = ReturnType<typeof parseDocument> | ReturnType<typeof parseDocument>["children"][number];
 type HtmlElement = ReturnType<typeof DomUtils.getElementsByTagName>[number];
 const fail = (): never => { throw new SourceProviderError("invalid"); };
@@ -39,6 +40,8 @@ function record(value: unknown): Record<string, unknown> {
 /** Re-project restored/cached values as strictly as a new source response. */
 export function validateMegaPigSourcePayload(value: unknown, expectedClub: string): MegaPigSourcePayload {
   const expected = clubTag(expectedClub), row = record(value);
+  const source = row.source === undefined ? "BrawlAce" : row.source;
+  if (source !== "BrawlAce" && source !== "BrawlTools") return fail();
   if (row.clubTag !== expected || !Array.isArray(row.members) || row.members.length > MAX_MEMBERS) return fail();
   const seen = new Set<string>();
   const members = row.members.map((value): MegaPigSourceMember => {
@@ -47,11 +50,44 @@ export function validateMegaPigSourcePayload(value: unknown, expectedClub: strin
     seen.add(item.playerTag);
     return { playerTag: item.playerTag, playerName: name(item.playerName), reportedWins: memberCount(item.reportedWins), reportedTicketsRemaining: memberCount(item.reportedTicketsRemaining) };
   });
-  const totalWins = count(row.totalWins), reportedPlayersPlayed = count(row.reportedPlayersPlayed, MAX_MEMBERS);
+  const totalWins = count(row.totalWins);
+  const reportedPlayersPlayed = source === "BrawlAce" ? count(row.reportedPlayersPlayed, MAX_MEMBERS)
+    : row.reportedPlayersPlayed === null ? null : fail();
+  const reportedBattlesPlayed = row.reportedBattlesPlayed === undefined || row.reportedBattlesPlayed === null
+    ? null : count(row.reportedBattlesPlayed);
+  if (source === "BrawlAce" && reportedBattlesPlayed !== null) return fail();
   const knownWins = members.reduce((sum, member) => sum + (member.reportedWins ?? 0), 0);
   const allWinsKnown = members.every(member => member.reportedWins !== null);
-  if (knownWins > totalWins || (allWinsKnown && knownWins !== totalWins) || reportedPlayersPlayed > members.length) return fail();
-  return { clubTag: expected, totalWins, reportedPlayersPlayed, members };
+  if (knownWins > totalWins || (allWinsKnown && knownWins !== totalWins)
+    || (reportedPlayersPlayed !== null && reportedPlayersPlayed > members.length)
+    || (reportedBattlesPlayed !== null && reportedBattlesPlayed < totalWins)) return fail();
+  return { source, clubTag: expected, totalWins, reportedPlayersPlayed, reportedBattlesPlayed, members };
+}
+
+/** Documented GET /clubs/{tag}; extra profile fields and undocumented id/timestamp are not retained. */
+export function parseMegaPigSourceJson(json: string, expectedClub: string): MegaPigSourcePayload {
+  const expected = clubTag(expectedClub);
+  if (typeof json !== "string" || Buffer.byteLength(json, "utf8") > MAX_BYTES || json.includes("\0")) return fail();
+  try {
+    const response = record(JSON.parse(json));
+    if (response.tag !== expected) return fail();
+    const data = record(response.data), megaPig = record(data.megaPig);
+    if (!Array.isArray(data.members) || data.members.length > MAX_MEMBERS
+      || (data.memberCount !== undefined && count(data.memberCount, MAX_MEMBERS) !== data.members.length)) return fail();
+    const members = data.members.map((value): MegaPigSourceMember => {
+      const member = record(value);
+      const counters = member.megaPig === undefined || member.megaPig === null ? {} : record(member.megaPig);
+      return {
+        playerTag: typeof member.tag === "string" ? member.tag : fail(), playerName: name(member.name),
+        reportedWins: memberCount(counters.wins ?? null),
+        reportedTicketsRemaining: memberCount(counters.ticketsLeft ?? null),
+      };
+    });
+    return validateMegaPigSourcePayload({
+      source: "BrawlTools", clubTag: expected, totalWins: megaPig.totalWins, reportedPlayersPlayed: null,
+      reportedBattlesPlayed: megaPig.totalPlayed ?? null, members,
+    }, expected);
+  } catch (error) { if (error instanceof SourceProviderError) throw error; return fail(); }
 }
 
 function text(node: HtmlNode, excluded?: HtmlNode): string {
@@ -131,31 +167,31 @@ function abortable<T>(operation: Promise<T>, signal: AbortSignal): Promise<T> {
     operation.then(value => { cleanup(); resolve(value); }, error => { cleanup(); reject(error); });
   });
 }
-async function readHtml(response: Response, signal: AbortSignal): Promise<string> {
-  if (!/^text\/html(?:\s*;|$)/i.test(response.headers.get("content-type") || "")) return fail();
+async function readJson(response: Response, signal: AbortSignal): Promise<string> {
+  if (!/^application\/json(?:\s*;|$)/i.test(response.headers.get("content-type") || "")) return fail();
   const length = response.headers.get("content-length");
   if (length && /^\d+$/.test(length) && Number(length) > MAX_BYTES) return fail();
   if (!response.body) return fail();
   const reader = response.body.getReader(), decoder = new TextDecoder("utf-8", { fatal: true });
-  let bytes = 0, html = "", finished = false;
+  let bytes = 0, json = "", finished = false;
   try {
     while (true) {
       const result = await abortable(reader.read(), signal);
       if (result.done) { finished = true; break; }
       bytes += result.value.byteLength;
       if (bytes > MAX_BYTES) return fail();
-      try { html += decoder.decode(result.value, { stream: true }); } catch { return fail(); }
+      try { json += decoder.decode(result.value, { stream: true }); } catch { return fail(); }
     }
-    try { return html + decoder.decode(); } catch { return fail(); }
+    try { return json + decoder.decode(); } catch { return fail(); }
   } finally {
     if (!finished) void reader.cancel().catch(() => {});
     reader.releaseLock();
   }
 }
 
-/** One honest, anonymous website request. It never retries or follows redirects. */
+/** One documented anonymous API request. No retries, website fallback, or redirects. */
 export async function fetchMegaPigSource(expectedClub: string, options: { signal?: AbortSignal } = {}): Promise<MegaPigSourcePayload> {
-  const expected = clubTag(expectedClub), url = `${ORIGIN}/clubs/${encodeURIComponent(expected)}/megapig`;
+  const expected = clubTag(expectedClub), url = `${API_ORIGIN}/clubs/${encodeURIComponent(expected)}`;
   const deadline = new AbortController(), timer = setTimeout(() => deadline.abort(), 8000);
   const signal = options.signal ? AbortSignal.any([options.signal, deadline.signal]) : deadline.signal;
   let response: Response | undefined;
@@ -163,7 +199,7 @@ export async function fetchMegaPigSource(expectedClub: string, options: { signal
   try {
     if (signal.aborted) throw new SourceProviderError("unavailable");
     response = await abortable(fetch(url, {
-      method: "GET", headers: { "User-Agent": "BrawlStatz (+https://brawlstatz.vercel.app)", Accept: "text/html", "Accept-Language": "en" },
+      method: "GET", headers: { "User-Agent": "BrawlStatz (+https://brawlstatz.vercel.app)", Accept: "application/json" },
       credentials: "omit", cache: "no-store", redirect: "error", signal,
     }), signal);
     if (response.redirected || (response.url && response.url !== url)) {
@@ -179,7 +215,7 @@ export async function fetchMegaPigSource(expectedClub: string, options: { signal
     failureReason = "http_status";
     if (!response.ok) throw new SourceProviderError("unavailable");
     failureReason = "body_read";
-    return parseMegaPigSourceHtml(await readHtml(response, signal), expected);
+    return parseMegaPigSourceJson(await readJson(response, signal), expected);
   } catch (error) {
     // Keep diagnostics server-only and finite: never log request identities,
     // source content, headers, transport exceptions, or credentials.

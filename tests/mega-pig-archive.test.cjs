@@ -58,6 +58,7 @@ test('archive cycle lists are scoped, paginated, private and strip storage-only 
   assert.equal(state.calls[0].args.p_club,'#PYLQ');assert.equal(state.calls[0].args.p_offset,20);assert.equal(state.after,1);
   assert.equal(value.cycles[0].reportedTotalWins,82);assert.equal(value.cycles[0].finalTotalWins,null);assert.equal(value.cycles[0].rewardStatus,'unknown');
   assert.deepEqual(value.cycles[0].milestones,[16,32,48,64,80]);assert.equal(value.cycles[0].initialObservationId,readingId);
+  assert.equal(value.latestObservation.source,'BrawlAce');assert.equal(value.latestObservation.reportedBattlesPlayed,null);
   assert.equal(value.cycles[0].notes,'ملاحظة الدورة');assert.doesNotMatch(JSON.stringify(value),/PRIVATE HASH|create_payload_hash/);
 });
 
@@ -83,6 +84,44 @@ test('saved readings work without a cycle, preserve unknown timestamps and never
   const response=await api.GET(request('?mode=reading&id='+readingId)),value=await response.json();assert.equal(response.status,200);
   assert.equal(value.observation.firstFetchedAt,null);assert.equal(value.observation.members[0].reportedWins,null);assert.equal(value.observation.totalWins,4);
   assert.doesNotMatch(JSON.stringify(value),/online/);
+});
+
+test('BrawlTools archive readings retain source and match totals without inventing participant counts or cycle metadata', async () => {
+  const {api,state}=fixture();state.data={observation:summary({source:'BrawlTools',reported_players_played:null,reported_battles_played:128,
+    payload:{clubTag:'#PYLQ',source:'BrawlTools',totalWins:4,reportedPlayersPlayed:null,reportedBattlesPlayed:128,
+      id:1,timestamp:1789749903,members:[{playerTag:'#PYLR',playerName:'عضو',reportedWins:4,reportedTicketsRemaining:0}]}})};
+  const response=await api.GET(request('?mode=reading&id='+readingId)),value=await response.json();assert.equal(response.status,200);
+  assert.equal(value.observation.source,'BrawlTools');assert.equal(value.observation.reportedPlayersPlayed,null);
+  assert.equal(value.observation.reportedBattlesPlayed,128);assert.equal(value.observation.members[0].reportedTicketsRemaining,0);
+  assert.equal(value.observation.id,readingId);assert.doesNotMatch(JSON.stringify(value),/timestamp|1789749903/);
+});
+
+test('source changes remain a paused cycle awaiting an explicitly confirmed reading', async () => {
+  const {api,state}=fixture();state.data.cycles=[cycleRow({capture_paused_reason:'source_changed'})];
+  state.data.latest_observation=summary({source:'BrawlTools',reported_players_played:null,reported_battles_played:128});
+  const response=await api.GET(request()),value=await response.json();assert.equal(response.status,200);
+  assert.equal(value.cycles[0].capturePausedReason,'source_changed');assert.equal(value.cycles[0].captureEnabled,false);
+  assert.equal(value.cycles[0].reportedTotalWins,82);assert.equal(value.cycles[0].finalizedAt,null);assert.equal(value.cycles[0].rewardStatus,'unknown');
+});
+
+test('archive summaries reject unknown sources and mixed counter meanings', async () => {
+  for(const changed of [{source:'Other'}, {source:null}, {source:'BrawlAce',reported_players_played:null},
+    {source:'BrawlAce',reported_battles_played:128}, {source:'BrawlTools',reported_players_played:1},
+    {source:'BrawlTools',reported_players_played:null,reported_battles_played:3},
+    {source:'BrawlTools',reported_players_played:null,reported_battles_played:30001}]) {
+    const {api,state}=fixture();state.data.latest_observation=summary(changed);
+    assert.equal((await api.GET(request())).status,503,JSON.stringify(changed));
+  }
+});
+
+test('reading summaries must agree with the payload provider, totals and unknown members', async () => {
+  const payload={clubTag:'#PYLQ',source:'BrawlTools',totalWins:4,reportedPlayersPlayed:null,reportedBattlesPlayed:128,
+    members:[{playerTag:'#PYLR',playerName:'عضو',reportedWins:4,reportedTicketsRemaining:0}]};
+  for(const change of [{source:'BrawlAce',reported_players_played:1,reported_battles_played:null},
+    {reported_battles_played:129}, {unknown_members:1}]) {
+    const {api,state}=fixture();state.data={observation:summary({source:'BrawlTools',reported_players_played:null,reported_battles_played:128,payload,...change})};
+    assert.equal((await api.GET(request('?mode=reading&id='+readingId))).status,503);
+  }
 });
 
 test('archive rejects mixed-club, wrong-player, oversized and malformed storage responses', async () => {

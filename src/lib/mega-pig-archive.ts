@@ -30,13 +30,13 @@ function nextOffset(value: unknown, offset: number): number | null {
 }
 function cycle(row: Row, clubTag: string): MegaPigArchiveCycle {
   if (row.club_tag !== clubTag || !["unknown", "received", "not_received"].includes(String(row.reward_status))
-    || (row.capture_paused_reason !== null && row.capture_paused_reason !== "counters_decreased")) return invalid();
+    || (row.capture_paused_reason !== null && row.capture_paused_reason !== "counters_decreased" && row.capture_paused_reason !== "source_changed")) return invalid();
   const startsAt = date(row.starts_at, false)!, endsAt = date(row.ends_at, false)!;
   const milestones = archiveMilestones(row.milestones), confirmedStage = nullableInteger(row.confirmed_stage, milestones?.length ?? 5);
   if (startsAt >= endsAt || integer(row.version, 2147483647) < 1) return invalid();
   return { id: archiveUuid(row.id), title: text(row.title, 100), startsAt, endsAt, milestones, version: Number(row.version),
     createdAt: date(row.created_at, false)!, updatedAt: date(row.updated_at, false)!,
-    captureEnabled: boolean(row.capture_enabled), capturePausedReason: row.capture_paused_reason as "counters_decreased" | null,
+    captureEnabled: boolean(row.capture_enabled), capturePausedReason: row.capture_paused_reason as MegaPigArchiveCycle["capturePausedReason"],
     initialObservationId: row.initial_observation_id === null ? null : archiveUuid(row.initial_observation_id),
     lastCapturedAt: date(row.last_captured_at), reportedTotalWins: nullableInteger(row.reported_total_wins), reportedPlayersPlayed: nullableInteger(row.reported_players_played, 30),
     finalTotalWins: nullableInteger(row.final_total_wins), confirmedStage, rewardStatus: row.reward_status as MegaPigArchiveCycle["rewardStatus"],
@@ -52,11 +52,19 @@ function member(row: Row, cycleId: string): MegaPigArchiveMember {
 }
 function observation(row: Row, clubTag: string): MegaPigObservationSummary {
   if (row.club_tag !== undefined && row.club_tag !== clubTag) return invalid();
+  const source = row.source === undefined ? "BrawlAce" : row.source;
+  if (source !== "BrawlAce" && source !== "BrawlTools") return invalid();
   const sourceMembers = integer(row.source_members, 30), unknownMembers = integer(row.unknown_members, sourceMembers);
+  const totalWins = integer(row.total_wins);
+  const reportedPlayersPlayed = nullableInteger(row.reported_players_played, sourceMembers);
+  const reportedBattlesPlayed = nullableInteger(row.reported_battles_played === undefined ? null : row.reported_battles_played);
+  if ((source === "BrawlAce" && (reportedPlayersPlayed === null || reportedBattlesPlayed !== null))
+    || (source === "BrawlTools" && reportedPlayersPlayed !== null)
+    || (reportedBattlesPlayed !== null && reportedBattlesPlayed < totalWins)) return invalid();
   const firstFetchedAt = date(row.first_fetched_at), lastFetchedAt = date(row.last_fetched_at);
   if (firstFetchedAt && lastFetchedAt && firstFetchedAt > lastFetchedAt) return invalid();
-  return { id: archiveUuid(row.id), firstFetchedAt, lastFetchedAt, totalWins: integer(row.total_wins),
-    reportedPlayersPlayed: integer(row.reported_players_played, sourceMembers), sourceMembers, unknownMembers };
+  return { id: archiveUuid(row.id), firstFetchedAt, lastFetchedAt, source, totalWins,
+    reportedPlayersPlayed, reportedBattlesPlayed, sourceMembers, unknownMembers };
 }
 function databaseError(error: { code?: string; message?: string } | null) {
   if (!error) return;
@@ -66,7 +74,7 @@ function databaseError(error: { code?: string; message?: string } | null) {
   if (message.includes("archive_dates_locked")) throw new MegaPigArchiveError("This cycle already has saved readings. Its dates cannot be changed.", 409, "conflict");
   if (message.includes("archive_not_ended")) throw new MegaPigArchiveError("Wait until the cycle ends before confirming its final result.", 409, "conflict");
   if (message.includes("archive_cycle_finalized") || message.includes("archive_not_finalized")) throw new MegaPigArchiveError("This cycle's finalization status changed. Reload its saved version.", 409, "conflict");
-  if (message.includes("archive_reconfirmation_required")) throw new MegaPigArchiveError("Counters decreased. Confirm a new reading belongs to this same cycle and explain the correction.", 409, "conflict");
+  if (message.includes("archive_reconfirmation_required")) throw new MegaPigArchiveError("The source changed or counters decreased. Confirm a new reading belongs to this same cycle and explain the correction.", 409, "conflict");
   if (message.includes("archive_confirmation_required")) throw new MegaPigArchiveError("Confirm a saved reading belongs to this cycle before enabling automatic collection.");
   if (["40001", "23505"].includes(error.code || "")) throw new MegaPigArchiveError("Mega Pig history changed. Reload the saved version before saving. Your draft is preserved.", 409, "conflict");
   if (["22023", "22P02", "22007", "22008", "23514"].includes(error.code || "")) throw new MegaPigArchiveError();
@@ -96,7 +104,10 @@ export async function readMegaPigArchive(params: URLSearchParams): Promise<MegaP
       response.latestObservation = data.latest_observation === null ? null : observation(archiveObject(data.latest_observation), clubTag);
     } else if (query.mode === "reading") {
       const row = archiveObject(data.observation), payload = validateMegaPigSourcePayload(row.payload, clubTag), summary = observation(row, clubTag);
-      if (summary.id !== query.id || payload.totalWins !== summary.totalWins || payload.members.length !== summary.sourceMembers) return invalid();
+      if (summary.id !== query.id || payload.totalWins !== summary.totalWins || payload.members.length !== summary.sourceMembers
+        || payload.source !== summary.source || payload.reportedPlayersPlayed !== summary.reportedPlayersPlayed
+        || payload.reportedBattlesPlayed !== summary.reportedBattlesPlayed
+        || payload.members.filter(member => member.reportedWins === null || member.reportedTicketsRemaining === null).length !== summary.unknownMembers) return invalid();
       response.observation = { ...summary, members: payload.members };
     } else {
       if (data.player_tag !== query.player) return invalid();

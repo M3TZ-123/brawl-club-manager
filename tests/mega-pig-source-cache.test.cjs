@@ -23,7 +23,7 @@ function fixture(options = {}) {
       return { abortSignal(signal) {
         signals.push(signal);
         if (options.rpc) return options.rpc(name, args, signal);
-        return Promise.resolve(name === 'claim_mega_pig_source_cache'
+        return Promise.resolve(name === 'claim_mega_pig_brawltools_cache'
           ? { data: { acquired: options.acquired !== false, entry: old }, error: options.claimError || null }
           : { data: { accepted: options.accepted !== false, entry: entry(args.p_error_code
             ? { ...old, error_code: args.p_error_code, consecutive_failures: 1, lease_expires_at: null }
@@ -43,7 +43,7 @@ function fixture(options = {}) {
 test('one claim fetches once, reprojects only counters, and finishes the same lease', async () => {
   const payload = sample(8); payload.secret = 'NEVER STORE'; payload.members[0].notes = 'PRIVATE';
   const f = fixture({ payload }); const result = await f.refreshMegaPigSource(club);
-  assert.deepEqual(f.fetched, [club]); assert.deepEqual(f.calls.map(c => c.name), ['claim_mega_pig_source_cache', 'finish_mega_pig_source_cache']);
+  assert.deepEqual(f.fetched, [club]); assert.deepEqual(f.calls.map(c => c.name), ['claim_mega_pig_brawltools_cache', 'finish_mega_pig_source_cache']);
   assert.equal(f.calls[0].args.p_token, f.calls[1].args.p_token);
   assert.equal(f.calls[1].args.p_error_code, null); assert.equal(result.payload.totalWins, 8); assert.equal(result.stale, false);
   assert.deepEqual(result.payload.members.map(m => m.playerTag).join(','), '#PYLC,#PYLR');
@@ -64,6 +64,19 @@ test('a durable cooldown or another worker lease never calls the provider or fin
   const f = fixture({ acquired: false, old: entry({ lease_expires_at: new Date(Date.now() + 10000).toISOString() }) });
   const result = await f.refreshMegaPigSource(club);
   assert.equal(result.refreshing, true); assert.equal(result.payload.totalWins, 4); assert.equal(f.fetched.length, 0); assert.equal(f.calls.length, 1);
+});
+
+test('provider transition persists new provenance and preserves the previous legacy reading', async () => {
+  const incoming = { ...sample(8), source: 'BrawlTools', reportedPlayersPlayed: null, reportedBattlesPlayed: 128 };
+  const f = fixture({ payload: incoming });
+  const value = await f.refreshMegaPigSource(club);
+  assert.equal(value.payload.source, 'BrawlTools'); assert.equal(value.payload.reportedPlayersPlayed, null);
+  assert.equal(value.payload.reportedBattlesPlayed, 128);
+  assert.equal(f.calls[1].args.p_payload.source, 'BrawlTools');
+  const old = fixture({ acquired: false, old: entry({ previous_payload: sample(3) }) });
+  const cached = await old.refreshMegaPigSource(club);
+  assert.equal(cached.payload.source, 'BrawlAce'); assert.equal(cached.previousPayload.source, 'BrawlAce');
+  assert.equal(cached.previousPayload.totalWins, 3); assert.equal(old.fetched.length, 0);
 });
 
 test('rate limiting preserves the last snapshot and forwards only sanitized retry metadata', async () => {
@@ -119,7 +132,7 @@ test('a failed or superseded finish never presents new data as durably saved', a
 });
 
 test('a stalled finish uses the caller deadline and leaves old data stale', async () => {
-  const f = fixture({ rpc: name => name === 'claim_mega_pig_source_cache'
+  const f = fixture({ rpc: name => name === 'claim_mega_pig_brawltools_cache'
     ? Promise.resolve({ data: { acquired: true, entry: entry() }, error: null }) : new Promise(() => {}) });
   const start = Date.now(), result = await f.refreshMegaPigSource(club, { deadlineAt: Date.now() + 30 });
   assert.ok(Date.now() - start < 500); assert.equal(result.payload.totalWins, 4); assert.equal(result.stale, true);

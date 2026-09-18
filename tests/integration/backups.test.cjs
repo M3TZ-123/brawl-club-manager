@@ -17,7 +17,7 @@ const sourcePayload = { clubTag: "#PYLQ", totalWins: 5, reportedPlayersPlayed: 2
   { playerTag: "#Q2L0", playerName: "Second player", reportedWins: 2, reportedTicketsRemaining: 4 },
 ] };
 const previousSourcePayload = { ...sourcePayload, totalWins: 3, members: sourcePayload.members.map(member => ({ ...member, reportedWins: member.reportedWins - 1, reportedTicketsRemaining: member.reportedTicketsRemaining + 1 })) };
-const sourceRpcNames = ["claim_mega_pig_source_cache", "finish_mega_pig_source_cache"];
+const sourceRpcNames = ["claim_mega_pig_source_cache", "claim_mega_pig_brawltools_cache", "claim_mega_pig_provider_cache", "finish_mega_pig_source_cache"];
 const archiveTables = ["club_mega_pig_observations", "club_mega_pig_cycles", "club_mega_pig_cycle_members", "club_mega_pig_cycle_revisions"];
 const archiveRpcNames = ["mega_pig_archive_payload", "mega_pig_archive_ready", "mega_pig_archive_apply", "mega_pig_archive_capture",
   "mega_pig_archive_observation_summary", "mega_pig_archive_write", "mega_pig_archive_read"];
@@ -111,9 +111,10 @@ test("encrypted backup restores actual schema, rows and private permissions into
     INSERT INTO public.club_rank_history VALUES('#PYLQ','#GGRR','global',current_date,now(),NULL,NULL);
   `);
   await client.query(`INSERT INTO public.club_mega_pig_source_cache(club_tag,payload,previous_payload,fetched_at,changed_at,last_attempt_at,next_check_at,
-    lease_token,lease_expires_at,error_code,consecutive_failures)
+    lease_token,lease_expires_at,error_code,consecutive_failures,source_provider,previous_provider_state)
     VALUES('#PYLQ',$1::jsonb,$2::jsonb,'2026-09-17T10:00:00Z','2026-09-17T09:45:00Z','2026-09-17T10:30:00Z','2026-09-17T11:00:00Z',
-      '00000000-0000-4000-8000-000000000038','2026-09-17T10:30:15Z','rate_limited',2)`, [JSON.stringify(sourcePayload), JSON.stringify(previousSourcePayload)]);
+      '00000000-0000-4000-8000-000000000038','2026-09-17T10:30:15Z','rate_limited',2,'BrawlTools',
+      '{"source_provider":"BrawlAce","error_code":"unavailable","consecutive_failures":4,"last_attempt_at":"2026-09-17T09:30:00Z","next_check_at":"2026-09-17T15:30:00Z","transitioned_at":"2026-09-17T10:00:00Z","lease_expires_at":null}')`, [JSON.stringify(sourcePayload), JSON.stringify(previousSourcePayload)]);
   const savedSourceCache = (await client.query("SELECT to_jsonb(cache) AS entry FROM public.club_mega_pig_source_cache cache WHERE club_tag='#PYLQ'")).rows[0].entry;
   const archivedPayload = { ...sourcePayload, members: [sourcePayload.members[0], { ...sourcePayload.members[1], reportedWins: null, reportedTicketsRemaining: null }] };
   await client.query(`
@@ -380,7 +381,10 @@ test("encrypted backup restores actual schema, rows and private permissions into
         }
         for(const query of ["SELECT public.member_inactivity_exempt('#CLUB','#PLAYER',now())","SELECT public.club_intelligence_read(7,now())","SELECT public.club_planning_refresh_goals('#CLUB')","SELECT public.claim_club_rival('#PYLQ','#GGRR','00000000-0000-4000-8000-000000000001')","SELECT public.member_comparison_read('#CLUB',7,now())","SELECT public.club_event_observations_read('#CLUB','00000000-0000-4000-8000-000000000131',now())"])
           await assert.rejects(client.query(query),error=>error.code==='42501');
-        for(const query of ["SELECT public.claim_mega_pig_source_cache('#PYLQ','00000000-0000-4000-8000-000000000038')","SELECT public.finish_mega_pig_source_cache('#PYLQ','00000000-0000-4000-8000-000000000038',NULL,'unavailable',NULL)"])
+        for(const query of ["SELECT public.claim_mega_pig_source_cache('#PYLQ','00000000-0000-4000-8000-000000000038')",
+          "SELECT public.claim_mega_pig_brawltools_cache('#PYLQ','00000000-0000-4000-8000-000000000038')",
+          "SELECT public.claim_mega_pig_provider_cache('#PYLQ','00000000-0000-4000-8000-000000000038','BrawlTools')",
+          "SELECT public.finish_mega_pig_source_cache('#PYLQ','00000000-0000-4000-8000-000000000038',NULL,'unavailable',NULL)"])
           await assert.rejects(client.query(query),error=>error.code==='42501');
         assert.deepEqual(Object.keys((await client.query("SELECT * FROM public.club_sync_signals")).rows[0]).sort(),['completed_at','datasets','id','version']);
         await assert.rejects(client.query('UPDATE public.club_sync_signals SET version=NULL,completed_at=NULL'),error=>error.code==='42501');
@@ -409,6 +413,10 @@ test("encrypted backup restores actual schema, rows and private permissions into
       for (const fn of backup.manifest.functions.filter(item => archiveRpcNames.includes(item.name))) {
         assert.equal((await client.query("SELECT has_function_privilege(current_user,$1,'EXECUTE') allowed", [fn.identity])).rows[0].allowed, ['mega_pig_archive_read', 'mega_pig_archive_write'].includes(fn.name), `Restored service access matches the public RPC boundary for ${fn.name}`);
       }
+      for (const fn of backup.manifest.functions.filter(item => sourceRpcNames.includes(item.name))) {
+        assert.equal((await client.query("SELECT has_function_privilege(current_user,$1,'EXECUTE') allowed", [fn.identity])).rows[0].allowed,
+          fn.name !== 'claim_mega_pig_provider_cache', `Restored service access preserves the provider RPC boundary for ${fn.name}`);
+      }
       await assert.rejects(client.query("SELECT public.sample_database_capacity()"), error => error.code === "42501");
     }
     finally { await client.query("RESET ROLE"); }
@@ -420,10 +428,13 @@ test("encrypted backup restores actual schema, rows and private permissions into
       await client.query("UPDATE public.settings SET value='#PYLQ' WHERE key='club_tag'; UPDATE public.club_mega_pig_source_cache SET next_check_at=now()-interval '1 hour',lease_token=NULL,lease_expires_at=NULL WHERE club_tag='#PYLQ'");
       await client.query("SET LOCAL ROLE service_role");
       const token=randomUUID();
-      const claimed=(await client.query("SELECT public.claim_mega_pig_source_cache('#PYLQ',$1) AS result",[token])).rows[0].result;
+      assert.equal((await client.query("SELECT public.claim_mega_pig_source_cache('#PYLQ',$1) AS result",[randomUUID()])).rows[0].result.acquired,false);
+      const claimed=(await client.query("SELECT public.claim_mega_pig_brawltools_cache('#PYLQ',$1) AS result",[token])).rows[0].result;
       assert.equal(claimed.acquired,true);assert.equal(Object.hasOwn(claimed.entry,'lease_token'),false);
-      const finished=(await client.query("SELECT public.finish_mega_pig_source_cache('#PYLQ',$1,$2::jsonb) AS result",[token,JSON.stringify(sourcePayload)])).rows[0].result;
-      assert.equal(finished.accepted,true);assert.deepEqual(finished.entry.payload,sourcePayload);assert.deepEqual(finished.entry.previous_payload,previousSourcePayload);
+      const toolsPayload={...sourcePayload,source:'BrawlTools',reportedPlayersPlayed:null,reportedBattlesPlayed:128};
+      const finished=(await client.query("SELECT public.finish_mega_pig_source_cache('#PYLQ',$1,$2::jsonb) AS result",[token,JSON.stringify(toolsPayload)])).rows[0].result;
+      assert.equal(finished.accepted,true);assert.deepEqual(finished.entry.payload,toolsPayload);assert.deepEqual(finished.entry.previous_payload,sourcePayload);
+      assert.equal(finished.entry.source_provider,'BrawlTools');assert.deepEqual(finished.entry.previous_provider_state,savedSourceCache.previous_provider_state);
       assert.equal(finished.entry.error_code,null);assert.equal(finished.entry.consecutive_failures,0);assert.equal(Object.hasOwn(finished.entry,'lease_token'),false);
     }finally{await client.query("ROLLBACK");}
     assert.deepEqual((await client.query("SELECT to_jsonb(cache) AS entry FROM public.club_mega_pig_source_cache cache WHERE club_tag='#PYLQ'")).rows[0].entry,savedSourceCache,'Procedure verification must not change the restored snapshot');

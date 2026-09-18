@@ -57,7 +57,7 @@ async function bounded<T>(work: (signal: AbortSignal)=>PromiseLike<T>, milliseco
 async function refresh(clubTag: string, options: Options): Promise<MegaPigSourceCacheSnapshot> {
   const deadlineAt = Math.min(Date.now()+8000,options.deadlineAt ?? Infinity);
   const token = randomUUID();
-  const claim = await bounded(signal=>supabaseAdmin.rpc("claim_mega_pig_source_cache",{p_club:clubTag,p_token:token}).abortSignal(signal),Math.min(1500,deadlineAt-Date.now()),options.signal);
+  const claim = await bounded(signal=>supabaseAdmin.rpc("claim_mega_pig_brawltools_cache",{p_club:clubTag,p_token:token}).abortSignal(signal),Math.min(1500,deadlineAt-Date.now()),options.signal);
   if(claim.error)throw unavailable();
   const data=object(claim.data);
   if(typeof data.acquired!=="boolean")throw unavailable();

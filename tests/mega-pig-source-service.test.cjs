@@ -65,6 +65,25 @@ test('cached errors preserve explicitly stale numbers without inventing source f
   assert.doesNotMatch(JSON.stringify(value), /rate_limited|consecutiveFailures/);
 });
 
+test('provider provenance survives projection and battle totals are never reported as player counts', async () => {
+  const { route, state } = fixture();
+  Object.assign(state.cache.payload, { source: 'BrawlTools', reportedPlayersPlayed: null, reportedBattlesPlayed: 128 });
+  const response = await route.GET(request()); assert.equal(response.status, 200);
+  const value = await response.json();
+  assert.equal(value.source.name, 'BrawlTools'); assert.equal(value.source.url, 'https://brawltools.net');
+  assert.equal(value.reportedPlayersPlayed, null); assert.equal(value.reportedBattlesPlayed, 128);
+  assert.equal(value.source.updatedAt, null); assert.equal(value.source.cycleVerified, false);
+  assert.equal(value.members[0].reportedWins, 0); assert.equal(value.members[1].reportedWins, null);
+  assert.doesNotMatch(JSON.stringify(value), /sourceUpdatedAt|privateKey/);
+});
+
+test('a stale legacy reading retains BrawlAce credit while the automatic provider changes', async () => {
+  const { route, state } = fixture(); state.cache.stale = true;
+  const value = await (await route.GET(request())).json();
+  assert.equal(value.source.name, 'BrawlAce'); assert.equal(value.reportedPlayersPlayed, 1);
+  assert.equal(value.reportedBattlesPlayed, null); assert.equal(value.status, 'stale');
+});
+
 test('matched source members with missing counters remain unknown without allocating aggregate wins', async () => {
   const { route, state } = fixture();
   state.cache.payload.members[0].reportedWins = null;
@@ -101,6 +120,10 @@ test('malformed saved source payloads fail closed instead of hiding schema chang
     state => { state.cache.payload.totalWins = 99; },
     state => { state.cache.payload.members[1].playerTag = '#AAA'; },
     state => { state.cache.payload.reportedPlayersPlayed = 3; },
+    state => { state.cache.payload.source = 'Untrusted'; },
+    state => { state.cache.payload.source = 'BrawlTools'; },
+    state => { state.cache.payload.reportedBattlesPlayed = 128; },
+    state => { Object.assign(state.cache.payload, { source: 'BrawlTools', reportedPlayersPlayed: null, reportedBattlesPlayed: 3 }); },
     state => { state.cache.fetchedAt = new Date(Date.now() + 60000).toISOString(); },
     state => { state.cache.fetchedAt = null; },
   ]) {

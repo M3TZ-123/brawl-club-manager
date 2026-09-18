@@ -12,13 +12,22 @@ function fixture({ members = [{ tag: '#PYLQ', name: 'عضو &amp; واحد', win
     ${members.map(m => `<tr><td><img src="https://untrusted.invalid/image" onerror="fetch('https://untrusted.invalid/')" alt="IGNORED"><a target="_blank" href="https://brawlace.com/players/${encodeURIComponent(m.tag)}">${m.name}</a></td><td data-order="999">${m.wins}</td><td>${m.tickets}</td><td>99,999</td><td data-order="10"><img src="https://untrusted.invalid/rank"> I </td></tr>`).join('')}
     </tbody></table><script>fetch('https://untrusted.invalid/'); const fake = 'Total Wins: 999 #GGRR';</script></main>`;
 }
-function response(body = fixture(), extraHeaders = {}) { return new Response(body, { headers: { 'content-type': 'text/html; charset=UTF-8', ...extraHeaders } }); }
+function apiFixture({ members = [
+  { tag: '#PYLQ', name: 'عضو & واحد', megaPig: { wins: 1, ticketsLeft: 5 } },
+  { tag: '#PYLR', name: 'Example member', megaPig: { wins: 2, ticketsLeft: 4 } },
+], total = 3, played = 4, tag = club } = {}) {
+  return { tag, timestamp: 1789749903, data: {
+    name: 'Club profile ignored', description: 'PRIVATE PROFILE', memberCount: members.length,
+    megaPig: { id: 1, totalWins: total, totalPlayed: played }, members,
+  } };
+}
+function response(body = JSON.stringify(apiFixture()), extraHeaders = {}) { return new Response(body, { headers: { 'content-type': 'application/json; charset=UTF-8', ...extraHeaders } }); }
 const invalid = error => error.code === 'invalid' && !/PRIVATE|untrusted/.test(error.message);
 
 test('parser identifies the exact table and returns only public tags, decoded names and reported counters', () => {
   const provider = loadTypeScript(file);
   const payload = clean(provider.parseMegaPigSourceHtml(fixture(), club));
-  assert.deepEqual(payload, { clubTag: club, totalWins: 3, reportedPlayersPlayed: 2, members: [
+  assert.deepEqual(payload, { source: 'BrawlAce', clubTag: club, totalWins: 3, reportedPlayersPlayed: 2, reportedBattlesPlayed: null, members: [
     { playerTag: '#PYLQ', playerName: 'عضو & واحد', reportedWins: 1, reportedTicketsRemaining: 5 },
     { playerTag: '#PYLR', playerName: 'Example member', reportedWins: 2, reportedTicketsRemaining: 4 },
   ] });
@@ -33,7 +42,7 @@ test('reported participation is preserved, never inferred from wins or tickets; 
   const payload = provider.parseMegaPigSourceHtml(html, club);
   assert.equal(payload.totalWins, 0); assert.equal(payload.reportedPlayersPlayed, 1);
   assert.equal(payload.members[0].reportedWins, 0); assert.equal(payload.members[0].reportedTicketsRemaining, 5);
-  assert.deepEqual(clean(provider.parseMegaPigSourceHtml(fixture({ members: [], total: 0, played: 0 }), club)), { clubTag: club, totalWins: 0, reportedPlayersPlayed: 0, members: [] });
+  assert.deepEqual(clean(provider.parseMegaPigSourceHtml(fixture({ members: [], total: 0, played: 0 }), club)), { source: 'BrawlAce', clubTag: club, totalWins: 0, reportedPlayersPlayed: 0, reportedBattlesPlayed: null, members: [] });
 });
 
 test('observed modal structure retains unknown rows without fabricating the missing share of reported total wins', () => {
@@ -111,16 +120,91 @@ test('cache reprojection removes extra properties and rejects malformed or wrong
   }
 });
 
+test('documented API response keeps played battles separate from players and omits ambiguous cycle and timestamp fields', () => {
+  const provider = loadTypeScript(file), raw = apiFixture();
+  const result = clean(provider.parseMegaPigSourceJson(JSON.stringify(raw), club));
+  assert.deepEqual(result, { source: 'BrawlTools', clubTag: club, totalWins: 3, reportedPlayersPlayed: null, reportedBattlesPlayed: 4, members: [
+    { playerTag: '#PYLQ', playerName: 'عضو & واحد', reportedWins: 1, reportedTicketsRemaining: 5 },
+    { playerTag: '#PYLR', playerName: 'Example member', reportedWins: 2, reportedTicketsRemaining: 4 },
+  ] });
+  assert.doesNotMatch(JSON.stringify(result), /timestamp|cycle|PRIVATE|description|"id"/);
+  raw.timestamp += 120; raw.data.megaPig.id = 17;
+  assert.deepEqual(clean(provider.parseMegaPigSourceJson(JSON.stringify(raw), club)), result, 'Counter-identical reads do not become new snapshots because provider metadata changed');
+  delete raw.data.memberCount;
+  assert.deepEqual(clean(provider.parseMegaPigSourceJson(JSON.stringify(raw), club)), result, 'An optional roster count is not needed when all identities and rows are valid');
+});
+
+test('API missing counters remain unknown while explicit zeros stay source-reported zeros', () => {
+  const { parseMegaPigSourceJson } = loadTypeScript(file);
+  const members = [
+    { tag: '#PYLQ', name: 'Known zero', megaPig: { wins: 0, ticketsLeft: 0 } },
+    { tag: '#PYLR', name: 'Absent object' },
+    { tag: '#PYLP', name: 'Null object', megaPig: null },
+    { tag: '#PYLY', name: 'One missing value', megaPig: { wins: 1 } },
+    { tag: '#PYLV', name: 'One explicit null', megaPig: { wins: null, ticketsLeft: 6 } },
+  ];
+  const raw = apiFixture({ members, total: 5, played: 12 });
+  const result = clean(parseMegaPigSourceJson(JSON.stringify(raw), club));
+  assert.deepEqual(result.members.map(m => [m.reportedWins, m.reportedTicketsRemaining]), [[0, 0], [null, null], [null, null], [1, null], [null, 6]]);
+  assert.equal(result.totalWins, 5); assert.equal(result.reportedPlayersPlayed, null); assert.equal(result.reportedBattlesPlayed, 12);
+  delete raw.data.megaPig.totalPlayed;
+  assert.equal(parseMegaPigSourceJson(JSON.stringify(raw), club).reportedBattlesPlayed, null);
+  raw.data.megaPig.totalPlayed = null;
+  assert.equal(parseMegaPigSourceJson(JSON.stringify(raw), club).reportedBattlesPlayed, null);
+  assert.deepEqual(clean(parseMegaPigSourceJson(JSON.stringify(apiFixture({ members: [], total: 0, played: 0 })), club)), {
+    source: 'BrawlTools', clubTag: club, totalWins: 0, reportedPlayersPlayed: null, reportedBattlesPlayed: 0, members: [],
+  });
+});
+
+test('API rejects malformed structure, identity, roster count, and counters without treating missing evidence as zero', () => {
+  const { parseMegaPigSourceJson } = loadTypeScript(file);
+  const changes = [
+    r => { r.tag = '#GGRR'; }, r => { delete r.tag; }, r => { r.data = []; }, r => { r.data.megaPig = null; },
+    r => { delete r.data.megaPig.totalWins; }, r => { r.data.members = {}; }, r => { r.data.memberCount = 3; },
+    r => { r.data.memberCount = null; }, r => { r.data.members[1].tag = '#PYLQ'; }, r => { r.data.members[0].tag = '#INVALID'; },
+    r => { r.data.members[0].name = ''; }, r => { r.data.members[0].name = 'PRIVATE\0NAME'; },
+    r => { r.data.members[0].megaPig = 'PRIVATE'; }, r => { r.data.members[0].megaPig = []; },
+    r => { r.data.megaPig.totalWins = 2; }, r => { r.data.megaPig.totalWins = 4; }, r => { r.data.megaPig.totalPlayed = 2; },
+    r => { r.data.members = Array(31).fill(r.data.members[0]); r.data.memberCount = 31; },
+  ];
+  for (const change of changes) { const raw = apiFixture(); change(raw); assert.throws(() => parseMegaPigSourceJson(JSON.stringify(raw), club), invalid); }
+  for (const value of [-1, 1.5, '1', true, {}, [], 1001]) {
+    const raw = apiFixture(); raw.data.members[0].megaPig.ticketsLeft = value;
+    assert.throws(() => parseMegaPigSourceJson(JSON.stringify(raw), club), invalid);
+  }
+  for (const value of [-1, 3.5, '4', true, {}, [], 30001]) {
+    const raw = apiFixture(); raw.data.megaPig.totalPlayed = value;
+    assert.throws(() => parseMegaPigSourceJson(JSON.stringify(raw), club), invalid);
+  }
+  for (const raw of ['null', '[]', '{}', '{PRIVATE', JSON.stringify(apiFixture()) + ' '.repeat(128 * 1024)]) assert.throws(() => parseMegaPigSourceJson(raw, club), invalid);
+  const incomplete = apiFixture({ members: [{ tag: '#PYLQ', name: 'Known', megaPig: { wins: 4 } }, { tag: '#PYLR', name: 'Unknown' }], total: 3 });
+  assert.throws(() => parseMegaPigSourceJson(JSON.stringify(incomplete), club), invalid, 'Unknown rows do not allow known wins to exceed the total');
+});
+
+test('legacy cache values retain BrawlAce provenance and provider-specific metrics cannot be mixed', () => {
+  const provider = loadTypeScript(file), legacy = clean(provider.parseMegaPigSourceHtml(fixture(), club));
+  delete legacy.source; delete legacy.reportedBattlesPlayed;
+  const restored = provider.validateMegaPigSourcePayload(legacy, club);
+  assert.equal(restored.source, 'BrawlAce'); assert.equal(restored.reportedBattlesPlayed, null); assert.equal(restored.reportedPlayersPlayed, 2);
+  const api = clean(provider.parseMegaPigSourceJson(JSON.stringify(apiFixture()), club));
+  for (const row of [
+    { ...legacy, source: 'Other' }, { ...legacy, source: null }, { ...legacy, reportedPlayersPlayed: null },
+    { ...legacy, reportedBattlesPlayed: 4 }, { ...api, reportedPlayersPlayed: 2 }, { ...api, reportedBattlesPlayed: 2 },
+    { ...api, reportedBattlesPlayed: 30001 }, { ...api, reportedBattlesPlayed: '4' },
+  ]) assert.throws(() => provider.validateMegaPigSourcePayload(row, club), invalid);
+});
+
 test('fetch makes exactly one fixed-host anonymous request with honest identification and no redirect or cache reuse', async () => {
   const calls = [];
   const provider = loadTypeScript(file, {}, { fetch: async (...args) => { calls.push(args); return response(); } });
   const payload = await provider.fetchMegaPigSource('pylc');
   assert.equal(payload.clubTag, club); assert.equal(calls.length, 1);
   const [url, options] = calls[0];
-  assert.equal(url, 'https://brawlace.com/clubs/%23PYLC/megapig');
+  assert.equal(url, 'https://api.brawltools.net/clubs/%23PYLC');
   assert.equal(options.method, 'GET'); assert.equal(options.cache, 'no-store'); assert.equal(options.redirect, 'error'); assert.equal(options.credentials, 'omit');
   assert.equal(options.headers['User-Agent'], 'BrawlStatz (+https://brawlstatz.vercel.app)');
-  assert.deepEqual(Object.keys(options.headers).sort(), ['Accept', 'Accept-Language', 'User-Agent']);
+  assert.equal(options.headers.Accept, 'application/json');
+  assert.deepEqual(Object.keys(options.headers).sort(), ['Accept', 'User-Agent']);
   assert.ok(options.signal instanceof AbortSignal);
   for (const bad of ['https://untrusted.invalid', '#PYLC/../x', '#PYLC?x=1', '#INVALID', '#PYLC\nCookie: private']) await assert.rejects(provider.fetchMegaPigSource(bad), invalid);
   assert.equal(calls.length, 1, 'Bad inputs never trigger a network request');
@@ -149,15 +233,15 @@ test('HTTP failure, redirects and network details become typed unavailable error
 });
 
 test('UTF8 streaming counts bytes across chunks and rejects invalid or excessive data', async () => {
-  const bytes = new TextEncoder().encode(fixture()), firstArabic = bytes.findIndex(byte => byte >= 128);
+  const bytes = new TextEncoder().encode(JSON.stringify(apiFixture())), firstArabic = bytes.findIndex(byte => byte >= 128);
   const valid = new ReadableStream({ start(controller) { controller.enqueue(bytes.slice(0, firstArabic + 1)); controller.enqueue(bytes.slice(firstArabic + 1)); controller.close(); } });
   const provider = loadTypeScript(file, {}, { fetch: async () => response(valid) });
   assert.equal((await provider.fetchMegaPigSource(club)).members[0].playerName, 'عضو & واحد');
   for (const body of [new Uint8Array([0xc3, 0x28]), new Uint8Array(128 * 1024 + 1)]) {
     await assert.rejects(loadTypeScript(file, {}, { fetch: async () => response(body) }).fetchMegaPigSource(club), invalid);
   }
-  await assert.rejects(loadTypeScript(file, {}, { fetch: async () => response(fixture(), { 'content-length': String(128 * 1024 + 1) }) }).fetchMegaPigSource(club), invalid);
-  await assert.rejects(loadTypeScript(file, {}, { fetch: async () => new Response(fixture(), { headers: { 'content-type': 'application/json' } }) }).fetchMegaPigSource(club), invalid);
+  await assert.rejects(loadTypeScript(file, {}, { fetch: async () => response(JSON.stringify(apiFixture()), { 'content-length': String(128 * 1024 + 1) }) }).fetchMegaPigSource(club), invalid);
+  await assert.rejects(loadTypeScript(file, {}, { fetch: async () => new Response(JSON.stringify(apiFixture()), { headers: { 'content-type': 'text/html' } }) }).fetchMegaPigSource(club), invalid);
 });
 
 test('caller cancellation covers both fetch and body reads, cancels the reader and prevents an already-aborted request', async () => {

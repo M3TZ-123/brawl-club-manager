@@ -7,7 +7,7 @@ const ID = "00000000-0000-4000-8000-000000000001", READING = "00000000-0000-4000
 const NOW = Date.parse("2026-09-17T12:00:00Z");
 class FixedDate extends Date { constructor(...args) { super(...(args.length ? args : [NOW])); } static now() { return NOW; } }
 const cycle = (values = {}) => ({ id: ID, title: "Saved September cycle", startsAt: "2026-09-17T09:00:00Z", endsAt: "2026-09-17T11:00:00Z", milestones: [16, 32, 48, 64, 80], version: 3, createdAt: "2026-09-17T08:00:00Z", updatedAt: "2026-09-17T10:00:00Z", captureEnabled: true, capturePausedReason: null, initialObservationId: READING, lastCapturedAt: "2026-09-17T10:30:00Z", reportedTotalWins: 64, reportedPlayersPlayed: 24, finalTotalWins: null, confirmedStage: null, rewardStatus: "unknown", finalizedAt: null, notes: "Private draft", ...values });
-const reading = (values = {}) => ({ id: READING, firstFetchedAt: "2026-09-17T09:00:00Z", lastFetchedAt: "2026-09-17T10:00:00Z", totalWins: 64, reportedPlayersPlayed: 24, sourceMembers: 30, unknownMembers: 2, ...values });
+const reading = (values = {}) => ({ id: READING, firstFetchedAt: "2026-09-17T09:00:00Z", lastFetchedAt: "2026-09-17T10:00:00Z", source: "BrawlAce", totalWins: 64, reportedPlayersPlayed: 24, reportedBattlesPlayed: null, sourceMembers: 30, unknownMembers: 2, ...values });
 const member = (values = {}) => ({ playerTag: "#PYLQ", playerName: "Former name", isCurrentMember: false, firstObservedAt: "2026-09-17T09:00:00Z", lastObservedAt: "2026-09-17T10:00:00Z", wins: 0, ticketsRemaining: 2, winsObservedAt: "2026-09-17T09:30:00Z", ticketsObservedAt: "2026-09-17T09:00:00Z", latestWinsUnknown: true, latestTicketsUnknown: false, ...values });
 const sourceMember = (values = {}) => ({ playerTag: "#PYLQ", playerName: "Old source name", reportedWins: 0, reportedTicketsRemaining: null, ...values });
 const deferred = () => { let resolve; const promise = new Promise(yes => { resolve = yes; }); return { promise, resolve }; };
@@ -98,6 +98,33 @@ test("saved readings work without cycle dates and open an explicit confirmation 
   assert.match(page.requests.at(-1).url, new RegExp(`mode=reading&id=${READING}`)); assert.match(textContent(tree), /Old source name/); assert.equal(named(tree, "MegaPigCycleForm")[0].props.reading.id, READING); assert.ok(page.requests.every(request => !request.method)); page.unmount();
 });
 
+test("saved readings distinguish providers and battle totals without inventing participant counts", async () => {
+  const old = reading({ totalWins: 82 }), current = reading({ id: NEW, source: "BrawlTools", totalWins: 78, reportedPlayersPlayed: null, reportedBattlesPlayed: 128 });
+  const page = harness({ response: request => {
+    const mode = new URL(request.url, "https://club.test").searchParams.get("mode");
+    return mode === "reading" ? { clubTag: "#PYLQ", observation: { ...current, members: [sourceMember()] } }
+      : mode === "readings" ? { clubTag: "#PYLQ", observations: [current, old], nextOffset: null }
+        : { clubTag: "#PYLQ", cycles: [], latestObservation: current, nextOffset: null };
+  } });
+  let tree = await page.render(); action(tree, "Saved readings")(); tree = await page.render();
+  const rows = elements(tree).filter(node => node.type === "article").map(textContent);
+  assert.equal(rows.length, 2); assert.match(rows[0], /BrawlTools.*Reported total wins: 78.*Reported battles: 128/);
+  assert.doesNotMatch(rows[0], /Players reported by source/); assert.match(rows[1], /BrawlAce.*Reported total wins: 82.*Players reported by source: 24/);
+  action(tree, "Open saved reading")(); tree = await page.render();
+  assert.match(textContent(tree), /BrawlTools.*Reported total wins: 78.*Reported battles: 128/);
+  assert.doesNotMatch(textContent(tree), /Players reported by source|BrawlAce/); assert.match(textContent(tree), /Tickets remaining: Unknown/); page.unmount();
+});
+
+test("member source history keeps separate provider labels for unknown and zero counters", async () => {
+  const page = harness({ props: { initialPlayerTag: "#PYLQ" }, response: () => ({ clubTag: "#PYLQ", playerTag: "#PYLQ", history: [], nextOffset: null, playerReadings: [
+    { observation: reading(), member: sourceMember({ reportedWins: null }) },
+    { observation: reading({ id: NEW, source: "BrawlTools", reportedPlayersPlayed: null, reportedBattlesPlayed: 128 }), member: sourceMember({ reportedWins: 0, reportedTicketsRemaining: 0 }) },
+  ] }) });
+  const rows = elements(await page.render()).filter(node => node.type === "article").map(textContent);
+  assert.match(rows[0], /BrawlAce.*Wins: Unknown.*Tickets remaining: Unknown/);
+  assert.match(rows[1], /BrawlTools.*Wins: 0.*Tickets remaining: 0/); page.unmount();
+});
+
 test("cycle creation leaves dates empty, labels editable preset and pins an explicitly confirmed reading across refresh", async () => {
   const saves = [], form = harness({ component: "MegaPigCycleForm", props: { reading: reading(), onSaved: id => saves.push(id) } });
   let tree = await form.render(); assert.equal(input(tree, "Starts at").props.value, ""); assert.equal(input(tree, "Ends at").props.value, ""); assert.match(textContent(tree), /community-reported rules, adjustable/);
@@ -131,6 +158,17 @@ test("resuming a decreased counter requires a different confirmed reading and an
   const form = harness({ component: "MegaPigCycleForm", props: { cycle: cycle({ captureEnabled: false, capturePausedReason: "counters_decreased", notes: "" }), reading: reading({ id: NEW }), onSaved() {} } });
   let tree = await form.render(); assert.equal(input(tree, "Collect future").props.disabled, true); change(tree, "I confirm this new reading", true); tree = await form.render(); submit(tree); tree = await form.render(); assert.match(errorText(tree), /explain why/); assert.equal(form.requests.length, 0);
   change(tree, "Reason for confirming", "Checked the game; still the same cycle"); tree = await form.render(); submit(tree); await form.render(); assert.equal(form.requests[0].payload.cycle.initialObservationId, NEW); assert.equal(form.requests[0].payload.cycle.captureEnabled, true); form.unmount();
+});
+
+test("a source change pauses collection and requires explicit confirmation before using a new provider", async () => {
+  const paused = cycle({ captureEnabled: false, capturePausedReason: "source_changed", notes: "" });
+  const form = harness({ component: "MegaPigCycleForm", props: { cycle: paused, reading: reading({ id: NEW, source: "BrawlTools", reportedPlayersPlayed: null, reportedBattlesPlayed: 128 }), onSaved() {} } });
+  let tree = await form.render(); assert.match(textContent(tree), /source changed/); assert.doesNotMatch(textContent(tree), /counters decreased/); assert.match(textContent(tree), /BrawlTools/);
+  assert.equal(input(tree, "Collect future").props.disabled, true); assert.equal(input(tree, "Collect future").props.checked, false);
+  change(tree, "I confirm this new reading", true); tree = await form.render(); submit(tree); tree = await form.render(); assert.match(errorText(tree), /explain why/); assert.equal(form.requests.length, 0);
+  change(tree, "Reason for confirming", "Confirmed this provider reading against the same cycle in game"); tree = await form.render(); submit(tree); await form.render();
+  assert.equal(form.requests[0].payload.cycle.initialObservationId, NEW); assert.equal(form.requests[0].payload.cycle.captureEnabled, true); form.unmount();
+  const summary = harness({ component: "MegaPigCycleSummary", props: { cycle: paused } }); tree = await summary.render(); assert.match(textContent(tree), /source changed. Review the new reading/); assert.doesNotMatch(textContent(tree), /counters decreased/); summary.unmount();
 });
 
 test("finalization never prefills source totals or reward receipt and preserves explicit zero", async () => {
@@ -179,4 +217,9 @@ test("retained member values, observed stage and confirmed result remain distinc
 test("Arabic archive forms translate cycle confirmation and expose local date controls with LTR direction", async () => {
   const form = harness({ component: "MegaPigCycleForm", locale: "ar", props: { reading: reading(), onSaved() {} } }); const tree = await form.render(); assert.match(textContent(tree), /عنوان الدورة/); assert.match(textContent(tree), /قواعد نقلها المجتمع/); assert.match(textContent(tree), /أؤكد أن هذه القراءة تخص هذه الدورة/); assert.doesNotMatch(textContent(tree), /Cycle title|Cumulative stage targets|Collect future|Private cycle notes/);
   assert.ok(elements(tree).filter(node => node.props?.type === "datetime-local").every(node => node.props.dir === "ltr")); form.unmount();
+});
+
+test("Arabic source-change warning remains distinct from decreased counters", async () => {
+  const form = harness({ component: "MegaPigCycleForm", locale: "ar", props: { cycle: cycle({ captureEnabled: false, capturePausedReason: "source_changed" }), reading: reading({ id: NEW, source: "BrawlTools" }), onSaved() {} } });
+  const tree = await form.render(); assert.match(textContent(tree), /تغيّر المصدر/); assert.match(textContent(tree), /تخص الدورة نفسها/); assert.match(textContent(tree), /BrawlTools/); assert.doesNotMatch(textContent(tree), /source changed|counters decreased/); form.unmount();
 });

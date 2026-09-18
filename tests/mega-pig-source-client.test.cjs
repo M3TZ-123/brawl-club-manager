@@ -4,9 +4,9 @@ const { loadTypeScript } = require("./helpers/load-typescript.cjs");
 const { hookRenderer, componentMocks, elements, textContent, action } = require("./helpers/client-renderer.cjs");
 
 const member = (values = {}) => ({ playerTag: "#AAA", playerName: "Amine", reportedWins: 0, reportedTicketsRemaining: null, ...values });
-const snapshot = (values = {}) => ({ clubTag: "#CLUB", source: { name: "BrawlAce", url: "https://brawlace.com/clubs/CLUB", official: false, cycleVerified: false, updatedAt: null },
+const snapshot = (values = {}) => ({ clubTag: "#CLUB", source: { name: "BrawlAce", url: "https://brawlace.com/clubs/%23CLUB", official: false, cycleVerified: false, updatedAt: null },
   status: "available", fetchedAt: "2026-09-17T12:00:00Z", lastAttemptAt: "2026-09-17T12:00:00Z", nextCheckAt: "2026-09-17T12:20:00Z", changedAt: null, updating: false,
-  totalWins: 82, reportedPlayersPlayed: 24, matchedMembers: 1, sourceMembers: 1, rosterMembers: 1, members: [member()], ...values });
+  totalWins: 82, reportedPlayersPlayed: 24, reportedBattlesPlayed: null, matchedMembers: 1, sourceMembers: 1, rosterMembers: 1, members: [member()], ...values });
 const deferred = () => { let resolve, reject; const promise = new Promise((yes, no) => { resolve = yes; reject = no; }); return { promise, resolve, reject }; };
 function target(extra = {}) {
   const listeners = new Map();
@@ -58,7 +58,7 @@ test("reported zero remains zero, missing counters stay unknown, and details are
   assert.match(memberRows(tree), /Amine ✨#AAA0Unknown/); assert.doesNotMatch(memberRows(tree), /<c3>|Absent|Present/);
   const details = disclosure(tree, "Member counters"); assert.equal(details.props.open, undefined);
   assert.ok(elements(details).some(node => node.type === "table")); assert.ok(elements(details).some(node => node.type === "bdi" && node.props.dir === "ltr"));
-  const link = elements(sourceDetails).find(node => node.type === "a"); assert.equal(link.props.href, "https://brawlace.com/clubs/CLUB"); assert.match(link.props.rel, /noopener/);
+  const link = elements(sourceDetails).find(node => node.type === "a"); assert.equal(link.props.href, "https://brawlace.com/clubs/%23CLUB"); assert.match(link.props.rel, /noopener/);
   assert.equal(elements(tree).filter(node => ["Input", "input", "textarea", "select", "form"].includes(node.type)).length, 0);
   assert.match(textContent(tree), /Last fetched from source: 2026-09-17T12:00:00Z/); page.unmount();
 });
@@ -80,6 +80,24 @@ test("all thirty identities can match while two members have unknown counters wi
   assert.doesNotMatch(textContent(tree), /Matched 30 of 30 current members/); assert.equal(details.props.open, undefined); page.unmount();
   const known = harness({ response: () => snapshot({ members: [member({ reportedTicketsRemaining: 0 })] }) });
   assert.match(memberRows(await known.render()), /Amine#AAA00/); known.unmount();
+});
+
+test("BrawlTools credits its own source and labels totalPlayed as battles, not participants", async () => {
+  const source = { name: "BrawlTools", url: "https://untrusted.example/redirect", official: false, cycleVerified: false, updatedAt: null };
+  const page = harness({ response: () => snapshot({ source, totalWins: 78, reportedPlayersPlayed: null, reportedBattlesPlayed: 128, members: [member({ reportedTicketsRemaining: 0 })] }) });
+  const tree = await page.render(), content = textContent(tree);
+  assert.match(content, /Reported by BrawlTools · third-party source/);
+  assert.match(content, /Reported total wins78/); assert.match(content, /Reported battles128/);
+  assert.doesNotMatch(content, /Players reported by source|BrawlAce|Reward received/);
+  assert.match(memberRows(tree), /Amine#AAA00/);
+  assert.equal(elements(tree).find(node => node.type === "a" && textContent(node) === "Open BrawlTools source").props.href, "https://brawltools.net");
+  assert.match(content, /Cycle unconfirmed · reward unconfirmed/); page.unmount();
+});
+
+test("legacy saved readings retain BrawlAce credit and nullable counts do not become zero", async () => {
+  const page = harness({ response: () => snapshot({ status: "stale", reportedPlayersPlayed: null }) });
+  const tree = await page.render(); assert.match(textContent(tree), /Reported by BrawlAce/); assert.match(textContent(tree), /Players reported by sourceUnknown/);
+  assert.doesNotMatch(textContent(tree), /BrawlTools|Players reported by source0/); page.unmount();
 });
 
 test("pending and unavailable source states do not display stale supplied totals, while stale data is labelled", async () => {
@@ -115,7 +133,7 @@ test("malformed counts and failed refreshes cannot keep presenting the previous 
   const page = harness({ response: () => fail ? Promise.reject(new Error("Unavailable")) : snapshot() });
   let tree = await page.render(); fail = true; action(tree, "Refresh")(); tree = await page.render(); assert.match(textContent(tree), /counters are unavailable/); assert.equal(memberRows(tree), "");
   assert.equal(elements(tree).find(node => node.type === "Button").props.disabled, false); page.unmount();
-  for (const value of [snapshot({ totalWins: -1 }), snapshot({ members: [member({ reportedTicketsRemaining: "0" })] })]) { const bad = harness({ response: () => value }); assert.match(textContent(await bad.render()), /counters are unavailable/); bad.unmount(); }
+  for (const value of [snapshot({ totalWins: -1 }), snapshot({ members: [member({ reportedTicketsRemaining: "0" })] }), snapshot({ reportedBattlesPlayed: -1 }), snapshot({ reportedPlayersPlayed: 128 }), snapshot({ source: { ...snapshot().source, name: "Unknown provider" } })]) { const bad = harness({ response: () => value }); assert.match(textContent(await bad.render()), /counters are unavailable/); bad.unmount(); }
 });
 
 test("source panel is available without a planned cycle only in the admin Events overview", async () => {
@@ -162,6 +180,12 @@ test("the Arabic source panel translates the counters, provenance and unknown me
   const page = harness({ locale: "ar" }); const tree = await page.render(); assert.match(textContent(tree), /عدادات Mega Pig/); assert.match(textContent(tree), /مصدر خارجي/); assert.match(textContent(tree), /إجمالي الانتصارات بحسب المصدر/);
   assert.doesNotMatch(textContent(tree), /Reported total wins|Players reported by source|Unknown|Last fetched/); assert.match(textContent(tree), /لا تُستخدم هذه العدادات لتسجيل الحضور أو مقارنة الأعضاء/);
   assert.match(textContent(tree), /الدورة والمكافأة غير مؤكدتين/); assert.match(memberRows(tree), /غير معروف/); page.unmount();
+});
+
+test("Arabic BrawlTools counters translate battle totals and preserve source credit", async () => {
+  const page = harness({ locale: "ar", response: () => snapshot({ source: { ...snapshot().source, name: "BrawlTools", url: "https://brawltools.net" }, totalWins: 78, reportedPlayersPlayed: null, reportedBattlesPlayed: 128 }) });
+  const tree = await page.render(); assert.match(textContent(tree), /بحسب BrawlTools · مصدر خارجي/); assert.match(textContent(tree), /المباريات بحسب المصدر128/);
+  assert.doesNotMatch(textContent(tree), /Reported battles|Players reported by source|BrawlAce/); page.unmount();
 });
 
 test("the community-rule stage estimate handles stage boundaries and never confirms reward receipt", async () => {

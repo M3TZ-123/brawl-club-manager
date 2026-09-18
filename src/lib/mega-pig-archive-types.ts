@@ -1,10 +1,10 @@
-import type { MegaPigSourceMember } from "@/lib/mega-pig-source-types";
+import type { MegaPigSourceMember, MegaPigSourceName } from "@/lib/mega-pig-source-types";
 
 export type MegaPigRewardStatus = "unknown" | "received" | "not_received";
 export type MegaPigArchiveCycle = {
   id: string; title: string; startsAt: string; endsAt: string;
   milestones: number[] | null; version: number; createdAt: string; updatedAt: string;
-  captureEnabled: boolean; capturePausedReason: "counters_decreased" | null; initialObservationId: string | null;
+  captureEnabled: boolean; capturePausedReason: "counters_decreased" | "source_changed" | null; initialObservationId: string | null;
   lastCapturedAt: string | null; reportedTotalWins: number | null; reportedPlayersPlayed: number | null;
   finalTotalWins: number | null; confirmedStage: number | null;
   rewardStatus: MegaPigRewardStatus; finalizedAt: string | null; notes: string;
@@ -18,7 +18,8 @@ export type MegaPigArchiveMember = {
 };
 export type MegaPigObservationSummary = {
   id: string; firstFetchedAt: string | null; lastFetchedAt: string | null;
-  totalWins: number; reportedPlayersPlayed: number; sourceMembers: number; unknownMembers: number;
+  source: MegaPigSourceName; totalWins: number; reportedPlayersPlayed: number | null; reportedBattlesPlayed: number | null;
+  sourceMembers: number; unknownMembers: number;
 };
 export type MegaPigArchiveResponse = {
   clubTag: string; cycles?: MegaPigArchiveCycle[]; nextOffset?: number | null;

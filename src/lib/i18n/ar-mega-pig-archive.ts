@@ -55,6 +55,8 @@ const arMegaPigArchive: Record<string, string> = {
   "Last observed club wins": "آخر انتصارات النادي المرصودة",
   "Confirmed final wins": "الانتصارات النهائية المؤكدة",
   "Collection paused: source counters decreased.": "توقف الجمع مؤقتًا بسبب انخفاض عدادات المصدر.",
+  "Collection paused: source changed. Review the new reading before continuing.": "توقف الجمع مؤقتًا لتغيّر المصدر. راجع القراءة الجديدة قبل المتابعة.",
+  "Collection paused because the source changed. Confirm a new reading only if it belongs to this same cycle.": "توقف الجمع مؤقتًا لتغيّر المصدر. أكّد قراءة جديدة فقط إذا كانت تخص الدورة نفسها.",
   "Last known; missing from latest reading": "آخر قيمة معروفة؛ غير متاحة في أحدث قراءة",
   "Last captured for this member": "آخر رصد محفوظ لهذا العضو",
   "The saved cycle changed. Your draft is preserved. Reload its saved version before retrying.": "تغيّرت الدورة المحفوظة. مسودتك محفوظة؛ أعد تحميل النسخة الحالية قبل المحاولة مجددًا.",

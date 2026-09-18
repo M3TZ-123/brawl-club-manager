@@ -21,7 +21,7 @@ const privateClubFunctions = new Set([
   "member_inactivity_exempt", "submit_recruitment_application", "review_recruitment_application", "save_recruitment_candidate_details",
   "club_planning_roster_ready", "club_planning_create_goal", "club_planning_archive_goal", "club_planning_refresh_goals",
   "club_planning_save_event", "save_club_rival", "claim_club_rival", "finish_club_rival", "capture_club_rank_history", "club_planning_create_once", "member_comparison_read", "club_event_observations_read",
-  "claim_mega_pig_source_cache", "finish_mega_pig_source_cache",
+  "claim_mega_pig_source_cache", "claim_mega_pig_brawltools_cache", "claim_mega_pig_provider_cache", "finish_mega_pig_source_cache",
   "mega_pig_archive_payload", "mega_pig_archive_ready", "mega_pig_archive_apply", "mega_pig_archive_capture",
   "mega_pig_archive_observation_summary", "mega_pig_archive_write", "mega_pig_archive_read",
 ]);

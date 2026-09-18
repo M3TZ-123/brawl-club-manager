@@ -133,6 +133,8 @@ Set repository secrets `VERCEL_APP_URL`, `CRON_SECRET`, and `BACKUP_ENCRYPTION_K
 
 Apply the SQL migrations before deployment and verify the public settings allowlist before saving the dedicated scheduler token. The browser refresh interval is independent of the backend schedule. See [backup operations](docs/BACKUP_OPERATIONS_AR.md) for artifact retrieval, retention, and an isolated restore rehearsal.
 
+Mega Pig counters use the documented anonymous [BrawlTools club API](https://api.brawltools.net/docs). The shared database cache checks every 20 minutes, or every 10 minutes around a planned Mega Pig event; failures back off and respect `Retry-After`. Ordinary roster/profile sync continues independently. Apply migration `202609160042_mega_pig_source_provenance.sql` before deploying this provider change. The first new worker starts BrawlTools' independent cadence after any active legacy request finishes, preserving the former provider's failure state. Existing BrawlAce readings retain their source, and automatic cycle collection pauses on a source change until an administrator confirms a new reading belongs to that cycle. Provider counters do not establish cycle dates, attendance, or reward receipt.
+
 ## 📁 Project Structure
 
 ```
@@ -185,6 +187,8 @@ MIT License - feel free to use for your club!
 ## 🙏 Credits
 
 - Brawl Stars API by Supercell
+- [BrawlTools](https://brawltools.net) for Mega Pig counters and map statistics
+- [Brawlify](https://brawlify.com) for game assets and map images
 - Built with Next.js and Vercel
 - Icons by Lucide
 

@@ -9,6 +9,7 @@ const root = path.resolve(__dirname, '../..');
 const club = '#PYLQ';
 const sample = (wins = 4) => ({ clubTag: club, totalWins: wins, reportedPlayersPlayed: 1,
   members: [{ playerTag: '#PYLR', playerName: 'عضو', reportedWins: wins, reportedTicketsRemaining: 2 }] });
+const toolsSample = (wins = 4) => ({ ...sample(wins), source: 'BrawlTools', reportedPlayersPlayed: null, reportedBattlesPlayed: 128 });
 const secondsBetween = (left, right) => Math.round((Date.parse(left) - Date.parse(right)) / 1000);
 
 test('Mega Pig source cache privately coordinates durable cadence and preserves evidence on failures', { skip: !source }, async t => {
@@ -32,6 +33,10 @@ test('Mega Pig source cache privately coordinates durable cadence and preserves 
   const reset = async () => { await db.query('TRUNCATE club_mega_pig_source_cache; TRUNCATE club_planned_events CASCADE'); await db.query("UPDATE settings SET value=$1 WHERE key='club_tag'", [club]); };
   const claim = async (token = randomUUID(), connection = db, target = club) => {
     const data = (await connection.query('SELECT public.claim_mega_pig_source_cache($1,$2) value', [target, token])).rows[0].value;
+    return { token, ...data };
+  };
+  const claimTools = async (token = randomUUID(), connection = db, target = club) => {
+    const data = (await connection.query('SELECT public.claim_mega_pig_brawltools_cache($1,$2) value', [target, token])).rows[0].value;
     return { token, ...data };
   };
   const finish = async (token, payload = sample(), error = null, retry = null, connection = db, target = club) =>
@@ -107,14 +112,69 @@ test('Mega Pig source cache privately coordinates durable cadence and preserves 
     const current = (await db.query('SELECT * FROM club_mega_pig_source_cache')).rows[0]; assert.equal(current.payload, null); assert.equal(current.lease_token, acquired.token);
     assert.equal((await claim(randomUUID(), db, '#GGRR')).acquired, true);
   });
+  await t.test('one provider transition preserves old evidence and cooldown without transferring it to the independent API', async () => {
+    await reset(); const first = await claim(); await finish(first.token);
+    await due(); const changed = await claim(); await finish(changed.token, sample(5));
+    await due(); const unavailable = await claim(); const old = (await finish(unavailable.token, null, 'unavailable')).entry;
+    const observations = (await db.query('SELECT count(*) FROM club_mega_pig_observations')).rows[0].count;
+    const other = new Client({ connectionString: url.href }); await other.connect(); local(other);
+    let switched;
+    try {
+      const attempts = await Promise.all([claimTools(), claimTools(randomUUID(), other)]);
+      assert.equal(attempts.filter(value => value.acquired).length, 1);
+      switched = attempts.find(value => value.acquired);
+    } finally { await other.end(); }
+    assert.equal(switched.entry.source_provider, 'BrawlTools'); assert.equal(switched.entry.consecutive_failures, 0);
+    assert.equal(switched.entry.error_code, null); assert.deepEqual(switched.entry.payload, old.payload);
+    assert.deepEqual(switched.entry.previous_payload, old.previous_payload);
+    assert.equal(switched.entry.fetched_at, old.fetched_at); assert.equal(switched.entry.changed_at, old.changed_at);
+    const previous = switched.entry.previous_provider_state;
+    assert.equal(previous.source_provider, 'BrawlAce'); assert.equal(previous.error_code, old.error_code);
+    assert.equal(previous.last_attempt_at, old.last_attempt_at); assert.equal(previous.next_check_at, old.next_check_at);
+    assert.equal(previous.consecutive_failures, old.consecutive_failures); assert.ok(previous.transitioned_at);
+    assert.equal(Object.hasOwn(previous, 'lease_token'), false);
+    assert.equal((await db.query('SELECT count(*) FROM club_mega_pig_observations')).rows[0].count, observations);
+    assert.equal((await claim()).acquired, false, 'Old workers cannot fetch BrawlAce on the new schedule');
+    const failed = (await finish(switched.token, null, 'rate_limited', 7200)).entry;
+    assert.equal(failed.consecutive_failures, 1); assert.equal(secondsBetween(failed.next_check_at, failed.last_attempt_at), 7200);
+    await event();
+    for (let i = 0; i < 3; i++) {
+      const again = await claimTools(); assert.equal(again.acquired, false);
+      assert.equal(again.entry.next_check_at, failed.next_check_at); assert.equal(again.entry.consecutive_failures, 1);
+      assert.deepEqual(again.entry.previous_provider_state, previous); assert.equal((await claim()).acquired, false);
+    }
+    await due(); const retry = await claimTools(), second = (await finish(retry.token, null, 'rate_limited', 20)).entry;
+    assert.equal(second.consecutive_failures, 2); assert.equal(secondsBetween(second.next_check_at, second.last_attempt_at), 3600);
+    assert.deepEqual(second.previous_provider_state, previous, 'The switch happens once and does not reset new-provider failures');
+  });
+  await t.test('an active old lease delays switching and an expired old worker cannot write after the transition', async () => {
+    await reset(); const old = await claim();
+    const before = (await db.query('SELECT to_jsonb(c) value FROM club_mega_pig_source_cache c')).rows[0].value;
+    const blocked = await claimTools(); assert.equal(blocked.acquired, false); assert.equal(blocked.entry.source_provider, 'BrawlAce');
+    assert.deepEqual((await db.query('SELECT to_jsonb(c) value FROM club_mega_pig_source_cache c')).rows[0].value, before);
+    await db.query("UPDATE club_mega_pig_source_cache SET lease_expires_at=clock_timestamp()-interval '1 second'");
+    const switched = await claimTools(); assert.equal(switched.acquired, true);
+    assert.equal((await finish(old.token)).accepted, false);
+    await assert.rejects(finish(switched.token, sample()), error => error.code === '22023', 'A payload must match its leased provider');
+    const saved = (await finish(switched.token, toolsSample())).entry;
+    assert.equal(saved.payload.source, 'BrawlTools'); assert.equal(saved.payload.reportedPlayersPlayed, null);
+    assert.equal(saved.payload.reportedBattlesPlayed, 128); assert.equal(secondsBetween(saved.next_check_at, saved.fetched_at), 1200);
+    const latest = (await db.query('SELECT payload FROM club_mega_pig_observations ORDER BY recorded_at DESC,id DESC LIMIT 1')).rows[0].payload;
+    assert.equal(latest.source, 'BrawlTools'); assert.equal(latest.reportedPlayersPlayed, null);
+    await due(); assert.equal((await claim()).acquired, false); assert.equal((await claimTools()).acquired, true);
+    await db.query("UPDATE settings SET value='#GGRR' WHERE key='club_tag'");
+    await assert.rejects(claimTools(), error => error.code === '40001');
+  });
   await t.test('input bounds fail closed and all cache mutation is restricted to service-only RPCs', async () => {
     await reset(); const acquired = await claim();
     for (const bad of [{ ...sample(), clubTag: '#GGRR' }, { ...sample(), members: {} }, { ...sample(), members: Array.from({ length: 31 }, () => sample().members[0]) }, { ...sample(), large: 'x'.repeat(65536) }]) {
       await assert.rejects(finish(acquired.token, bad), error => error.code === '22023');
     }
     for (const role of ['anon', 'authenticated', 'service_role']) {
-      for (const sql of ['SELECT * FROM public.club_mega_pig_source_cache', "INSERT INTO public.club_mega_pig_source_cache(club_tag) VALUES('#GGRR')", 'DELETE FROM public.club_mega_pig_source_cache', "SELECT public.claim_mega_pig_source_cache('#PYLQ','00000000-0000-4000-8000-000000000001')"]) {
-        if (role === 'service_role' && (sql.startsWith('SELECT *') || sql.startsWith('SELECT public.claim'))) continue;
+      for (const sql of ['SELECT * FROM public.club_mega_pig_source_cache', "INSERT INTO public.club_mega_pig_source_cache(club_tag) VALUES('#GGRR')", 'DELETE FROM public.club_mega_pig_source_cache', "SELECT public.claim_mega_pig_source_cache('#PYLQ','00000000-0000-4000-8000-000000000001')",
+        "SELECT public.claim_mega_pig_brawltools_cache('#PYLQ','00000000-0000-4000-8000-000000000001')",
+        "SELECT public.claim_mega_pig_provider_cache('#PYLQ','00000000-0000-4000-8000-000000000001','BrawlTools')"]) {
+        if (role === 'service_role' && (sql.startsWith('SELECT *') || (sql.startsWith('SELECT public.claim') && !sql.includes('provider_cache')))) continue;
         await db.query('BEGIN'); try { await db.query(`SET LOCAL ROLE ${role}`); await assert.rejects(db.query(sql), error => error.code === '42501'); } finally { await db.query('ROLLBACK'); }
       }
       if (role !== 'service_role') {
@@ -122,8 +182,8 @@ test('Mega Pig source cache privately coordinates durable cadence and preserves 
       }
     }
     await db.query('BEGIN'); try { await db.query('SET LOCAL ROLE service_role'); assert.equal((await finish(acquired.token)).accepted, true); } finally { await db.query('ROLLBACK'); }
-    const functions = (await db.query("SELECT prosecdef,proconfig FROM pg_proc WHERE pronamespace='public'::regnamespace AND proname IN('claim_mega_pig_source_cache','finish_mega_pig_source_cache')")).rows;
-    assert.equal(functions.length, 2); for (const fn of functions) { assert.equal(fn.prosecdef, true); assert.ok(fn.proconfig.includes('search_path=pg_catalog')); }
+    const functions = (await db.query("SELECT prosecdef,proconfig FROM pg_proc WHERE pronamespace='public'::regnamespace AND proname IN('claim_mega_pig_source_cache','claim_mega_pig_brawltools_cache','finish_mega_pig_source_cache')")).rows;
+    assert.equal(functions.length, 3); for (const fn of functions) { assert.equal(fn.prosecdef, true); assert.ok(fn.proconfig.includes('search_path=pg_catalog')); }
     assert.equal((await db.query("SELECT relrowsecurity FROM pg_class WHERE oid='public.club_mega_pig_source_cache'::regclass")).rows[0].relrowsecurity, true);
   });
   await t.test('the new private table is included in the existing bounded backup capture allowlist', async () => {

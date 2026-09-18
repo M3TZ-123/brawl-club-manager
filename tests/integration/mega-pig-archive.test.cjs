@@ -31,6 +31,10 @@ test('permanent Mega Pig archive keeps observed evidence separate from manually 
   const seededAt = at(-40);
   await db.query('INSERT INTO club_mega_pig_source_cache(club_tag,payload,previous_payload,fetched_at,last_attempt_at) VALUES($1,$2,$3,$4,$4)', [club, sample(), sample(80), seededAt]);
   await db.query(fs.readFileSync(path.join(root, 'supabase/migrations/202609160039_mega_pig_archive.sql'), 'utf8'));
+  const originalObservations = (await db.query('SELECT * FROM club_mega_pig_observations ORDER BY id')).rows;
+  for (const file of migrations.filter(file => file > '202609160039_mega_pig_archive.sql')) await db.query(fs.readFileSync(path.join(root, 'supabase/migrations', file), 'utf8'));
+  assert.deepEqual((await db.query('SELECT * FROM club_mega_pig_observations ORDER BY id')).rows, originalObservations,
+    'Adding provider provenance must not rewrite any existing observations or fetched times');
   const read = async (mode, id = null, player = null, offset = 0, connection = db, tag = club) =>
     (await connection.query('SELECT public.mega_pig_archive_read($1,$2,$3,$4,$5) value', [tag, mode, id, player, offset])).rows[0].value;
   const write = async (action, body, connection = db, tag = club) =>
@@ -50,10 +54,12 @@ test('permanent Mega Pig archive keeps observed evidence separate from manually 
   await t.test('migration seeds the existing82-win reading at its actual time and preserves an unknown-time previous reading', async () => {
     const result = await read('cycles'), readings = await read('readings');
     assert.equal(result.cycles.length, 0); assert.equal(result.observation_count, 2); assert.equal(result.latest_observation.total_wins, 82);
+    assert.equal(result.latest_observation.source, 'BrawlAce'); assert.equal(result.latest_observation.reported_battles_played, null);
     assert.equal(Date.parse(result.latest_observation.first_fetched_at), Date.parse(seededAt));
     assert.equal(readings.observations[1].first_fetched_at, null); assert.equal(readings.observations[1].last_fetched_at, null);
     const detail = await read('reading', readings.observations[1].id); assert.equal(detail.observation.origin, 'legacy_previous');
     assert.equal(detail.observation.payload.members[1].reportedWins, null);
+    assert.equal(Object.hasOwn(detail.observation.payload, 'source'), false, 'Legacy payload is preserved, source is projected');
   });
   await t.test('every successful cache finish archives atomically, consecutive identical readings only extend actual fetch times', async () => {
     const claim = async () => { await db.query("UPDATE club_mega_pig_source_cache SET next_check_at=clock_timestamp()-interval '1 second'"); const token = randomUUID();
@@ -62,6 +68,8 @@ test('permanent Mega Pig archive keeps observed evidence separate from manually 
     const initial = (await read('cycles')).latest_observation;
     await finish(await claim(), sample()); let latest = (await read('cycles')).latest_observation;
     assert.equal(latest.id, initial.id); assert.equal(Date.parse(latest.first_fetched_at), Date.parse(seededAt)); assert.ok(Date.parse(latest.last_fetched_at) > Date.parse(seededAt));
+    assert.equal(Object.hasOwn((await read('reading', initial.id)).observation.payload, 'source'), false,
+      'Extending a matching legacy reading must not replace its original payload');
     await finish(await claim(), sample(83)); latest = (await read('cycles')).latest_observation; assert.notEqual(latest.id, initial.id); assert.equal(latest.total_wins, 83);
     const count = (await read('cycles')).observation_count;
     await finish(await claim(), null, 'unavailable'); assert.equal((await read('cycles')).observation_count, count);
@@ -109,6 +117,60 @@ test('permanent Mega Pig archive keeps observed evidence separate from manually 
     const revision = (await db.query('SELECT before_snapshot,after_snapshot FROM club_mega_pig_cycle_revisions WHERE cycle_id=$1 AND version=$2', [saved.cycle_id, resumed.version])).rows[0];
     assert.equal(revision.before_snapshot.initial_observation_id, observed); assert.equal(revision.after_snapshot.initial_observation_id, lowered);
     await record(sample(7)); assert.equal((await read('cycle', saved.cycle_id)).cycle.reported_total_wins, 7);
+  });
+  await t.test('a different provider never silently changes an anchored cycle even when its total is equal or higher', async () => {
+    for (const total of [78, 82, 90]) {
+      await reset(); const observed = await record(), initial = input(observed), saved = await create(initial);
+      const before = await read('cycle', saved.cycle_id);
+      const payload = { ...sample(total), source: 'BrawlTools', reportedPlayersPlayed: null, reportedBattlesPlayed: 128,
+        id: 1, timestamp: 1789749903 };
+      const switched = await record(payload); let detail = await read('cycle', saved.cycle_id);
+      assert.notEqual(switched, observed); assert.equal(detail.cycle.reported_total_wins, 82);
+      assert.equal(detail.cycle.reported_players_played, 2); assert.equal(detail.cycle.capture_enabled, false);
+      assert.equal(detail.cycle.capture_paused_reason, 'source_changed'); assert.equal(detail.cycle.initial_observation_id, observed);
+      assert.equal(detail.cycle.finalized_at, null); assert.equal(detail.cycle.reward_status, 'unknown');
+      assert.deepEqual(detail.members, before.members, 'Provider changes do not overwrite member evidence before confirmation');
+      const reading = (await read('reading', switched)).observation;
+      assert.equal(reading.source, 'BrawlTools'); assert.equal(reading.reported_players_played, null);
+      assert.equal(reading.reported_battles_played, 128); assert.equal(reading.total_wins, total);
+      assert.equal(Object.hasOwn(reading.payload, 'id'), false); assert.equal(Object.hasOwn(reading.payload, 'timestamp'), false);
+      assert.equal((await read('reading', observed)).observation.source, 'BrawlAce');
+      const paused = { cycle_id: saved.cycle_id, version: detail.cycle.version };
+      await assert.rejects(edit(paused, initial), e => e.code === '22023' && e.message.includes('archive_reconfirmation_required'));
+      await assert.rejects(edit(paused, { ...initial, initialObservationId: switched }), e => e.code === '22023');
+      await edit(paused, { ...initial, initialObservationId: switched, notes: 'Confirmed both providers refer to the same cycle.' });
+      detail = await read('cycle', saved.cycle_id);
+      assert.equal(detail.cycle.capture_paused_reason, null); assert.equal(detail.cycle.capture_enabled, true);
+      assert.equal(detail.cycle.initial_observation_id, switched); assert.equal(detail.cycle.reported_total_wins, total);
+      assert.equal(detail.cycle.reported_players_played, null, '128 matches must never become a player count');
+      await record({ ...payload, totalWins: total + 1 });
+      assert.equal((await read('cycle', saved.cycle_id)).cycle.reported_total_wins, total + 1);
+      await record(sample(100)); detail = await read('cycle', saved.cycle_id);
+      assert.equal(detail.cycle.capture_paused_reason, 'source_changed', 'Changing back also requires confirmation');
+      assert.equal(detail.cycle.reported_total_wins, total + 1);
+      const revisions = (await db.query("SELECT * FROM club_mega_pig_cycle_revisions WHERE cycle_id=$1 AND action='pause_capture' ORDER BY version", [saved.cycle_id])).rows;
+      assert.equal(revisions.length, 2); assert.equal(revisions[0].after_snapshot.capture_paused_reason, 'source_changed');
+    }
+  });
+  await t.test('provider metadata is validated before saving and a battle count is never projected as participant count', async () => {
+    await reset();
+    const valid = { ...sample(), source: 'BrawlTools', reportedPlayersPlayed: null, reportedBattlesPlayed: 128 };
+    for (const changed of [{ source: null }, { source: 'Other' }, { source: {} }, { reportedPlayersPlayed: 128 }, { reportedPlayersPlayed: 2 },
+      { reportedPlayersPlayed: undefined }, { reportedBattlesPlayed: -1 }, { reportedBattlesPlayed: 1.5 }, { reportedBattlesPlayed: '128' },
+      { reportedBattlesPlayed: 81 }, { reportedBattlesPlayed: 30001 }, { totalWins: 30001 },
+      { source: 'BrawlAce', reportedPlayersPlayed: 2 }, { source: undefined },
+      { members: [{ playerTag: '#PYLR', playerName: 'Excessive', reportedWins: 1001, reportedTicketsRemaining: 0 }] }]) {
+      await assert.rejects(record({ ...valid, ...changed }), e => e.code === '22023', JSON.stringify(changed));
+    }
+    assert.equal((await read('cycles')).observation_count, 0);
+    const id = await record(valid); assert.equal(await record(valid), id, 'Equivalent readings from the same provider are deduplicated');
+    const memberReading = (await read('player', null, '#PYLR')).player_readings[0];
+    assert.equal(memberReading.observation.source, 'BrawlTools'); assert.equal(memberReading.observation.reported_battles_played, 128);
+    assert.equal(memberReading.observation.reported_players_played, null);
+    const unknown = await record({ ...valid, reportedBattlesPlayed: null });
+    assert.equal((await read('reading', unknown)).observation.reported_battles_played, null);
+    const ace = await record(sample()); assert.notEqual(ace, unknown);
+    assert.equal((await read('reading', ace)).observation.source, 'BrawlAce');
   });
   await t.test('future/ended windows and finalized cycles stop automatic capture without inventing final outcomes', async () => {
     await reset(); const observed = await record(), ended = input(observed, { startsAt: at(-5000), endsAt: at(-4000) });
@@ -196,6 +258,13 @@ test('permanent Mega Pig archive keeps observed evidence separate from manually 
     const readings = await fetch({ mode: 'readings' }); assert.equal(readings.observations[0].id, observed);
     const reading = await fetch({ mode: 'reading', id: observed }); assert.equal(reading.observation.members.find(m => m.playerTag === '#PYLU').reportedWins, null);
     const player = await fetch({ mode: 'player', player: '#PYLR' }); assert.equal(player.history[0].cycle.id, saved.id); assert.equal(player.playerReadings[0].member.reportedWins, 5);
+    const toolsObserved = await record({ ...sample(78), source: 'BrawlTools', reportedPlayersPlayed: null, reportedBattlesPlayed: 128 });
+    const toolsReading = (await fetch({ mode: 'reading', id: toolsObserved })).observation;
+    assert.equal(toolsReading.source, 'BrawlTools'); assert.equal(toolsReading.reportedPlayersPlayed, null); assert.equal(toolsReading.reportedBattlesPlayed, 128);
+    assert.equal((await fetch({ mode: 'cycles' })).latestObservation.source, 'BrawlTools');
+    assert.equal((await fetch({ mode: 'readings' })).observations[0].source, 'BrawlTools');
+    assert.equal((await fetch({ mode: 'player', player: '#PYLR' })).playerReadings[0].observation.reportedBattlesPlayed, 128);
+    assert.equal((await fetch({ mode: 'reading', id: observed })).observation.source, 'BrawlAce');
     const final = await service.mutateMegaPigArchive({ action: 'finalize_cycle', id: saved.id, version: saved.version, finalTotalWins: 82, confirmedStage: 5, rewardStatus: 'received', notes: '' });
     assert.equal((await fetch({ mode: 'cycle', id: saved.id })).cycle.rewardStatus, 'received');
     const reopened = await service.mutateMegaPigArchive({ action: 'reopen_cycle', id: saved.id, version: final.version, reason: 'ا'.repeat(2000) });

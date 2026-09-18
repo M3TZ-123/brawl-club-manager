@@ -32,11 +32,19 @@ function projectPayload(value: unknown, clubTag: string): MegaPigSourcePayload {
       reportedWins: member.reportedWins === null ? null : count(member.reportedWins, 1000),
       reportedTicketsRemaining: member.reportedTicketsRemaining === null ? null : count(member.reportedTicketsRemaining, 1000) };
   });
-  const totalWins = count(row.totalWins, 30000), reportedPlayersPlayed = count(row.reportedPlayersPlayed, members.length);
+  const source = row.source === undefined ? "BrawlAce" : row.source;
+  if (source !== "BrawlAce" && source !== "BrawlTools") return invalid();
+  const totalWins = count(row.totalWins, 30000);
+  const reportedPlayersPlayed = source === "BrawlTools" && row.reportedPlayersPlayed === null
+    ? null : count(row.reportedPlayersPlayed, members.length);
+  if (source === "BrawlTools" && reportedPlayersPlayed !== null) return invalid();
+  const reportedBattlesPlayed = row.reportedBattlesPlayed == null ? null : count(row.reportedBattlesPlayed, 30000);
+  if (source === "BrawlAce" && reportedBattlesPlayed !== null) return invalid();
+  if (reportedBattlesPlayed !== null && reportedBattlesPlayed < totalWins) return invalid();
   const knownWins = members.reduce((sum, member) => sum + (member.reportedWins ?? 0), 0);
   if (new Set(members.map(member => member.playerTag)).size !== members.length || knownWins > totalWins
     || (members.every(member => member.reportedWins !== null) && knownWins !== totalWins)) return invalid();
-  return { clubTag, totalWins, reportedPlayersPlayed, members };
+  return { clubTag, source, totalWins, reportedPlayersPlayed, reportedBattlesPlayed, members };
 }
 
 export async function readMegaPigSource(params: URLSearchParams): Promise<MegaPigSourceResponse> {
@@ -62,13 +70,15 @@ export async function readMegaPigSource(params: URLSearchParams): Promise<MegaPi
   });
   if (new Set(members.map(member => member.playerTag)).size !== members.length) return invalid();
   await assertAcceptedClubRoster(clubTag);
+  const sourceName = payload?.source ?? "BrawlTools";
   return {
     clubTag,
-    source: { name: "BrawlAce", url: `https://brawlace.com/clubs/${encodeURIComponent(clubTag)}`, official: false, cycleVerified: false, updatedAt: null },
+    source: { name: sourceName, url: sourceName === "BrawlAce" ? `https://brawlace.com/clubs/${encodeURIComponent(clubTag)}` : "https://brawltools.net", official: false, cycleVerified: false, updatedAt: null },
     status: payload ? (cached.stale || cached.errorCode ? "stale" : "available") : cached.refreshing ? "pending" : "unavailable",
     fetchedAt, lastAttemptAt: date(cached.lastAttemptAt, now), nextCheckAt: date(cached.nextCheckAt, Infinity),
     changedAt: date(cached.changedAt, now), updating: cached.refreshing === true,
     totalWins: payload?.totalWins ?? null, reportedPlayersPlayed: payload?.reportedPlayersPlayed ?? null,
+    reportedBattlesPlayed: payload?.reportedBattlesPlayed ?? null,
     matchedMembers: members.filter(member => lookup.has(member.playerTag)).length,
     sourceMembers: payload?.members.length ?? 0, rosterMembers: members.length, members,
   };
