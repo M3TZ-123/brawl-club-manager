@@ -1,76 +1,62 @@
-import brawlerIds from "./brawler-ids.json";
-import { battleModeAliases, normalizeBattleMode } from "./battle-catalog";
+import modes from "./battle-modes.json";
+import { normalizeBattleMode } from "./battle-catalog";
 import { getBrawlerPortraitUrl } from "./brawl-assets";
-import { mapMinTrophies, validMapId, type MapBrawlerStat, type MapEnrichment, type MapSource, type MapTrophyRange } from "./map-data";
+import { validMapId, type MapBrawlerStat, type MapSource, type MapStatsBand } from "./map-data";
 
-export type MapTarget = { mapId: number; mode: string; name: string };
-export type MapStatistics = Pick<MapEnrichment, "mapId" | "mode" | "minTrophies" | "statsUpdatedAt" | "statsPeriod" | "sampleSize" | "sampleUnit" | "brawlers" | "winRateKind">;
-export const MAP_STATS_SOURCE: MapSource = { name: "Brawl Time Ninja", url: "https://brawltime.ninja", official: false };
-export const MAP_STATS_LIMIT = 20_000;
-const ids = new Map(Object.entries(brawlerIds).map(([name, id]) => [name.toUpperCase(), { name, id }]));
-const resultModes = new Set(["gemGrab", "heist", "bounty", "brawlBall", "hotZone", "knockout", "wipeout", "duels", "basketBrawl", "volleyBrawl", "brawlHockey", "paintBrawl", "payload", "brawlArena",
-  "gemGrab5v5", "brawlBall5v5", "wipeout5v5", "knockout5v5", "brawlHockey5v5", "gemGrab2v2", "brawlBall2v2", "hotZone2v2", "knockout2v2", "basketBrawl2v2", "brawlHockey2v2"]);
+export const MAP_STATS_SOURCE: MapSource = { name: "BrawlTools", url: "https://api.brawltools.net/docs", official: false };
+type SourceBrawler = { id: number; name: string; winRate: number | null };
+export type SourceMap = { mapId: number; name: string; mode: string | null; mapTotalMatches: number | null; high: SourceBrawler[] | null; low: SourceBrawler[] | null };
+export type MapStatistics = { maps: SourceMap[]; sourceTimestamp: string | null };
+const modeKeys = new Map(modes.map(mode => [mode.id, mode.key]));
+const object = (value: unknown): Record<string, unknown> | null => value !== null && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : null;
+const count = (value: unknown): number | null => typeof value === "number" && Number.isSafeInteger(value) && value >= 0 ? value : null;
+const percent = (value: unknown): number | null => typeof value === "number" && Number.isFinite(value) && value >= 0 && value <= 100 ? value : null;
 
-/** Ninja groups by its own 14-day trophy period, not a game Ranked season. */
-export function mapStatisticsPeriod(now: number) {
-  const origin = Date.parse("2020-07-13T08:00:00Z"), duration = 14 * 86_400_000;
-  const end = origin + Math.ceil((now - origin) / duration) * duration;
-  return { start: new Date(end - duration).toISOString(), end: new Date(end).toISOString() };
+function brawlers(value: unknown): SourceBrawler[] | null {
+  if (value === undefined || value === null) return null;
+  if (!Array.isArray(value) || value.length > 10) return null;
+  const seen = new Set<number>(), duplicates = new Set<number>();
+  const rows = value.flatMap(value => {
+    const row = object(value), id = count(row?.brawlerId);
+    if (!row || id === null || id < 16_000_000 || id >= 17_000_000 || typeof row.brawlerName !== "string" || !row.brawlerName.trim() || row.brawlerName.length > 100) return [];
+    if (seen.has(id)) { duplicates.add(id); return []; }
+    seen.add(id);
+    return [{ id, name: row.brawlerName.trim(), winRate: percent(row.winRate) }];
+  });
+  return rows.filter(row => !duplicates.has(row.id));
 }
-export function mapStatisticsQuery(targets: MapTarget[], period: { start: string; end: string }, trophyRange: MapTrophyRange = "1000") {
-  const minTrophies = mapMinTrophies(trophyRange);
-  if (!targets.length || targets.length > 100 || targets.some(row => !validMapId(row.mapId) || typeof row.mode !== "string" || row.mode.length > 80
-    || typeof row.name !== "string" || !row.name || row.name.length > 160)) throw new Error("Invalid map targets");
-  return { measures: ["map.picks_measure", "map.winRate_measure", "map.winRateAdj_measure", "map.rank1Rate_measure", "map.timestamp_measure", "map.eventId_measure"],
-    dimensions: ["map.brawler_dimension", "map.mode_dimension", "map.map_dimension"],
-    filters: [{ or: targets.map(row => ({ and: [
-      { member: "map.map_dimension", operator: "equals", values: [row.name] },
-      { member: "map.mode_dimension", operator: "equals", values: [...new Set([row.mode, ...Object.keys(battleModeAliases).filter(alias => battleModeAliases[alias] === row.mode)]
-        .flatMap(mode => [mode, mode.replace(/(\d)v(\d)/g, "$1V$2")]))] },
-    ] })) }, { member: "map.season_dimension", operator: "equals", values: [period.end.slice(0, 10)] },
-    { member: "map.powerplay_dimension", operator: "equals", values: ["0"] },
-    // Verified Ninja buckets are individual-brawler trophies / 100, not account trophies.
-    ...(minTrophies === null ? [] : [{ member: "map.trophyRange_dimension", operator: "gte", values: [String(minTrophies / 100)] }])],
-    order: { "map.picks_measure": "desc" }, limit: MAP_STATS_LIMIT };
-}
-const count = (value: unknown): number | null => (typeof value === "number" || typeof value === "string" && /^\d+$/.test(value))
-  && Number.isSafeInteger(Number(value)) && Number(value) >= 0 ? Number(value) : null;
-const percent = (value: unknown): number | null => (typeof value === "number" || typeof value === "string" && /^(?:\d+(?:\.\d+)?|\.\d+)(?:[eE][+-]?\d+)?$/.test(value))
-  && Number.isFinite(Number(value)) && Number(value) >= 0 && Number(value) <= 1 ? Number(value) * 100 : null;
 
-export function normalizeMapStatistics(value: unknown, targets: MapTarget[], period: { start: string; end: string }, now: number, trophyRange: MapTrophyRange = "1000"): MapStatistics[] {
-  const minTrophies = mapMinTrophies(trophyRange);
-  const rows = value && typeof value === "object" ? (value as { data?: unknown }).data : null;
-  if (!Array.isArray(rows) || rows.length >= MAP_STATS_LIMIT) throw new Error("Incomplete map statistics");
-  const groups = new Map(targets.map(target => [`${target.mapId}:${target.mode}`, { target, identityConflict: false, seen: new Set<string>(), latest: null as string | null, total: 0, brawlers: [] as MapBrawlerStat[] }]));
-  for (const row of rows) {
-    if (!row || typeof row !== "object") throw new Error("Invalid map statistics");
-    const mapId = count(row["map.eventId_measure"]), rawMode = row["map.mode_dimension"], name = row["map.brawler_dimension"], picks = count(row["map.picks_measure"]);
-    if (!validMapId(mapId) || typeof rawMode !== "string" || typeof name !== "string" || !name.trim() || name.length > 100 || picks === null) throw new Error("Invalid map statistics");
-    const mode = normalizeBattleMode(rawMode), group = groups.get(`${mapId}:${mode}`);
-    // Ninja aggregates by name/mode and exposes any(event ID), not an ID
-    // dimension. A conflicting ID invalidates this target's whole denominator;
-    // dropping only those brawlers would inflate every remaining pick share.
-    for (const candidate of groups.values()) {
-      if (candidate.target.mode === mode && candidate.target.name === row["map.map_dimension"] && candidate.target.mapId !== mapId) candidate.identityConflict = true;
-    }
-    if (!group || row["map.map_dimension"] !== group.target.name) continue;
-    const normalized = name.trim().toUpperCase();
-    if (group.seen.has(normalized)) throw new Error("Duplicate map statistics");
-    group.seen.add(normalized);
-    const known = ids.get(normalized), showdown = mode.toLowerCase().includes("showdown");
-    const winRate = showdown ? percent(row["map.rank1Rate_measure"]) : resultModes.has(mode) ? percent(row["map.winRate_measure"]) : null;
-    const observed = typeof row["map.timestamp_measure"] === "string" ? Date.parse(row["map.timestamp_measure"]) : NaN;
-    if (Number.isFinite(observed) && observed >= Date.parse(period.start) && observed <= Math.min(now, Date.parse(period.end))) {
-      const at = new Date(observed).toISOString();
-      if (group.latest === null || at > group.latest) group.latest = at;
-    }
-    group.total += picks;
-    if (!Number.isSafeInteger(group.total)) throw new Error("Invalid map sample count");
-    group.brawlers.push({ id: known?.id ?? null, name: known?.name ?? name.trim(), imageUrl: getBrawlerPortraitUrl(known?.id, "borders"),
-      winRate, adjustedWinRate: !showdown && resultModes.has(mode) ? percent(row["map.winRateAdj_measure"]) : null, pickRate: null, sampleSize: picks });
-  }
-  return [...groups.values()].filter(group => !group.identityConflict).map(group => ({ mapId: group.target.mapId, mode: group.target.mode, minTrophies, statsUpdatedAt: group.latest, statsPeriod: period,
-    sampleSize: group.brawlers.length ? group.total : null, sampleUnit: "player_results", winRateKind: group.target.mode.toLowerCase().includes("showdown") ? "first_place" : resultModes.has(group.target.mode) ? "victory" : null,
-    brawlers: group.brawlers.map(row => ({ ...row, pickRate: group.total > 0 ? row.sampleSize! / group.total * 100 : null })) }));
+/** A compact projection keeps the single shared all-map cache below its size limit. */
+export function normalizeMapStatistics(value: unknown, now: number): MapStatistics {
+  const payload = object(value), rows = payload?.data;
+  if (!Array.isArray(rows) || rows.length > 3000) throw new Error("Invalid map statistics");
+  const timestamp = count(payload?.timestamp);
+  const sourceTimestamp = timestamp !== null && timestamp > 0 && timestamp * 1000 <= now ? new Date(timestamp * 1000).toISOString() : null;
+  const seen = new Set<number>(), duplicates = new Set<number>();
+  const maps = rows.flatMap(value => {
+    const row = object(value), metadata = object(row?.gameMode);
+    if (!row || !validMapId(row.id)) return [];
+    if (seen.has(row.id)) { duplicates.add(row.id); return []; }
+    seen.add(row.id);
+    if (typeof row.name !== "string" || !row.name.trim() || row.name.length > 160) return [];
+    const hasId = metadata !== null && Object.hasOwn(metadata, "scId"), hasHash = metadata !== null && Object.hasOwn(metadata, "scHash");
+    const byId = typeof metadata?.scId === "number" ? modeKeys.get(metadata.scId) : undefined;
+    const byHash = typeof metadata?.scHash === "string" && metadata.scHash.trim() && metadata.scHash.length <= 80 ? normalizeBattleMode(metadata.scHash) : null;
+    // A contradictory explicit mode must never be repaired by an artwork match.
+    const mode = hasId && !byId || hasHash && !byHash || byId && byHash && byId !== byHash ? "!conflicting-mode" : byId ?? byHash;
+    return [{ mapId: row.id, name: row.name.trim(), mode, mapTotalMatches: count(row.totalMatches), high: brawlers(row.winRateHigh), low: brawlers(row.winRateLow) }];
+  });
+  // Legacy malformed rows are isolated. Rates are source-provided, so removing
+  // an invalid identity never changes any other brawler's rate/denominator.
+  const result = { maps: maps.filter(row => !duplicates.has(row.mapId)), sourceTimestamp };
+  if (!result.maps.length) throw new Error("Map statistics temporarily empty");
+  if (new TextEncoder().encode(JSON.stringify(result)).byteLength > 1_500_000) throw new Error("Map statistics cache too large");
+  return result;
+}
+
+export function mapBandBrawlers(row: SourceMap, band: MapStatsBand): MapBrawlerStat[] | null {
+  if (band !== "high" && band !== "low") throw new Error("Invalid statistics band");
+  const values = row[band];
+  if (values === null) return null;
+  return values.map(value => ({ ...value, imageUrl: getBrawlerPortraitUrl(value.id, "borders"), pickRate: null, adjustedWinRate: null, sampleSize: null }));
 }

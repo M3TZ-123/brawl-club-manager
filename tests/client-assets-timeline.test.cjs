@@ -26,11 +26,11 @@ test("verified Cosmo portraits use its catalog-linked avatar while ordinary styl
 });
 
 test("map statistics apply the verified portrait without another upstream catalog request",()=>{
- const {normalizeMapStatistics}=loadTypeScript("src/lib/map-statistics.ts");
- const period={start:"2026-09-01T00:00:00Z",end:"2026-09-20T00:00:00Z"};
- const [result]=normalizeMapStatistics({data:[{"map.eventId_measure":15000007,"map.mode_dimension":"gemGrab","map.map_dimension":"Hard Rock Mine","map.brawler_dimension":"COSMO","map.picks_measure":1000,"map.winRate_measure":0.6,"map.timestamp_measure":"2026-09-18T12:00:00Z"}]},[{mapId:15000007,mode:"gemGrab",name:"Hard Rock Mine"}],period,Date.parse("2026-09-18T13:00:00Z"));
- assert.equal(result.brawlers[0].id,16000109);assert.equal(result.brawlers[0].imageUrl,"https://cdn.brawlify.com/profile-icons/regular/28001337.png");
- assert.equal(result.brawlers[0].sampleSize,1000);assert.equal(result.brawlers[0].winRate,60);
+ const {normalizeMapStatistics,mapBandBrawlers}=loadTypeScript("src/lib/map-statistics.ts");
+ const result=normalizeMapStatistics({data:[{id:15000007,name:"Hard Rock Mine",gameMode:{scId:48000000,scHash:"gemGrab"},totalMatches:1000,winRateHigh:[{brawlerId:16000109,brawlerName:"Cosmo",winRate:60}]}]},Date.parse("2026-09-18T13:00:00Z"));
+ const [brawler]=mapBandBrawlers(result.maps[0],"high");
+ assert.equal(brawler.id,16000109);assert.equal(brawler.imageUrl,"https://cdn.brawlify.com/profile-icons/regular/28001337.png");
+ assert.equal(brawler.sampleSize,null);assert.equal(brawler.winRate,60);
 });
 
 test("missing portrait IDs show an SVG without making an empty image request",async()=>{

@@ -63,16 +63,17 @@ async function main() {
   assert.ok(rivals.rivals.length<=5,'Rival comparison is bounded');
   assert.equal(typeof join.recruitment_open,'boolean');
   assert.ok(!Object.hasOwn(join,'applications'),'Application submissions remain private');
-  const maps = await get('/api/game-maps?trophies=1000');
-  assert.equal(maps.trophyRange, '1000', 'Map picks honor the selected trophy range');
-  assert.equal(maps.minTrophies, 1000);
+  const maps = await get('/api/game-maps?band=high');
+  assert.equal(maps.statsBand, 'high', 'Map picks use the requested source bracket');
   assert.ok(Array.isArray(maps.data) && maps.data.length > 0, 'Current maps are available');
   assert.ok(maps.data.some(map => map.imageUrl), 'Current map artwork is available');
   assert.ok(maps.data.some(map => map.brawlers.length > 0), 'Map statistics source is available on the deployed server');
   for (const map of maps.data) {
-    assert.equal(map.minTrophies, 1000, 'Map statistics do not mix trophy ranges');
+    assert.equal(map.statsBand, 'high', 'Map statistics do not mix source brackets');
+    assert.ok(map.mapTotalMatches === null || Number.isSafeInteger(map.mapTotalMatches) && map.mapTotalMatches >= 0, 'Map match totals are bounded');
     for (const brawler of map.brawlers) {
-      assert.ok(Number.isSafeInteger(brawler.sampleSize) && brawler.sampleSize >= 0, 'Brawler samples are available');
+      assert.equal(brawler.sampleSize, null, 'The map total is not substituted for an unknown brawler sample');
+      assert.equal(brawler.pickRate, null, 'Missing pick rates remain unavailable');
       for (const rate of [brawler.winRate, brawler.pickRate]) assert.ok(rate === null || Number.isFinite(rate) && rate >= 0 && rate <= 100, 'Map rates are bounded percentages');
     }
   }

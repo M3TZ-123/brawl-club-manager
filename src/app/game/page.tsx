@@ -9,8 +9,8 @@ import { fetchJsonCached } from "@/lib/client-data-cache";
 import { getBattleModeInfo } from "@/lib/battle-catalog";
 import { BattleModeIcon } from "@/components/battle-mode-icon";
 import { GameMapImage, GameMapPicks } from "@/components/game-map-detail";
-import { matchEventMap, type MapPickOrder } from "@/lib/map-recommendations";
-import type { MapSnapshot, MapTrophyRange } from "@/lib/map-data";
+import { matchEventMap } from "@/lib/map-recommendations";
+import type { MapSnapshot } from "@/lib/map-data";
 import { formatBrawlName } from "@/lib/brawl-text";
 import { gameRegions, type GameEvent, type GameRanking, type GameRegion, type GameRankingKind, type GameSnapshot } from "@/lib/game-data";
 
@@ -26,8 +26,6 @@ export default function GamePage() {
   const [clock,setClock] = useState<number | null>(null);
   const [maps, setMaps] = useState<MapSnapshot | null>(null);
   const [mapError, setMapError] = useState("");
-  const [pickOrder, setPickOrder] = useState<MapPickOrder>("pickRate");
-  const [trophyRange, setTrophyRange] = useState<MapTrophyRange>("1000");
   const mapRequests = useRef(0);
   const eventRequests = useRef(0);
   const rankRequests = useRef(0);
@@ -46,10 +44,14 @@ export default function GamePage() {
   }, [kind,region]);
   const loadMaps = useCallback((force = false) => {
     const request = ++mapRequests.current;
-    return fetchJsonCached<MapSnapshot>(`/api/game-maps?trophies=${trophyRange}`, { staleMs: 600_000, force, timeoutMs: 25_000 })
-      .then(value => { if (request === mapRequests.current && value.trophyRange === trophyRange) { setMaps(value); setMapError(""); } })
+    return fetchJsonCached<MapSnapshot>("/api/game-maps?band=high", { staleMs: 600_000, force, timeoutMs: 25_000 })
+      .then(value => {
+        if (request !== mapRequests.current) return;
+        if (value.statsBand !== "high") throw new Error("Unexpected map statistics band");
+        setMaps(value); setMapError("");
+      })
       .catch(() => { if (request === mapRequests.current) setMapError("Map images and recommendations are temporarily unavailable."); });
-  }, [trophyRange]);
+  }, []);
   useEffect(() => {
     if (view !== "rankings") return;
     const requests = rankRequests;
@@ -73,7 +75,7 @@ export default function GamePage() {
     return () => { requests.current++; detailsRequests.current++; clearInterval(timer); clearInterval(reload); document.removeEventListener("visibilitychange",refresh); };
   }, [loadEvents, loadMaps, view]);
   const rows = events?.data || [];
-  const matchingScope = maps?.trophyRange === trophyRange;
+  const matchingScope = maps?.statsBand === "high";
   return <LayoutWrapper><div className="space-y-8">
     <header><h1 className="text-2xl font-bold flex items-center gap-3"><Globe2 className="text-primary" />{t("Maps and rankings")}</h1></header>
     <div role="group" aria-label={t("Maps and rankings")} className="flex flex-wrap gap-2"><Button variant={view === "maps" ? "default" : "outline"} aria-pressed={view === "maps"} onClick={() => { setClock(Date.now()); setView("maps"); }}>{t("Current maps")}</Button><Button variant={view === "rankings" ? "default" : "outline"} aria-pressed={view === "rankings"} onClick={() => setView("rankings")}>{t("Trophy rankings")}</Button></div>
@@ -85,7 +87,7 @@ export default function GamePage() {
       {events?.fetchedAt && <p className="text-sm text-muted-foreground">{t("Rotation updated")}: {dateTime(events.fetchedAt)}</p>}
       {mapError && <p role="alert" className="text-sm text-amber-600 dark:text-amber-400">{t(mapError)}</p>}
       {matchingScope && maps?.stale && <p role="status" className="text-sm text-amber-600 dark:text-amber-400">{t("Map recommendations may be out of date.")}</p>}
-      {!!rows.length && <div className="flex flex-wrap items-center justify-between gap-3"><div className="flex flex-wrap gap-2" role="group" aria-label={t("Brawler recommendations")}><Button size="sm" variant={pickOrder === "winRate" ? "default" : "outline"} aria-pressed={pickOrder === "winRate"} onClick={() => setPickOrder("winRate")}>{t("Highest win rates")}</Button><Button size="sm" variant={pickOrder === "pickRate" ? "default" : "outline"} aria-pressed={pickOrder === "pickRate"} onClick={() => setPickOrder("pickRate")}>{t("Most played")}</Button></div><label className="flex flex-wrap items-center gap-2 text-sm"><span>{t("Brawler trophies")}</span><select value={trophyRange} onChange={e => { setMapError(""); setTrophyRange(e.target.value as MapTrophyRange); }} className="rounded-md border bg-background px-2 py-2"><option value="1000">{t("1,000+ trophies")}</option><option value="600">{t("600+ trophies")}</option><option value="all">{t("All trophy levels")}</option></select></label><details className="text-xs text-muted-foreground"><summary className="cursor-pointer">{t("Data sources")}</summary><div className="mt-2 max-w-md space-y-1"><p>{t("Map rotation: official Brawl Stars API. Map art: Brawlify.")}</p><p>{t("Recommendations use community battle statistics for the same map and mode.")}</p><a href="https://brawlapi.com" target="_blank" rel="noopener noreferrer" className="text-primary hover:underline">BrawlAPI / Brawlify</a></div></details></div>}
+      {!!rows.length && <details className="text-xs text-muted-foreground"><summary className="cursor-pointer">{t("Data sources")}</summary><div className="mt-2 max-w-md space-y-1"><p>{t("Map rotation: official Brawl Stars API. Map art: Brawlify.")}</p><p>{t("Brawler recommendations: BrawlTools higher bracket.")}</p><div className="flex flex-wrap gap-x-3 gap-y-1"><a href="https://brawlapi.com" target="_blank" rel="noopener noreferrer" className="text-primary hover:underline">BrawlAPI / Brawlify</a><a href="https://api.brawltools.net/docs" target="_blank" rel="noopener noreferrer" className="text-primary hover:underline">BrawlTools</a></div></div></details>}
       {events?.data && !rows.length && <p>{t("No events reported by the game")}</p>}
       <div className="grid xl:grid-cols-2 gap-5">{rows.map(event => {
         const mode = getBattleModeInfo(event.mode), now = clock ?? Date.parse(events!.fetchedAt!);
@@ -96,7 +98,7 @@ export default function GamePage() {
         return <article key={`${event.slotId}:${event.startTime}`} className="min-w-0 rounded-xl border bg-card p-4 sm:p-5 space-y-3">
           <p className="flex items-center gap-2 text-sm text-muted-foreground"><BattleModeIcon mode={mode} size={22} />{t(mode.label)}</p><h3 className="font-bold text-lg break-words">{event.map}</h3>
           <p className={expired ? "text-muted-foreground text-sm" : "text-primary text-sm"}>{expired ? t("Event ended") : t(upcoming ? "Starts in {hours}h {minutes}m" : "Ends in {hours}h {minutes}m", {hours,minutes})}</p>
-          <div className="grid grid-cols-1 sm:grid-cols-[minmax(100px,0.75fr)_minmax(0,1.5fr)] gap-3 sm:gap-4"><GameMapImage map={map} name={event.map} loading={!maps && !mapError} /><GameMapPicks map={matchingScope ? map : null} order={pickOrder} loading={!matchingScope && !mapError} /></div>
+          <div className="grid grid-cols-1 sm:grid-cols-[minmax(100px,0.75fr)_minmax(0,1.5fr)] gap-3 sm:gap-4"><GameMapImage map={map} name={event.map} loading={!maps && !mapError} /><GameMapPicks map={matchingScope && map?.statsBand === "high" ? map : null} loading={!matchingScope && !mapError} /></div>
           <Link href={`/analysis?map=${encodeURIComponent(event.map)}&mode=${encodeURIComponent(event.mode)}`} className="text-sm text-primary underline underline-offset-4">{t("Teammates on this map")}</Link>
         </article>;
       })}</div>
