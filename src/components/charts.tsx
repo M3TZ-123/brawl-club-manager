@@ -1,5 +1,6 @@
 "use client";
 import { T, useI18n } from "@/components/locale-provider";
+import { BarChart3, Flame, SquareCheck, Trophy, Zap } from "lucide-react";
 
 
 import {
@@ -422,7 +423,7 @@ export function ActivityCalendar({ battlesByDay }: ActivityCalendarProps) {
     <Card>
       <CardHeader className="flex flex-row items-center justify-between pb-2">
         <div className="flex items-center gap-2">
-          <span className="text-lg">📊</span>
+          <BarChart3 aria-hidden="true" className="h-5 w-5" />
           <CardTitle className="text-sm font-medium"><T text="ACTIVITY" /></CardTitle>
         </div>
         <div className="flex items-center gap-2 text-xs bg-orange-500/20 text-orange-400 px-3 py-1 rounded-full">
@@ -509,7 +510,7 @@ export function PowerLevelChart({ distribution, avgPower, maxedCount }: PowerLev
     <Card>
       <CardHeader className="pb-2">
         <div className="flex items-center gap-2">
-          <span className="text-yellow-500">⚡</span>
+          <Zap aria-hidden="true" className="h-4 w-4 text-yellow-500" />
           <CardTitle className="text-sm font-medium"><T text="BY POWER LEVEL" /></CardTitle>
         </div>
       </CardHeader>
@@ -581,7 +582,7 @@ export function TrackingStats({
       <CardHeader className="pb-2">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2">
-            <span className="text-green-400">☑</span>
+            <SquareCheck aria-hidden="true" className="h-4 w-4 text-green-400" />
             <CardTitle className="text-sm font-medium"><T text="TRACKING" /></CardTitle>
             <span className="text-xs bg-muted px-2 py-0.5 rounded"><T text="Last 25 battles" /></span>
           </div>
@@ -618,7 +619,7 @@ export function TrackingStats({
           
           <div className="flex justify-between col-span-2 pt-2 border-t border-border">
             <div className="flex items-center gap-1">
-              <span className="text-yellow-500">🏆</span>
+              <Trophy aria-hidden="true" className="h-4 w-4 text-yellow-500" />
               <span className="text-muted-foreground"><T text="Trophies" /></span>
             </div>
             <span className={`font-bold ${trophyChange >= 0 ? 'text-green-400' : 'text-red-400'}`}>
@@ -673,7 +674,7 @@ export function EnhancedTrackingStats({
       <CardHeader className="pb-2">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2">
-            <span className="text-green-400">☑</span>
+            <SquareCheck aria-hidden="true" className="h-4 w-4 text-green-400" />
             <CardTitle className="text-sm font-medium"><T text="TRACKING" /></CardTitle>
             <span className="text-xs bg-muted px-2 py-0.5 rounded"><T text="Last " />{totalDays} <T text=" days" /></span>
           </div>
@@ -735,14 +736,14 @@ export function EnhancedTrackingStats({
           {/* Row 6 - Trophy breakdown */}
           <div className="flex justify-between">
             <div className="flex items-center gap-1">
-              <span className="text-yellow-500">🏆</span>
+              <Trophy aria-hidden="true" className="h-4 w-4 text-yellow-500" />
               <span className="text-muted-foreground"><T text="Gained" /></span>
             </div>
             <span className="font-bold text-green-400">+{formatNumber(trophiesGained)}</span>
           </div>
           <div className="flex justify-between">
             <div className="flex items-center gap-1">
-              <span className="text-yellow-500">🏆</span>
+              <Trophy aria-hidden="true" className="h-4 w-4 text-yellow-500" />
               <span className="text-muted-foreground"><T text="Lost" /></span>
             </div>
             <span className="font-bold text-red-400">-{formatNumber(trophiesLost)}</span>
@@ -756,7 +757,7 @@ export function EnhancedTrackingStats({
           <div className="flex justify-between pt-2 border-t border-border">
             <span className="text-muted-foreground"><T text="Best Streak" /></span>
             <span className="font-bold">
-              <span className="text-orange-500">🔥</span> {bestStreak}
+              <Flame aria-hidden="true" className="me-1 inline h-4 w-4 text-orange-500" />{bestStreak}
             </span>
           </div>
         </div>

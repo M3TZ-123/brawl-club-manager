@@ -20,14 +20,6 @@ const knownModes = new Map(modes.map((mode) => [mode.key.toLowerCase(), mode]));
 // 38 = Trio Showdown); Brawlify adds its 48,000,000 namespace prefix.
 const knownModeIds = new Map(modes.map((mode) => [mode.id - 48_000_000, mode]));
 const aliases = new Map(Object.entries(battleModeAliases).map(([key, value]) => [key.toLowerCase(), value]));
-const modeIcons: Record<string, string> = {
-  gemGrab: "💎", heist: "🔓", bounty: "⭐", brawlBall: "⚽",
-  soloShowdown: "🏜️", duoShowdown: "👥", trioShowdown: "👥",
-  hotZone: "🔥", knockout: "💀", wipeout: "💥", duels: "⚔️",
-  basketBrawl: "🏀", volleyBrawl: "🏐", brawlHockey: "🏒",
-  paintBrawl: "🎨", payload: "📦", foodFight: "🍔", mechaGuard: "🤖",
-  combatCooking: "🍳", "hide&Seek": "👀", megaBoss: "👹", duoMegaBoss: "👹",
-};
 
 export function normalizeBattleMode(raw: string | null | undefined, modeId?: number | null): string {
   const identifiedMode = modeId != null ? knownModeIds.get(modeId) : undefined;
@@ -50,7 +42,6 @@ export function getBattleModeInfo(raw: string | null | undefined, modeId?: numbe
   return {
     key,
     label: known?.label ?? fallback,
-    icon: modeIcons[key] ?? modeIcons[key.replace(/\d+v\d+$/, "")] ?? "⚔️",
     imageUrl: known ? `https://cdn.brawlify.com/game-modes/regular/${known.id}.png` : null,
   };
 }

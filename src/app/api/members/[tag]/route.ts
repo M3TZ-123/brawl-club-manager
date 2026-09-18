@@ -10,6 +10,7 @@ import { fetchDailyStats } from "@/lib/reporting-data";
 import { executeSync, SyncError } from "@/lib/sync-service";
 import { rejectUnauthorizedAdminMutation } from "@/lib/admin-auth";
 import { PUBLIC_MEMBER_COLUMNS, publicMemberSnapshot, publicAuditSnapshot } from "@/lib/sync-public-snapshots";
+import { getBrawlerPortraitUrl } from "@/lib/brawl-assets";
 
 type RecentMatch = {
   battle_time: string;
@@ -176,7 +177,7 @@ export async function GET(
       highestTrophies: number | null;
       power: number;
       rank: number;
-      icon_url: string;
+      icon_url: string | null;
     }> = [];
     const playerTags: string[] = [];
 
@@ -262,7 +263,7 @@ export async function GET(
           highestTrophies: brawler.highest_trophies,
           power: brawler.power_level,
           rank: brawler.rank,
-          icon_url: `https://cdn.brawlify.com/brawlers/borders/${brawler.brawler_id}.png`,
+          icon_url: getBrawlerPortraitUrl(brawler.brawler_id, "borders"),
         }));
     }
 

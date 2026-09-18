@@ -39,6 +39,8 @@ import {
   UserSearch,
   CalendarDays,
   Flag,
+  Sun,
+  Moon,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -469,9 +471,9 @@ function SimpleHeader() {
           aria-label={t(theme === "dark" ? "Switch to light mode" : "Switch to dark mode")}
         >
           {theme === "dark" ? (
-            <span className="h-5 w-5">☀️</span>
+            <Sun aria-hidden="true" className="h-5 w-5" />
           ) : (
-            <span className="h-5 w-5">🌙</span>
+            <Moon aria-hidden="true" className="h-5 w-5" />
           )}
         </Button>
         
@@ -592,6 +594,10 @@ export function LayoutWrapper({ children }: { children: ReactNode }) {
           <SimpleHeader />
           <main className="p-4 md:p-6">
             {children}
+            <footer className="mt-8 flex flex-wrap items-center gap-x-2 gap-y-1 border-t pt-4 text-xs leading-relaxed text-muted-foreground">
+              <span><T text="Unofficial fan content; not endorsed by Supercell." /></span>
+              <a href="https://supercell.com/en/fan-content-policy/" target="_blank" rel="noopener noreferrer" className="text-primary underline underline-offset-4"><T text="Fan Content Policy" /></a>
+            </footer>
           </main>
         </div>
       </div>

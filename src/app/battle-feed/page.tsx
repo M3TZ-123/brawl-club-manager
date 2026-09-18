@@ -4,7 +4,7 @@ import { T, useI18n } from "@/components/locale-provider";
 
 import { useEffect, useState, useCallback, useMemo, useRef } from "react";
 import Image from "next/image";
-import { BrawlImage } from "@/components/brawl-image";
+import { BattleModeIcon } from "@/components/battle-mode-icon";
 import Link from "next/link";
 import { fetchJsonCached } from "@/lib/client-data-cache";
 import { getBrawlerIconFromMap } from "@/lib/brawl-assets";
@@ -228,7 +228,7 @@ function MatchCard({ match, clubTags, clockDelta, brawlerIconByName }: {
       {/* Match header */}
       <div className="flex flex-wrap items-center justify-between gap-2 px-4 py-2.5 border-b border-border/50">
         <div className="flex items-center gap-2">
-          {mode.imageUrl ? <BrawlImage fallback={mode.icon} src={mode.imageUrl} alt="" width={22} height={22} className="h-[22px] w-[22px] object-contain" /> : <span aria-hidden="true" className="text-lg">{mode.icon}</span>}
+          <BattleModeIcon mode={mode} size={22} />
           <div>
             <span className="text-sm font-semibold">{t(mode.label)}</span>
             <span className="text-xs text-muted-foreground ms-2">{match.map !== "unknown" ? match.map : ""}</span>
@@ -614,7 +614,7 @@ export default function BattleFeedPage() {
               <option value=""><T text="All Modes" /></option>
               {availableModes.map((mode) => (
                 <option key={mode.key} value={mode.key}>
-                  {mode.icon} {t(mode.label)}
+                  {t(mode.label)}
                 </option>
               ))}
             </select>

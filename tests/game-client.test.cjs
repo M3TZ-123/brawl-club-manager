@@ -5,6 +5,7 @@ test('game interface retains category controls and discards late ranking respons
   const renderer=hookRenderer();let finishGlobal;const global=new Promise(resolve=>{finishGlobal=resolve;});
   const snapshot=data=>({data,fetchedAt:'2026-09-16T12:00:00Z',stale:false,refreshing:false});
   const Page=loadTypeScript('src/app/game/page.tsx',{...componentMocks,react:renderer.react,'@/lib/client-data-cache':{fetchJsonCached:async url=>{
+    if(url.startsWith("/api/game-maps")) return {...snapshot([]),trophyRange:"1000",minTrophies:1000};
     if(url.includes('events'))return snapshot([{slotId:1,id:15000000,startTime:'2026-09-16T08:00:00Z',endTime:'2026-09-17T08:00:00Z',mode:'brawlBall',map:'Test map'}]);
     if(url.includes('region=TN'))return snapshot([{tag:'#PYLQ',name:'Tunisia fixture',rank:1,trophies:1000,memberCount:null,clubName:null}]);
     return global;
@@ -24,6 +25,7 @@ test('game marks expired events immediately on return to a visible tab while ref
   const document={visibilityState:'visible',addEventListener(type,listener){if(type==='visibilitychange')listeners.add(listener);},removeEventListener(type,listener){listeners.delete(listener);}};
   const snapshot=data=>({data,fetchedAt:'2026-09-16T12:00:00Z',stale:false,refreshing:false});
   const Page=loadTypeScript('src/app/game/page.tsx',{...componentMocks,react:renderer.react,'@/lib/client-data-cache':{fetchJsonCached:async url=>{
+    if(url.startsWith("/api/game-maps")) return {...snapshot([]),trophyRange:"1000",minTrophies:1000};
     requests.push(url);if(!url.includes('events'))return snapshot([]);
     if(++eventReads>1)return new Promise(()=>{});
     return snapshot([{slotId:1,id:15000000,startTime:'2026-09-16T08:00:00Z',endTime:'2026-09-16T12:01:00Z',mode:'brawlBall',map:'Expiry fixture'}]);
@@ -46,6 +48,7 @@ test('a late failed game refresh does not replace a more recent successful event
   const renderer=hookRenderer();let rejectOld,reads=0;const old=new Promise((resolve,reject)=>{rejectOld=reject;});
   const snapshot=data=>({data,fetchedAt:'2026-09-16T12:00:00Z',stale:false,refreshing:false});
   const Page=loadTypeScript('src/app/game/page.tsx',{...componentMocks,react:renderer.react,'@/lib/client-data-cache':{fetchJsonCached:async url=>{
+    if(url.startsWith("/api/game-maps")) return {...snapshot([]),trophyRange:"1000",minTrophies:1000};
     if(!url.includes('events'))return snapshot([]);if(++reads===1)return old;
     return snapshot([{slotId:1,id:15000000,startTime:'2026-09-16T08:00:00Z',endTime:'2026-09-17T08:00:00Z',mode:'brawlBall',map:'Fresh event fixture'}]);
   }}},{Date:FixedDate,document:{visibilityState:'visible',addEventListener(){},removeEventListener(){}},setInterval:()=>1,clearInterval(){}}).default;
@@ -59,6 +62,7 @@ test('failed rankings offer an immediate retry for the same selection with a pen
   const renderer=hookRenderer();let attempts=0,finish;const pending=new Promise(resolve=>{finish=resolve;});const calls=[];
   const snapshot=data=>({data,fetchedAt:'2026-09-16T12:00:00Z',stale:false,refreshing:false});
   const Page=loadTypeScript('src/app/game/page.tsx',{...componentMocks,react:renderer.react,'@/lib/client-data-cache':{fetchJsonCached:async(url,options)=>{
+    if(url.startsWith("/api/game-maps")) return {...snapshot([]),trophyRange:"1000",minTrophies:1000};
     if(url.includes('events'))return snapshot([]);calls.push({url,options});if(++attempts===1)throw Error('Unavailable');return pending;
   }}},{Date:FixedDate,document:{visibilityState:'visible',addEventListener(){},removeEventListener(){}},setInterval:()=>1,clearInterval(){}}).default;
   let tree=await renderer.render(Page);action(tree,'Trophy rankings')();tree=await renderer.render(Page);assert.match(textContent(tree),/Game data temporarily unavailable/);
@@ -77,6 +81,7 @@ test('game polls only the selected view and reopening Maps expires cached events
   const document={visibilityState:'visible',addEventListener(type,listener){if(type==='visibilitychange')listeners.add(listener);},removeEventListener(type,listener){listeners.delete(listener);}};
   const snapshot=data=>({data,fetchedAt:'2026-09-16T12:00:00Z',stale:false,refreshing:false});
   const Page=loadTypeScript('src/app/game/page.tsx',{...componentMocks,react:renderer.react,'@/lib/client-data-cache':{fetchJsonCached:async url=>{
+    if(url.startsWith("/api/game-maps")) return {...snapshot([]),trophyRange:"1000",minTrophies:1000};
     requests.push(url);
     if(!url.includes('events'))return snapshot([{tag:'#CLUB',name:'Saved ranking',rank:1,trophies:1000,memberCount:30,clubName:null}]);
     if(++eventReads>1)return new Promise(()=>{});
@@ -101,4 +106,29 @@ test('game polls only the selected view and reopening Maps expires cached events
   for(const timer of timers.values())timer.callback();await renderer.render(Page);
   assert.equal(requests.filter(url=>url.includes('kind=clubs')).length,rankingReads,'Reactivated Maps leave ranking polls paused');
   assert.match(textContent(tree),/Saved ranking/,'Switching views preserves already loaded data');
+});
+
+test('changing brawler trophies hides previous-rate rows and ignores a late response from another range',async()=>{
+  const renderer=hookRenderer();let finishHigh;
+  const high=new Promise(resolve=>{finishHigh=resolve;});
+  const snapshot=data=>({data,fetchedAt:'2026-09-16T12:00:00Z',stale:false,refreshing:false});
+  const details=(range,name)=>({...snapshot([{mapId:15000000,mode:'brawlBall',name:'Range fixture',imageUrl:null,brawlers:[{id:16000000,name}]}]),trophyRange:range,minTrophies:range==='all'?null:Number(range)});
+  const Page=loadTypeScript('src/app/game/page.tsx',{...componentMocks,react:renderer.react,'@/components/game-map-detail':{GameMapImage:'GameMapImage',GameMapPicks:'GameMapPicks'},'@/lib/client-data-cache':{fetchJsonCached:async url=>{
+    if(url.includes('kind=events'))return snapshot([{slotId:1,id:15000000,startTime:'2026-09-16T08:00:00Z',endTime:'2026-09-17T08:00:00Z',mode:'brawlBall',map:'Range fixture'}]);
+    if(url.includes('trophies=1000'))return high;
+    if(url.includes('trophies=600'))return details('600','Right range');
+    if(url.includes('trophies=all'))return new Promise(()=>{});
+    return snapshot([]);
+  }}},{Date:FixedDate,document:{visibilityState:'visible',addEventListener(){},removeEventListener(){}},setInterval:()=>1,clearInterval(){}}).default;
+  let tree=await renderer.render(Page);
+  elements(tree).find(node=>node.type==='select'&&node.props.value==='1000').props.onChange({target:{value:'600'}});
+  tree=await renderer.render(Page);
+  assert.equal(elements(tree).find(node=>node.type==='GameMapPicks').props.map.brawlers[0].name,'Right range');
+  finishHigh(details('1000','Wrong late range'));tree=await renderer.render(Page);
+  assert.equal(elements(tree).find(node=>node.type==='GameMapPicks').props.map.brawlers[0].name,'Right range');
+  elements(tree).find(node=>node.type==='select'&&node.props.value==='600').props.onChange({target:{value:'all'}});
+  tree=await renderer.render(Page);
+  const picks=elements(tree).find(node=>node.type==='GameMapPicks');
+  assert.equal(picks.props.map,null);assert.equal(picks.props.loading,true);
+  assert.equal(elements(tree).find(node=>node.type==='GameMapImage').props.map.name,'Range fixture','Independent artwork stays visible during range changes');
 });

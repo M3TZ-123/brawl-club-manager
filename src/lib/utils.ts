@@ -35,17 +35,6 @@ export function formatDateTime(date: Date | string): string {
   });
 }
 
-export function getActivityEmoji(status: "active" | "minimal" | "inactive"): string {
-  switch (status) {
-    case "active":
-      return "🟢";
-    case "minimal":
-      return "🟡";
-    case "inactive":
-      return "🔴";
-  }
-}
-
 export function getRankColor(rank: string): string {
   const lowerRank = rank.toLowerCase();
   if (lowerRank.includes("unranked")) return "text-muted-foreground";

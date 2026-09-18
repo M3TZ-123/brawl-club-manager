@@ -13,12 +13,40 @@ test("bundled brawler IDs resolve names without an HTTP catalog and preserve exp
  assert.equal(getBrawlerIconFromMap("Future unknown brawler",{}),null);
 });
 
+test("verified Cosmo portraits use its catalog-linked avatar while ordinary styles and explicit overrides stay intact",()=>{
+ const {getBrawlerPortraitUrl,getBrawlerIconFromMap}=loadTypeScript("src/lib/brawl-assets.ts");
+ const cosmo="https://cdn.brawlify.com/profile-icons/regular/28001337.png";
+ assert.equal(getBrawlerPortraitUrl(16000109),cosmo);assert.equal(getBrawlerPortraitUrl(16000109,"borders"),cosmo);
+ assert.equal(getBrawlerIconFromMap("COSMO",{}),cosmo);
+ assert.equal(getBrawlerIconFromMap("COSMO",{COSMO:"https://example.test/custom.png"}),"https://example.test/custom.png");
+ assert.equal(getBrawlerIconFromMap("Cosmo",{cosmo:"https://example.test/normalized.png"}),"https://example.test/normalized.png");
+ assert.equal(getBrawlerPortraitUrl(16000000),"https://cdn.brawlify.com/brawlers/borderless/16000000.png");
+ assert.equal(getBrawlerPortraitUrl(16000000,"borders"),"https://cdn.brawlify.com/brawlers/borders/16000000.png");
+ for(const id of [null,undefined,0,-1,1.5,NaN,Infinity,28001337])assert.equal(getBrawlerPortraitUrl(id),null);
+});
+
+test("map statistics apply the verified portrait without another upstream catalog request",()=>{
+ const {normalizeMapStatistics}=loadTypeScript("src/lib/map-statistics.ts");
+ const period={start:"2026-09-01T00:00:00Z",end:"2026-09-20T00:00:00Z"};
+ const [result]=normalizeMapStatistics({data:[{"map.eventId_measure":15000007,"map.mode_dimension":"gemGrab","map.map_dimension":"Hard Rock Mine","map.brawler_dimension":"COSMO","map.picks_measure":1000,"map.winRate_measure":0.6,"map.timestamp_measure":"2026-09-18T12:00:00Z"}]},[{mapId:15000007,mode:"gemGrab",name:"Hard Rock Mine"}],period,Date.parse("2026-09-18T13:00:00Z"));
+ assert.equal(result.brawlers[0].id,16000109);assert.equal(result.brawlers[0].imageUrl,"https://cdn.brawlify.com/profile-icons/regular/28001337.png");
+ assert.equal(result.brawlers[0].sampleSize,1000);assert.equal(result.brawlers[0].winRate,60);
+});
+
+test("missing portrait IDs show an SVG without making an empty image request",async()=>{
+ const renderer=hookRenderer();const {BrawlImage}=loadTypeScript("src/components/brawl-image.tsx",{react:renderer.react,"next/image":"Image","lucide-react":{ImageOff:"ImageOff"}});
+ const tree=await renderer.render(()=>BrawlImage({src:null,alt:"",width:48,height:48}));
+ assert.equal(tree.type,"span");assert.equal(tree.props["aria-hidden"],true);assert.equal(elements(tree).some(node=>node.type==="Image"),false);
+ assert.equal(elements(tree).some(node=>node.type==="ImageOff"),true);
+});
+
 test("failed images have a labeled stable-size fallback and a new URL is tried again",async()=>{
- const renderer=hookRenderer(); const {BrawlImage}=loadTypeScript("src/components/brawl-image.tsx",{react:renderer.react,"next/image":"Image"});
+ const renderer=hookRenderer(); const {BrawlImage}=loadTypeScript("src/components/brawl-image.tsx",{react:renderer.react,"next/image":"Image","lucide-react":{ImageOff:"ImageOff"}});
  let src="https://cdn.example/missing.png"; const render=()=>renderer.render(()=>BrawlImage({src,alt:"New brawler",width:32,height:32}));
  let tree=await render(); assert.equal(tree.type,"Image"); tree.props.onError(); tree=await render();
  assert.equal(tree.type,"span"); assert.equal(tree.props.role,"img"); assert.equal(tree.props["aria-label"],"New brawler");
- assert.equal(tree.props.style.width,32); assert.equal(textContent(tree),"N");
+ assert.equal(tree.props.style.width,32); assert.equal(tree.props.style.height,32); assert.equal(textContent(tree),"");
+ assert.equal(elements(tree).find(node=>node.type==="ImageOff").props["aria-hidden"],"true");
  src="https://cdn.example/available.png"; tree=await render(); assert.equal(tree.type,"Image"); assert.equal(tree.props.src,src);
 });
 

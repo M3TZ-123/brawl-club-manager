@@ -414,8 +414,4 @@ export const ar: Record<string, string> = {
   "• Member data synced to Supabase database": "• تُزامن بيانات الأعضاء مع قاعدة بيانات Supabase",
   "• Member joins the club": "• انضمام عضو إلى النادي",
   "• Member leaves the club": "• مغادرة عضو للنادي",
-  "⭐ Original": "⭐ عضو منذ بداية المتابعة",
-  "⭐ Original Member": "⭐ عضو منذ بداية المتابعة",
-  "🔄 Returned": "🔄 عاد إلى النادي",
-  "🔄 Returned (": "🔄 عاد إلى النادي ("
 };

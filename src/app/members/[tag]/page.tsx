@@ -6,6 +6,7 @@ import dynamic from "next/dynamic";
 import { use, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Image from "next/image";
 import { BrawlImage } from "@/components/brawl-image";
+import { BattleModeIcon } from "@/components/battle-mode-icon";
 import { TimeRangePicker } from "@/components/time-range-picker";
 import { TIME_RANGES, type TimeRangeKey, type TrophyPeriodMetric } from "@/lib/time-range";
 import { DataConfidenceNotice } from "@/components/sync-health";
@@ -21,8 +22,8 @@ import { fetchJsonCached, invalidateJsonCache } from "@/lib/client-data-cache";
 import { useAdminSession } from "@/hooks/use-admin-session";
 import { Member, ActivityLog, MemberHistory } from "@/types/database";
 import type { ActivityStatus } from "@/lib/activity-status";
-import { getActivityEmoji, getRankColor } from "@/lib/utils";
-import { getProfileIconUrl } from "@/lib/brawl-assets";
+import { getRankColor } from "@/lib/utils";
+import { getBrawlerPortraitUrl, getProfileIconUrl } from "@/lib/brawl-assets";
 import { clubRoleLabel } from "@/lib/club-role";
 import { describeBattleContext, getBattleModeInfo } from "@/lib/battle-catalog";
 import {
@@ -34,6 +35,7 @@ import {
   RefreshCw,
   ArrowLeft,
   Clock3,
+  Circle,
 } from "lucide-react";
 import Link from "next/link";
 
@@ -129,7 +131,7 @@ interface TopBrawler {
   highestTrophies: number | null;
   power: number;
   rank: number;
-  icon_url: string;
+  icon_url: string | null;
 }
 
 interface RecentMatch {
@@ -365,8 +367,8 @@ export default function MemberDetailPage({ params }: PageProps) {
                 <div>
                       <div className="flex items-center gap-2">
                         <h1 className="text-2xl font-bold">{member.player_name}</h1>
-                        <span className="text-lg" title={t(member.activity_status === "minimal" ? "Low activity" : member.activity_status)}>
-                          {getActivityEmoji(member.activity_status)}
+                        <span role="img" aria-label={t(member.activity_status === "minimal" ? "Low activity" : member.activity_status)} title={t(member.activity_status === "minimal" ? "Low activity" : member.activity_status)}>
+                          <Circle aria-hidden="true" className={`h-3 w-3 fill-current ${member.activity_status === "active" ? "text-green-500" : member.activity_status === "minimal" ? "text-yellow-500" : member.activity_status === "inactive" ? "text-red-500" : "text-muted-foreground"}`} />
                         </span>
                       </div>
                       <p className="text-muted-foreground"><bdi dir="ltr">{member.player_tag}</bdi></p>
@@ -483,7 +485,7 @@ export default function MemberDetailPage({ params }: PageProps) {
                       <div key={brawler.id} className="rounded-md border border-border/70 bg-card/50 p-3">
                         <div className="flex items-center gap-2 mb-2">
                           <BrawlImage
-                            src={brawler.icon_url}
+                            src={getBrawlerPortraitUrl(brawler.id, "borders") ?? brawler.icon_url}
                             alt={brawler.name}
                             width={36}
                             height={36}
@@ -531,7 +533,7 @@ export default function MemberDetailPage({ params }: PageProps) {
                           <div className="min-w-0">
                             <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5">
                               <span className={`text-sm font-medium ${result.className}`}>{<T text={result.label} />}</span>
-                              <span className="inline-flex items-center gap-1 text-sm text-muted-foreground">{mode.imageUrl ? <BrawlImage fallback={mode.icon} src={mode.imageUrl} alt="" width={16} height={16} className="h-4 w-4 object-contain" /> : <span aria-hidden="true">{mode.icon}</span>}{t(mode.label)}</span>
+                              <span className="inline-flex items-center gap-1 text-sm text-muted-foreground"><BattleModeIcon mode={mode} size={16} />{t(mode.label)}</span>
                               <span className="text-xs text-muted-foreground">{t(context.label)}</span>
                             </div>
                             <p className="text-xs text-muted-foreground truncate">

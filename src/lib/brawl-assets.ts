@@ -4,6 +4,17 @@ export const BRAWLIFY_CDN = "https://cdn.brawlify.com";
 // Small snapshot of Brawlify names/IDs; refresh with scripts/update-brawler-catalog.cjs.
 const brawlerIdByName = new Map(Object.entries(brawlerIds).map(([name, id]) => [normalizeBrawlerName(name), id]));
 
+// Checked 2026-09-18: /v1/brawlers/16000109 reports avatarId 28001337;
+// https://api.brawlapi.com/v1/icons identifies it as player_icon_cosmo.
+// Both brawler portraits return 404; the catalog's profile icon returns PNG 200.
+const portraitAvatarFallbacks: Readonly<Record<number, number>> = { 16000109: 28001337 };
+
+export function getBrawlerPortraitUrl(id: number | null | undefined, style: "borderless" | "borders" = "borderless") {
+  if (typeof id !== "number" || !Number.isSafeInteger(id) || id < 16_000_000 || id >= 17_000_000) return null;
+  const avatar = portraitAvatarFallbacks[id];
+  return avatar ? `${BRAWLIFY_CDN}/profile-icons/regular/${avatar}.png` : `${BRAWLIFY_CDN}/brawlers/${style}/${id}.png`;
+}
+
 const RANK_NAME_TO_ID: Record<string, number> = {
   "bronze i": 58000000,
   "bronze ii": 58000001,
@@ -55,7 +66,7 @@ export function getBrawlerIconFromMap(
   const normalized = iconMap[normalizeBrawlerName(brawlerName)];
   if (normalized) return normalized;
   const id = brawlerIdByName.get(normalizeBrawlerName(brawlerName));
-  return id == null ? null : `${BRAWLIFY_CDN}/brawlers/borderless/${id}.png`;
+  return getBrawlerPortraitUrl(id);
 }
 
 export function getRankIconUrl(rank: string | null | undefined) {

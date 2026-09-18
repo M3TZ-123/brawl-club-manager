@@ -1,7 +1,9 @@
 "use client";
 
 import { useRef, useState } from "react";
+import { Trophy } from "lucide-react";
 import { BrawlImage } from "@/components/brawl-image";
+import { getBrawlerPortraitUrl } from "@/lib/brawl-assets";
 import { LocalDate, useI18n } from "@/components/locale-provider";
 import { EquipmentList, ReportedEquipmentDetails } from "@/components/reported-equipment";
 import { useFeatureResource } from "@/components/use-feature-resource";
@@ -107,9 +109,9 @@ export function PlayerProgress({ playerTag, range }: { playerTag: string; range:
           {!data.collection.items.length && <p className="py-4 text-sm text-muted-foreground">{t("No brawlers match this search.")}</p>}
           <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 xl:grid-cols-6">
             {data.collection.items.map(brawler => <button key={brawler.id} type="button" onClick={() => setSelected(brawler)} className="flex min-w-0 flex-col items-center gap-2 rounded-lg border p-3 text-center hover:bg-muted focus-visible:outline-2 focus-visible:outline-ring">
-              <BrawlImage src={`https://cdn.brawlify.com/brawlers/borderless/${brawler.id}.png`} alt="" width={48} height={48} />
+              <BrawlImage src={getBrawlerPortraitUrl(brawler.id)} alt="" width={48} height={48} />
               <span className="max-w-full break-words text-sm font-semibold">{brawler.name}</span>
-              <span className="text-xs text-muted-foreground">{t("Power {level}", { level: unknownNumber(brawler.power) })} · {number(brawler.trophies)} 🏆</span>
+              <span className="inline-flex items-center gap-1 text-xs text-muted-foreground">{t("Power {level}", { level: unknownNumber(brawler.power) })} · <span className="sr-only">{t("Trophies")}: </span>{number(brawler.trophies)} <Trophy aria-hidden="true" className="h-3.5 w-3.5" /></span>
             </button>)}
           </div>
           {pageError === "collection" && <p role="alert" className="text-sm text-destructive">{t("More brawlers could not be loaded. Try again.")}</p>}

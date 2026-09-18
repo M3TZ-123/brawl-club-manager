@@ -1,3 +1,5 @@
+import { arGameAssets } from "./ar-game-assets";
+import { arMapPicks } from "./ar-map-picks";
 import { arCopyPlanning } from "./ar-copy-planning";
 import { arCopyInsights } from "./ar-copy-insights";
 import { arCopyManagement } from "./ar-copy-management";
@@ -31,7 +33,7 @@ export const intlLocale = (locale: Locale) => locale === "ar" ? "ar-TN" : "en-GB
 
 export function translate(text: string, locale: Locale, values: Record<string, string | number> = {}) {
   const key = text.trim();
-  const message = locale === "ar" ? arCopyPlanning[key] || arCopyInsights[key] || arCopyManagement[key] || arCopyCore[key] || arNotesDirectory[key] || arMemberNotes[key] || arRivalsPage[key] || arClubRanking[key] || arRivalsComparison[key] || arAnalysis[key] || arAnalysisTeammates[key] || arHistory[key] || arMegaPigArchive[key] || arMegaPigSource[key] || arMemberComparison[key] || arUx[key] || arUxAnalytics[key] || arUxPlanning[key] || arUxManagement[key] || arClubIntelligence[key] || arClubAdministration[key] || arClubPlanning[key] || arClubRivals[key] || arFeatures[key] || arGame[key] || arExtra[key] || ar[key] || key : key;
+  const message = locale === "ar" ? arGameAssets[key] || arMapPicks[key] || arCopyPlanning[key] || arCopyInsights[key] || arCopyManagement[key] || arCopyCore[key] || arNotesDirectory[key] || arMemberNotes[key] || arRivalsPage[key] || arClubRanking[key] || arRivalsComparison[key] || arAnalysis[key] || arAnalysisTeammates[key] || arHistory[key] || arMegaPigArchive[key] || arMegaPigSource[key] || arMemberComparison[key] || arUx[key] || arUxAnalytics[key] || arUxPlanning[key] || arUxManagement[key] || arClubIntelligence[key] || arClubAdministration[key] || arClubPlanning[key] || arClubRivals[key] || arFeatures[key] || arGame[key] || arExtra[key] || ar[key] || key : key;
   const translated = message.replace(/\{(\w+)\}/g, (match, name) => {
     const value = values[name];
     if (value === undefined) return match;

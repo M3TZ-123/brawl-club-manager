@@ -3,6 +3,7 @@
 import { useRef, useState } from "react";
 import Link from "next/link";
 import { BrawlImage } from "@/components/brawl-image";
+import { getBrawlerPortraitUrl } from "@/lib/brawl-assets";
 import { LayoutWrapper } from "@/components/layout-wrapper";
 import { LocalDate, useI18n } from "@/components/locale-provider";
 import { ReportedEquipmentDetails } from "@/components/reported-equipment";
@@ -59,7 +60,7 @@ export default function ReadinessPage() {
       <div className="flex flex-wrap gap-x-5 gap-y-2 text-sm"><p><strong>{number(data.total)}</strong> {t("Results")}</p><p className="text-muted-foreground">{t("Current members with saved brawlers: {count}", { count: data.members.filter(member => member.brawlersObserved > 0).length })}</p></div>
       {!data.rows.length && <p className="rounded-lg border p-6 text-sm text-muted-foreground">{t("No saved brawlers match these filters. Missing profiles are not assumed unprepared.")}</p>}
       <div className="grid gap-3 lg:grid-cols-2">{data.rows.map(row => <Card key={`${row.player.tag}:${row.brawler.id}`}><CardContent className="space-y-3 p-4">
-        <div className="flex min-w-0 items-center gap-3"><BrawlImage src={`https://cdn.brawlify.com/brawlers/borderless/${row.brawler.id}.png`} alt="" width={48} height={48} /><div className="min-w-0 flex-1"><h2 className="break-words font-semibold">{row.brawler.name}</h2><Link className="break-words text-sm text-primary hover:underline" href={`/members/${encodeURIComponent(row.player.tag)}`}>{row.player.name}</Link> <bdi dir="ltr" className="text-xs text-muted-foreground">{row.player.tag}</bdi></div><p className="shrink-0 rounded-md bg-muted px-2 py-1 text-sm">{t("Power {level}", { level: unknownNumber(row.powerLevel) })}</p></div>
+        <div className="flex min-w-0 items-center gap-3"><BrawlImage src={getBrawlerPortraitUrl(row.brawler.id)} alt="" width={48} height={48} /><div className="min-w-0 flex-1"><h2 className="break-words font-semibold">{row.brawler.name}</h2><Link className="break-words text-sm text-primary hover:underline" href={`/members/${encodeURIComponent(row.player.tag)}`}>{row.player.name}</Link> <bdi dir="ltr" className="text-xs text-muted-foreground">{row.player.tag}</bdi></div><p className="shrink-0 rounded-md bg-muted px-2 py-1 text-sm">{t("Power {level}", { level: unknownNumber(row.powerLevel) })}</p></div>
         <div className="flex flex-wrap items-center justify-between gap-2"><p className="text-sm">{t("Trophies")}: <strong>{unknownNumber(row.trophies)}</strong></p><p className="text-xs text-muted-foreground">{t("Last observed")}: <LocalDate value={row.observedAt} time /></p></div>
         <details className="border-t pt-3"><summary className="cursor-pointer text-sm font-medium">{t("Reported equipment and progress")}</summary><div className="mt-3 space-y-4"><dl className="grid grid-cols-2 gap-2 text-xs">{([["Official highest trophies", row.highestTrophies], ["Prestige", row.prestigeLevel], ["Current win streak", row.currentWinStreak], ["Best win streak", row.maxWinStreak]] as const).map(([label, value]) => <div key={label}><dt className="text-muted-foreground">{t(label)}</dt><dd className="mt-1">{unknownNumber(value)}</dd></div>)}</dl><ReportedEquipmentDetails {...row} /></div></details>
       </CardContent></Card>)}</div>

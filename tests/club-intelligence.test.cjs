@@ -144,6 +144,8 @@ test('club metadata history localizes admission values and hides numeric badge i
     '@/components/club-intelligence-panel': { ClubIntelligencePanel: 'Panel', useClubIntelligence: () => ({ data: result }) },
   });
   const tree = await renderer.render(() => ClubIdentity({ showHistory: true }));
-  assert.match(textContent(tree), /Club badge changed/); assert.doesNotMatch(textContent(tree), /80000123|80000456/);
+  assert.ok(elements(tree).some(node => node.props?.alt === 'Previous club badge' && node.props.src === 'https://cdn.brawlify.com/club-badges/regular/80000123.png'));
+  assert.ok(elements(tree).some(node => node.props?.alt === 'Recorded club badge' && node.props.src === 'https://cdn.brawlify.com/club-badges/regular/80000456.png'));
+  assert.doesNotMatch(textContent(tree), /80000123|80000456/);
   assert.ok(translated.includes('open')); assert.ok(translated.includes('closed'));
 });
