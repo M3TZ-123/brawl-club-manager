@@ -89,6 +89,7 @@ export async function GET(request?: Request) {
       active: activeCount,
       minimal: membersWithActivity.filter((member) => member.activity_status === "minimal").length,
       inactive: membersWithActivity.filter((member) => member.activity_status === "inactive").length,
+      unknown: membersWithActivity.filter((member) => member.activity_status === "unknown").length,
     };
 
     const report = {
@@ -100,6 +101,7 @@ export async function GET(request?: Request) {
         totalTrophies,
         avgTrophies: members.length > 0 ? Math.round(totalTrophies / members.length) : 0,
         activeMembers: activeCount,
+        unknownActivityMembers: activityDistribution.unknown,
         activityRate: members.length > 0 ? Math.round((activeCount / members.length) * 100) : 0,
         weeklyWins,
         weeklyBattles,

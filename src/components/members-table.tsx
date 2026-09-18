@@ -10,6 +10,7 @@ import { clubRoleLabel } from "@/lib/club-role";
 import { TIME_RANGES, type TimeRangeKey } from "@/lib/time-range";
 import { cn, getRankColor } from "@/lib/utils";
 import { getFallbackInitial, getProfileIconUrl, getRankIconUrl } from "@/lib/brawl-assets";
+import type { ActivityStatus } from "@/lib/activity-status";
 import {
   Table,
   TableBody,
@@ -36,7 +37,7 @@ import {
   Trophy,
 } from "lucide-react";
 
-export type ActivityStatus = "active" | "minimal" | "inactive";
+export type { ActivityStatus } from "@/lib/activity-status";
 type ActivityDisplayStatus = ActivityStatus | "unknown";
 
 export interface MemberWithGains extends Member {

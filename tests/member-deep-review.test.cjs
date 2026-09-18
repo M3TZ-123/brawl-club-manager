@@ -7,7 +7,7 @@ const member = (name = 'Initial', trophies = 1000) => ({ player_tag: '#PYLQ', pl
   highest_trophies: trophies, activity_status: 'active', trio_victories: 2, solo_victories: 1, duo_victories: 0 });
 const deferred = () => { let resolve; const promise = new Promise(done => { resolve = done; }); return { promise, resolve }; };
 
-function profileHarness() {
+function profileHarness(readOverride) {
   const renderer = hookRenderer(), reads = [], writes = [], listeners = new Map();
   let tag = '%23PYLQ';
   const recentMatches = Array.from({ length: 8 }, (_, index) => ({ battle_time: `2026-09-16T12:0${index}:00Z`, mode: 'gemGrab', result: 'victory', trophy_change: index }));
@@ -17,11 +17,13 @@ function profileHarness() {
     '@/components/player-progress': { PlayerProgress: 'PlayerProgress' }, '@/components/membership-timeline': { MembershipTimeline: 'MembershipTimeline' },
     '@/hooks/use-admin-session': { useAdminSession: () => ({ isAdmin: true }) },
     '@/lib/client-data-cache': { fetchJsonCached: async url => {
-      reads.push(url); const data = member(); data.player_tag = decodeURIComponent(new URL(url, 'http://fixture').pathname.split('/').at(-1));
+      reads.push(url);
+      if (readOverride) return readOverride(url, reads.length);
+      const data = member(); data.player_tag = decodeURIComponent(new URL(url, 'http://fixture').pathname.split('/').at(-1));
       data.player_name = new URL(url, 'http://fixture').searchParams.get('range');
       return { member: data, recentMatches };
     }, invalidateJsonCache() {} },
-  }, { window: { ...windowMock, addEventListener: (name, listener) => listeners.set(name, listener), removeEventListener: name => listeners.delete(name) },
+  }, { Error, console: { error() {} }, window: { ...windowMock, addEventListener: (name, listener) => listeners.set(name, listener), removeEventListener: name => listeners.delete(name) },
     fetch: (url) => { const pending = deferred(); writes.push({ url, ...pending }); return pending.promise; } }).default;
   return { reads, writes, listeners, setTag: value => { tag = value; }, render: () => renderer.render(() => Page({ params: { tag } })) };
 }
@@ -53,6 +55,37 @@ test('background profile refresh preserves expanded battles, but a new period re
   assert.ok(elements(tree).some(node => node.type === 'Badge' && textContent(node) === '8 of 8'));
   elements(tree).find(node => node.type === 'TimeRangePicker').props.onChange('90d'); tree = await page.render();
   assert.ok(elements(tree).some(node => node.type === 'Badge' && textContent(node) === '5 of 8'));
+});
+
+test('changing clubs clears the profile and private controls, and old reads cannot restore them after the new read fails', async () => {
+  const older = deferred(), latest = deferred();
+  const page = profileHarness(async (_url, count) => {
+    if (count === 1) return { member: member('Old club'), memberHistory: { first_seen: '2026-01-01' } };
+    if (count === 2) return older.promise;
+    await latest.promise; throw new Error('New club has no matching member');
+  });
+  let tree = await page.render();
+  assert.ok(elements(tree).some(node => node.type === 'MemberReviewButton'));
+  assert.ok(elements(tree).some(node => node.type === 'PlayerProgress'));
+  page.listeners.get('club-data-updated')(); await page.render();
+  page.listeners.get('club-data-updated')({ detail: { clubChanged: true } }); tree = await page.render();
+  assert.doesNotMatch(textContent(tree), /Old club/);
+  assert.equal(elements(tree).some(node => ['MemberReviewButton', 'MembershipTimeline', 'PlayerProgress'].includes(node.type)), false);
+  latest.resolve(); tree = await page.render();
+  assert.match(textContent(tree), /Could not load this member/);
+  older.resolve({ member: member('Old club late response') }); tree = await page.render();
+  assert.doesNotMatch(textContent(tree), /Old club/);
+  assert.equal(elements(tree).some(node => node.type === 'MemberReviewButton'), false);
+});
+
+test('an old club manual refresh cannot reload a new club profile with the same player tag', async () => {
+  const page = profileHarness(); let tree = await page.render();
+  const refreshing = action(tree, 'Refresh Stats')();
+  page.listeners.get('club-data-updated')({ detail: { clubChanged: true } }); tree = await page.render();
+  const readCount = page.reads.length;
+  page.writes[0].resolve({ ok: true }); await refreshing; tree = await page.render();
+  assert.equal(page.reads.length, readCount);
+  assert.ok(elements(tree).some(node => node.type === 'MemberReviewButton'), 'A successful new-scope read can show the shared player again');
 });
 
 test('an open member quick view follows roster updates and preserves its last snapshot on departure', async () => {
@@ -90,9 +123,14 @@ test('club changes immediately clear the current members and ignore an older can
     }, invalidateJsonCache() {} },
   }, { Error, console: { error() {} }, window: { ...windowMock, addEventListener: (name, listener) => listeners.set(name, listener), removeEventListener: name => listeners.delete(name) }, CustomEvent: class {} }).default;
   let tree = await renderer.render(Page);
+  elements(tree).find(node => node.type === 'MembersTable').props.onMemberSelect(member('Old club')); tree = await renderer.render(Page);
+  assert.equal(elements(tree).find(node => node.type === 'Sheet').props.open, true);
+  assert.ok(elements(tree).some(node => node.type === 'MemberReviewButton'));
   listeners.get('club-data-updated')({}); await renderer.render(Page);
   listeners.get('club-data-updated')({ detail: { clubChanged: true } }); tree = await renderer.render(Page);
   assert.equal(elements(tree).some(node => node.type === 'MembersTable'), false);
+  assert.equal(elements(tree).find(node => node.type === 'Sheet').props.open, false);
+  assert.equal(elements(tree).some(node => node.type === 'MemberReviewButton'), false, 'A previous club member must not keep private review controls mounted');
   latest.resolve(); tree = await renderer.render(Page);
   assert.equal(elements(tree).find(node => node.type === 'MembersTable').props.members[0].player_name, 'New club');
   older.resolve(); tree = await renderer.render(Page);

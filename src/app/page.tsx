@@ -20,6 +20,8 @@ import { ClubJoinSummary } from "@/components/club-join-summary";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Member, ClubEvent } from "@/types/database";
+import type { ActivityStatus } from "@/lib/activity-status";
+import { memberReviewActivityLabel } from "@/lib/member-review-labels";
 
 interface DashboardMember extends Member {
   trophies_24h: number | null;
@@ -27,12 +29,12 @@ interface DashboardMember extends Member {
   trophies_7d: number | null;
   trophies_30d: number | null;
   trophies_90d: number | null;
-  activity_status: "active" | "minimal" | "inactive";
+  activity_status: ActivityStatus;
   last_battle_at: string | null;
 }
 
 interface DashboardResponse {
-  summary: { totalMembers: number; totalTrophies: number; activeMembers: number; avgTrophies: number; trophyProgressKnownMembers?: number };
+  summary: { totalMembers: number; totalTrophies: number; activeMembers: number; unknownActivityMembers?: number; avgTrophies: number; trophyProgressKnownMembers?: number };
   topMembers: DashboardMember[];
   topGainers: DashboardMember[];
   attentionMembers: DashboardMember[];
@@ -77,7 +79,7 @@ function MemberSignalList({ members, range, attention = false, emptyText }: {
       </Link>
       <div className="shrink-0 text-end">
         {attention ? <div className="mb-1 flex items-center justify-end gap-2"><span className={`text-xs ${status === "inactive" ? "text-red-400" : status === "minimal" ? "text-amber-400" : "text-muted-foreground"}`}>
-          {t(status === "inactive" ? "Inactive" : status === "minimal" ? "Low activity" : "Active")}</span><MemberReviewButton member={member} initialRange={range} /></div>
+          {t(memberReviewActivityLabel(status))}</span><MemberReviewButton member={member} initialRange={range} /></div>
           : null}
         <p className={`text-sm font-medium ${change == null || change === 0 ? "text-muted-foreground" : change > 0 ? "text-green-500" : "text-red-400"}`}>
           {change == null ? t("Not enough history") : delta(change)}

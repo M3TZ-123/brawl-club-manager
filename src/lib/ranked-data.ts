@@ -5,6 +5,15 @@ const names = new Map(tiers.map(name => [name.toUpperCase(), name]));
 names.set("NONE", "Unranked");
 names.set("MASTERS", "Masters"); // Historical rank before the Masters divisions.
 
+/** Display order only; an unknown label does not establish a rank or Elo. */
+export function rankSortOrder(value: string | null | undefined): number | null {
+  const name = typeof value === "string" ? names.get(value.trim().replace(/\s+/g, " ").toUpperCase()) : undefined;
+  if (!name) return null;
+  // The historical undivided tier belongs above Legendary, alongside the
+  // first modern Masters division; it does not imply a particular Elo value.
+  return tiers.indexOf(name === "Masters" ? "Masters I" : name);
+}
+
 export type RankedSource = "profile" | "rnt" | "mixed";
 export type RankedFields = {
   rank_current?: string; rank_highest?: string; ranked_points?: number;

@@ -294,6 +294,7 @@ export default function SettingsPage() {
                         <li><T text="Active: battle or trophy change in the last 24 hours" /></li>
                         <li><T text="Low activity: last recorded activity between 24 and " />{effectiveInactivityThreshold} <T text=" hours ago" /></li>
                         <li><T text="Inactive: no recorded activity for more than " />{effectiveInactivityThreshold} <T text=" hours" /></li>
+                        <li><T text="Unknown: no valid activity evidence yet" /></li>
                       </ul>
                       </div>
                     </details>

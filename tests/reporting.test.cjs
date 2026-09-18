@@ -112,7 +112,8 @@ test("report activity is calculated now instead of trusting old is_active flags"
   const report = await (await load("src/app/api/reports/weekly/route.ts", fixture()).GET()).json();
   assert.equal(report.summary.activeMembers, 1);
   assert.equal(report.summary.activityRate, 33);
-  assert.deepEqual(report.activityDistribution, { active: 1, minimal: 1, inactive: 1 });
+  assert.equal(report.summary.unknownActivityMembers, 0);
+  assert.deepEqual(report.activityDistribution, { active: 1, minimal: 1, inactive: 1, unknown: 0 });
 });
 
 test("weekly UTC dates remain correct across year and leap-day boundaries", () => {
@@ -129,8 +130,37 @@ test("activity cutoffs use actual elapsed time and reject invalid future evidenc
   assert.equal(classifyActivity(new Date(ago(24)), now, 48), "active");
   assert.equal(classifyActivity(new Date(ago(48)), now, 48), "minimal");
   assert.equal(classifyActivity(new Date(ago(48.01)), now, 48), "inactive");
-  assert.equal(classifyActivity(new Date(ago(-24)), now, 48), "inactive");
-  assert.equal(classifyActivity(new Date("invalid"), now, 48), "inactive");
+  assert.equal(classifyActivity(new Date(ago(-24)), now, 48), "unknown");
+  assert.equal(classifyActivity(new Date("invalid"), now, 48), "unknown");
+  assert.equal(classifyActivity(null, now, 48), "unknown");
+  assert.equal(classifyActivity(undefined, now, 48), "unknown");
+  assert.equal(classifyActivity(now, new Date("invalid"), 48), "unknown");
+  assert.equal(classifyActivity(new Date(now.getTime() + 60_000), now, 48), "active");
+  assert.equal(classifyActivity(new Date(now.getTime() + 60_001), now, 48), "unknown");
+});
+
+test("new members and missing or corrupt activity remain unknown in reports and cannot become kick candidates", async () => {
+  const tables = fixture();
+  const added = ["#NEW", "#NULL", "#INVALID", "#FUTURE"];
+  tables.members.push(...added.map(player_tag => ({ player_tag, player_name: player_tag, trophies: 100, is_active: false })));
+  tables.member_history.push(...added.map(player_tag => ({ player_tag, is_current_member: true })));
+  tables.activity_summary.push(
+    { player_tag: "#NULL", last_activity_at: null },
+    { player_tag: "#INVALID", last_activity_at: "invalid" },
+    { player_tag: "#FUTURE", last_activity_at: ago(-24) },
+  );
+  const { appendMemberActivityMetrics } = load("src/lib/member-activity-metrics.ts", tables);
+  const members = await appendMemberActivityMetrics(tables.members.filter(member => added.includes(member.player_tag)), now);
+  assert.ok(members.every(member => member.activity_status === "unknown"));
+  assert.ok(members.every(member => member.trophies_24h === null));
+  const report = await (await load("src/app/api/reports/weekly/route.ts", tables).GET()).json();
+  assert.equal(report.summary.totalMembers, 7);
+  assert.equal(report.summary.unknownActivityMembers, 4);
+  assert.equal(report.summary.activityRate, 14, "The percentage still uses the full roster, with unknown evidence counted separately");
+  assert.deepEqual(report.activityDistribution, { active: 1, minimal: 1, inactive: 1, unknown: 4 });
+  assert.equal(Object.values(report.activityDistribution).reduce((sum, count) => sum + count, 0), report.summary.totalMembers);
+  const { insights } = await (await load("src/app/api/insights/route.ts", tables).GET()).json();
+  assert.deepEqual(insights.kickList.map(member => member.tag), ["#C"], "Valid old evidence still establishes inactivity");
 });
 
 test("member detail and roster agree when corrupt tracking dates coexist with real activity", async () => {

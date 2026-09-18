@@ -147,7 +147,7 @@ export function PlayerProgress({ playerTag, range }: { playerTag: string; range:
           <dl className="grid grid-cols-2 gap-3 text-sm">
             {([["Power", selected.power], ["Trophies", selected.trophies], ["Official highest trophies", selected.highestTrophies], ["Brawler rank", selected.rank], ["Prestige", selected.prestigeLevel], ["Current win streak", selected.currentWinStreak], ["Best win streak", selected.maxWinStreak]] as const).map(([label, value]) => <div key={label}><dt className="text-xs text-muted-foreground">{t(label)}</dt><dd className="font-semibold">{unknownNumber(value)}</dd></div>)}
           </dl>
-          <p className="text-xs text-muted-foreground">{t("Last observed")}: <LocalDate value={selected.lastCheckedAt} time /></p>
+          <p className="text-xs text-muted-foreground">{t("Saved on")}: <LocalDate value={selected.lastCheckedAt} time /></p>
           <EquipmentList label="Reported skin" items={selected.skin ? [selected.skin] : null} checkedAt={selected.fieldCheckedAt.skin} />
           <ReportedEquipmentDetails {...selected} />
           <section className="space-y-3 border-t pt-4"><h3 className="font-semibold">{t("Daily brawler history")}</h3><p className="text-xs text-muted-foreground">{t("Daily snapshots use UTC dates. Missing dates are not filled in.")}</p>

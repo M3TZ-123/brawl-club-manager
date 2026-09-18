@@ -131,6 +131,41 @@ function pageHarness({ isAdmin = false, members = fixtures } = {}) {
 }
 const names = tree => Array.from(find(tree, "MembersTable").props.members, member => member.player_name);
 
+test("current and best ranks sort by game tier with unknown ranks last in both directions", async () => {
+  const ordered = ["Unranked", "Bronze I", "Bronze III", "Silver II", "Gold I", "Diamond III", "Mythic II", "Legendary III", "Masters", "Masters II", "Masters III", "Pro"];
+  const roster = [...ordered].reverse().map((rank, index) => member(rank, { rank_current: rank, rank_highest: ordered[index] }));
+  roster.splice(2, 0, member("Missing", {}), member("Future", { rank_current: "Future tier", rank_highest: "Future tier" }));
+  const page = pageHarness({ members: roster });
+  let tree = await page.render();
+  find(tree, "MembersTable").props.onSort("rank_current"); tree = await page.render();
+  assert.deepEqual(names(tree), [...ordered].reverse().concat(["Missing", "Future"]));
+  find(tree, "MembersTable").props.onSort("rank_current"); tree = await page.render();
+  assert.deepEqual(names(tree), ordered.concat(["Missing", "Future"]));
+  find(tree, "MembersTable").props.onSort("rank_highest"); tree = await page.render();
+  assert.deepEqual(Array.from(find(tree, "MembersTable").props.members, row => row.rank_highest), [...ordered].reverse().concat([null, "Future tier"]));
+  find(tree, "MembersTable").props.onSort("rank_highest"); tree = await page.render();
+  assert.deepEqual(Array.from(find(tree, "MembersTable").props.members, row => row.rank_highest), ordered.concat([null, "Future tier"]));
+});
+
+test("missing activity stays No data and cannot by itself put a member in Needs Attention", async () => {
+  const page = pageHarness({ members: [
+    member("Unknown", { activity_status: "unknown", trophies_7d: null }),
+    member("Inactive", { activity_status: "inactive", trophies_7d: null }),
+    member("ObservedZero", { activity_status: "unknown", trophies_7d: 0 }),
+  ] });
+  let tree = await page.render();
+  quickFilter(tree, "Needs Attention")(); tree = await page.render();
+  assert.deepEqual(names(tree).sort(), ["Inactive", "ObservedZero"]);
+  quickFilter(tree, "All")(); action(tree, "Advanced Filters")(); tree = await page.render();
+  const activity = elements(tree).find(node => node.type === "select" && elements(node).some(option => option.type === "option" && option.props.value === "inactive"));
+  activity.props.onChange({ target: { value: "unknown" } }); tree = await page.render();
+  assert.deepEqual(names(tree).sort(), ["ObservedZero", "Unknown"]);
+  find(tree, "MembersTable").props.onMemberSelect(member("Unknown", { activity_status: "unknown", trophies_7d: null })); tree = await page.render();
+  const drawer = find(tree, "SheetContent");
+  assert.match(textContent(drawer), /No data/);
+  assert.doesNotMatch(textContent(drawer), /Inactive/);
+});
+
 test("members default to seven-day progress, with one progress column and period-aware summaries", async () => {
   const page = pageHarness();
   const tree = await page.render(), table = find(tree, "MembersTable");

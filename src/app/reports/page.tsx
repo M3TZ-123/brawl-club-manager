@@ -30,6 +30,7 @@ interface WeeklyReport {
     totalTrophies: number;
     avgTrophies: number;
     activeMembers: number;
+    unknownActivityMembers?: number;
     activityRate: number;
     weeklyWins: number;
     weeklyBattles: number;
@@ -39,7 +40,7 @@ interface WeeklyReport {
   topGainers: { playerTag: string; playerName: string; trophyChange: number }[];
   topLosers: { playerTag: string; playerName: string; trophyChange: number }[];
   topLosersMode?: "losses" | "lowest_progress";
-  activityDistribution: { active: number; minimal: number; inactive: number };
+  activityDistribution: { active: number; minimal: number; inactive: number; unknown?: number };
   recentEvents: { event_type: string; player_name: string; event_time: string }[];
   trophyTrend: { date: string; trophies: number | null }[];
 }
@@ -189,6 +190,7 @@ export default function ReportsPage() {
           <div class="stat">${escapeHtml(t("Total Trophies"))}: ${formatNumber(report.summary.totalTrophies)}</div>
           <div class="stat">${escapeHtml(t("Average Trophies"))}: ${formatNumber(report.summary.avgTrophies)}</div>
           <div class="stat">${escapeHtml(t("Active Members"))}: ${report.summary.activeMembers} (${report.summary.activityRate}%)</div>
+          ${(report.summary.unknownActivityMembers ?? 0) > 0 ? `<div class="stat">${escapeHtml(t("Activity unknown: {count}", { count: formatNumber(report.summary.unknownActivityMembers ?? 0) }))}</div>` : ""}
           
           <h2>${escapeHtml(t("Top Trophy Gainers"))}</h2>
           <p>${escapeHtml(t("Account trophy change"))} · ${escapeHtml(t(TIME_RANGES[selectedRange].label))}</p>
@@ -221,6 +223,7 @@ export default function ReportsPage() {
         { name: "Active", value: report.activityDistribution.active, color: "#22c55e" },
         { name: "Low activity", value: report.activityDistribution.minimal, color: "#eab308" },
         { name: "Inactive", value: report.activityDistribution.inactive, color: "#ef4444" },
+        { name: "Unknown", value: report.activityDistribution.unknown ?? 0, color: "#94a3b8" },
       ]
       : [],
     [report]
@@ -396,7 +399,14 @@ export default function ReportsPage() {
 
               {/* Recent Events */}
               <details className="rounded-lg border bg-card p-4" open={showCharts} onToggle={event => setShowCharts(event.currentTarget.open)}><summary className="cursor-pointer font-medium"><T text="Charts and current roster details" /></summary><div className="mt-4 space-y-4">
-                <dl className="grid grid-cols-2 gap-3 text-sm"><div><dt className="text-muted-foreground"><T text="Avg Trophies" /></dt><dd className="font-semibold">{formatNumber(report.summary.avgTrophies)}</dd></div><div><dt className="text-muted-foreground"><T text="Current activity" /></dt><dd className="font-semibold">{report.summary.activityRate}%</dd><dd className="text-xs text-muted-foreground">{report.summary.activeMembers} <T text=" active in the last 24 hours " /></dd></div></dl>
+                <dl className="grid grid-cols-2 gap-3 text-sm">
+                  <div><dt className="text-muted-foreground"><T text="Avg Trophies" /></dt><dd className="font-semibold">{formatNumber(report.summary.avgTrophies)}</dd></div>
+                  <div>
+                    <dt className="text-muted-foreground"><T text="Current activity" /></dt><dd className="font-semibold">{report.summary.activityRate}%</dd>
+                    <dd className="text-xs text-muted-foreground">{report.summary.activeMembers} <T text=" active in the last 24 hours " /></dd>
+                    {(report.summary.unknownActivityMembers ?? 0) > 0 && <dd className="text-xs text-muted-foreground">{t("Activity unknown: {count}", { count: formatNumber(report.summary.unknownActivityMembers ?? 0) })}</dd>}
+                  </div>
+                </dl>
                 {showCharts && <div className="grid gap-4 md:grid-cols-2"><ActivityPieChart data={activityData} />{report.trophyTrend.length > 0 && <PeriodTrophyChart dayBased points={report.trophyTrend.map(point => ({ recordedAt: `${point.date}T00:00:00.000Z`, trophies: point.trophies }))} />}</div>}
               </div></details>
               <details className="rounded-lg border bg-card p-4"><summary className="cursor-pointer font-medium"><T text="Club changes" /></summary>

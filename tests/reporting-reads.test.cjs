@@ -25,10 +25,31 @@ test("dashboard performs one snapshot read and preserves public summaries, unkno
   const response=await source.GET(request("7d")),body=await response.json();
   assert.equal(response.status,200);assert.equal(response.headers.get("cache-control"),"no-store");
   assert.deepEqual(JSON.parse(JSON.stringify(calls)),[{name:"report_dashboard_read",args:{p_days:7,p_now:timestamp}}]);
-  assert.deepEqual(body.summary,{totalMembers:1,totalTrophies:1000,activeMembers:0,avgTrophies:1000,trophyProgressKnownMembers:1});
+  assert.deepEqual(body.summary,{totalMembers:1,totalTrophies:1000,activeMembers:0,unknownActivityMembers:0,avgTrophies:1000,trophyProgressKnownMembers:1});
   assert.equal(body.topMembers[0].activity_status,"minimal");assert.equal(body.topMembers[0].trophies_30d,null);
   assert.equal(body.topGainers[0].trophies_7d,7);assert.equal(body.changeSummary.joins,1);assert.equal(body.syncStatus.lastSyncTime,timestamp);
   assert.doesNotMatch(JSON.stringify(body),/owner_user_id|private_future|PRIVATE|SECRET|scheduler_token|inactivityThreshold/);
+});
+
+test("dashboard and leaderboard preserve unknown evidence without inventing inactivity or no-progress warnings", async () => {
+  for (const evidence of [undefined, null, "invalid", "2026-09-17T12:00:00.000Z"]) {
+    const tables = fixture();
+    tables.activity_summary = evidence === undefined ? [] : [{ player_tag: "#A", last_activity_at: evidence }];
+    const dashboard = await (await route("dashboard", tables, []).GET(request("7d"))).json();
+    assert.equal(dashboard.summary.unknownActivityMembers, 1);
+    assert.equal(dashboard.summary.activeMembers, 0);
+    assert.equal(dashboard.topMembers[0].activity_status, "unknown");
+    assert.deepEqual(dashboard.attentionMembers, []);
+    assert.deepEqual(dashboard.noProgressMembers, []);
+    const leaderboard = await (await route("leaderboard", tables, []).GET(request("7d"))).json();
+    assert.equal(leaderboard.leaderboards.trophyLeaders[0].activityStatus, "unknown");
+  }
+  const tables = fixture();
+  tables.activity_summary[0].last_activity_at = null;
+  tables.activity_summary[0].trophies_7d = 0;
+  const dashboard = await (await route("dashboard", tables, []).GET(request("7d"))).json();
+  assert.equal(dashboard.attentionMembers[0].activity_status, "unknown");
+  assert.equal(dashboard.noProgressMembers[0].trophies_7d, 0, "A real zero trophy change remains visible independently of unknown activity");
 });
 
 test("leaderboard reads only its selected period with six smaller public lists and no retained-history substitutes",async()=>{

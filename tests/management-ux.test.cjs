@@ -31,6 +31,12 @@ test("configured settings prioritize activity while credential drafts stay mount
   }, { Error, window: windowMock }).default;
   let tree = await renderer.render(Page);
   assert.equal(elements(tree).find(node => node.type === "Tabs").props.defaultValue, "activity");
+  const activityHelp = elements(tree).find(node => node.type === "details" && textContent(node).startsWith("How activity is measured"));
+  assert.equal(elements(activityHelp).filter(node => node.type === "li").length, 4);
+  const unknownHelp = elements(activityHelp).find(node => node.type === "li" && textContent(node) === "Unknown: no valid activity evidence yet");
+  assert.ok(unknownHelp);
+  assert.equal(hasVisible(tree, unknownHelp), false, "Status definitions stay inside the existing collapsed help");
+  assert.equal(loadTypeScript("src/lib/i18n/messages.ts").translate(textContent(unknownHelp), "ar"), "غير معروف: لا يتوفر دليل صالح على النشاط بعد");
   const apiKey = field(tree, "settings-api-key");
   assert.equal(hasVisible(tree, apiKey), false);
   assert.equal(hasVisible(tree, field(tree, "settings-discord-webhook")), false);

@@ -11,6 +11,7 @@ interface StatsCardsProps {
   totalMembers: number;
   totalTrophies: number;
   activeMembers: number;
+  unknownActivityMembers?: number;
   avgTrophies: number;
 }
 
@@ -18,6 +19,7 @@ export const StatsCards = memo(function StatsCards({
   totalMembers,
   totalTrophies,
   activeMembers,
+  unknownActivityMembers = 0,
   avgTrophies,
 }: StatsCardsProps) {
   const { number: formatNumber, t } = useI18n();
@@ -39,6 +41,7 @@ export const StatsCards = memo(function StatsCards({
       value: activeMembers,
       icon: Activity,
       description: t("{percent}% active", {percent: totalMembers > 0 ? Math.round((activeMembers / totalMembers) * 100) : 0}),
+      activityUnknown: unknownActivityMembers > 0 ? t("Activity unknown: {count}", { count: formatNumber(unknownActivityMembers) }) : null,
       color: "text-green-500",
     },
     {
@@ -47,7 +50,7 @@ export const StatsCards = memo(function StatsCards({
       icon: TrendingUp,
       color: "text-purple-500",
     },
-  ], [activeMembers, avgTrophies, totalMembers, totalTrophies, formatNumber, t]);
+  ], [activeMembers, avgTrophies, totalMembers, totalTrophies, unknownActivityMembers, formatNumber, t]);
 
   return (
     <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
@@ -60,6 +63,7 @@ export const StatsCards = memo(function StatsCards({
           <CardContent className="p-4 pt-0">
             <div className="text-xl font-bold sm:text-2xl"><T text={card.value} /></div>
             {card.description && <p className="text-xs text-muted-foreground">{<T text={card.description} />}</p>}
+            {card.activityUnknown && <p className="text-xs text-muted-foreground">{card.activityUnknown}</p>}
           </CardContent>
         </Card>
       ))}

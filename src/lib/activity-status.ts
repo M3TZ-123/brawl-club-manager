@@ -1,4 +1,4 @@
-export type ActivityStatus = "active" | "minimal" | "inactive";
+export type ActivityStatus = "active" | "minimal" | "inactive" | "unknown";
 
 export function normalizeInactivityThreshold(value: unknown): number {
   const hours = typeof value === "number" ? value : Number.parseInt(String(value ?? ""), 10);
@@ -11,10 +11,10 @@ export function classifyActivity(
   thresholdHours = 48
 ): ActivityStatus {
   const timestamp = lastActivityAt?.getTime();
-  if (timestamp == null || !Number.isFinite(timestamp)) return "inactive";
+  if (timestamp == null || !Number.isFinite(timestamp)) return "unknown";
   const ageMs = now.getTime() - timestamp;
-  // Do not let corrupt future timestamps keep a player active indefinitely.
-  if (ageMs < -60_000) return "inactive";
+  // Missing or corrupt evidence cannot establish either activity or inactivity.
+  if (!Number.isFinite(ageMs) || ageMs < -60_000) return "unknown";
   if (ageMs <= 24 * 60 * 60 * 1000) return "active";
   if (ageMs <= normalizeInactivityThreshold(thresholdHours) * 60 * 60 * 1000) return "minimal";
   return "inactive";

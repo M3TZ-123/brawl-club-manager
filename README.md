@@ -22,7 +22,8 @@ The app supports Arabic/English with RTL, private administrator reviews, immutab
 ### 🎯 Activity Detection
 - **🟢 Active**: A recorded battle or nonzero trophy change within the last 24 hours.
 - **🟡 Minimal**: The latest such activity is older than 24 hours but within the configured inactivity threshold (48–168 hours).
-- **🔴 Inactive**: The latest activity is older than that threshold, or there is no valid recorded evidence of activity.
+- **🔴 Inactive**: The latest valid recorded activity is older than that threshold.
+- **⚪ No data**: Activity evidence is missing, invalid, or dated in the future. These members are not treated as inactive or included in inactivity alerts without valid older evidence.
 
 ### 📜 Member History
 - Track when members join/leave
@@ -126,7 +127,7 @@ The regression tests use isolated fixtures and mocked services. See [FIXES.md](F
 
 ### Scheduled operations
 
-GitHub Actions runs club sync every 30 minutes, notification delivery every 5 minutes, and an encrypted backup with restore verification daily. Each workflow also supports manual dispatch. GitHub may delay scheduled runs; the dashboard reports actual attempts and freshness.
+The Supabase scheduler in `supabase/operations/enable_adaptive_scheduler.sql` checks the roster every 2 minutes, with full profiles and battle logs due every 10 minutes and ranked data every 30 minutes by default. Notification delivery runs every 2 minutes on the alternating minute. Upstream cooldowns and an active sync lease can delay a check; the dashboard reports actual freshness. The GitHub sync workflow is manual only. GitHub Actions schedules an encrypted backup with restore verification daily at 03:23 UTC and also supports manual dispatch; scheduled runs may be delayed.
 
 Set repository secrets `VERCEL_APP_URL`, `CRON_SECRET`, and `BACKUP_ENCRYPTION_KEY`. The scheduler secret must match the private database setting `scheduler_token` or the existing server `CRON_SECRET` environment variable. Never put credentials in public settings, workflow source, URLs, or browser environment variables. Keep a separate secure copy of the backup encryption key; losing it makes the encrypted artifacts unusable.
 

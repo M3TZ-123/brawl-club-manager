@@ -1,5 +1,5 @@
 import { supabaseAdmin } from "@/lib/supabase-admin";
-import { classifyActivity, normalizeInactivityThreshold } from "@/lib/activity-status";
+import { classifyActivity, normalizeInactivityThreshold, type ActivityStatus } from "@/lib/activity-status";
 
 export type MemberActivityMetrics = {
   trophies_24h: number | null;
@@ -8,7 +8,7 @@ export type MemberActivityMetrics = {
   trophies_30d: number | null;
   trophies_90d: number | null;
   trophy_baselines: Record<string, string | null>;
-  activity_status: "active" | "minimal" | "inactive";
+  activity_status: ActivityStatus;
   last_battle_at: string | null;
 };
 

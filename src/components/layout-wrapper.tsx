@@ -131,16 +131,19 @@ function SimpleSidebar() {
         window.dispatchEvent(new CustomEvent("club-data-updated", {
           detail: { changes: data.changes, syncTime },
         }));
-        if (hasChanges && notificationsEnabled) {
-          // Show browser notification if permitted
-          if (Notification.permission === "granted") {
+        if (hasChanges && notificationsEnabled && typeof Notification !== "undefined") {
+          // A browser notification is optional; its failure must not change a successful sync.
+          try {
+            if (Notification.permission !== "granted") return;
             const joins = data.changes?.joins?.length || 0;
             const leaves = data.changes?.leaves?.length || 0;
-            let message = "";
-            if (joins > 0) message += `${joins} member(s) joined`;
-            if (joins > 0 && leaves > 0) message += ", ";
-            if (leaves > 0) message += `${leaves} member(s) left`;
-            new Notification("Club Update", { body: message, icon: "/favicon.ico" });
+            const message = [
+              joins > 0 ? t("Members joined: {count}", { count: joins }) : null,
+              leaves > 0 ? t("Members left: {count}", { count: leaves }) : null,
+            ].filter(Boolean).join(" · ");
+            new Notification(t("Club Update"), { body: message, icon: "/favicon.ico" });
+          } catch {
+            // Some browsers expose Notification but cannot construct one in this context.
           }
         }
       }

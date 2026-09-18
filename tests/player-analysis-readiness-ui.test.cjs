@@ -150,6 +150,8 @@ test("an hours deep link requests local time immediately and a delayed hours res
 test("readiness filters are current snapshots, pagination preserves filters and deduplicates player-brawler rows", async () => {
   const page = harness("src/app/readiness/page.tsx", params => params.has("offset") ? readiness({ rows: [row(), row(16000001)], nextOffset: null, total: 2 }) : readiness({ nextOffset: 24, total: 2 }));
   let tree = await page.render();
+  assert.match(textContent(tree), /Saved on/);
+  assert.doesNotMatch(textContent(tree), /Last observed/);
   assert.match(textContent(tree), /Power Unknown/); assert.match(textContent(tree), /Official highest trophiesUnknown/);
   assert.match(textContent(tree), /Latest saved profiles, not a historical period/);
   control(tree, "readiness-power").props.onChange({ target: { value: "9" } }); tree = await page.render();
@@ -235,6 +237,7 @@ test("player collection shows explicit unknown highest, preserves reported zero,
   assert.match(textContent(tree), /in detail for 7 days.*last observation per UTC day and season/);
   const choose = elements(tree).find(node => node.type === "button" && textContent(node).startsWith("Brawler 16000000"));
   assert.ok(choose); choose.props.onClick(); tree = await page.render();
+  assert.match(textContent(tree), /Saved on/);
   assert.equal(page.requests.at(-1).params.get("brawlerId"), "16000000");
   assert.equal(page.requests.at(-1).params.get("collectionLimit"), "1");
   assert.equal(page.requests.at(-1).params.get("collectionSearch"), "16000000");

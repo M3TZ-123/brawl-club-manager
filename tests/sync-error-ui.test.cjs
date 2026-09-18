@@ -71,3 +71,54 @@ test("retryable sync copy is localized and unrelated errors keep their existing 
   }
   for (const value of [null, {}, "database_timeout", { code: "sync_busy", error: "Existing message" }]) assert.equal(syncErrorMessage(value), null);
 });
+
+test("a successful sidebar sync remains successful when browser notifications are unsupported or unavailable", async () => {
+  const { translate } = loadTypeScript("src/lib/i18n/messages.ts");
+  for (const notificationMode of ["missing", "constructor throws", "supported"]) {
+    const renderer = hookRenderer(), alerts = [], syncing = [], syncTimes = [], events = [], notifications = [];
+    let invalidations = 0;
+    const store = {
+      clubTag: "#CLUB", apiKeyConfigured: true, isSyncing: false, sidebarOpen: true, notificationsEnabled: true,
+      setIsSyncing(value) { syncing.push(value); }, setLastSyncTime(value) { syncTimes.push(value); },
+      loadSettingsFromDB: async () => {}, setSidebarOpen() {}, toggleSidebar() {},
+    };
+    const storeHook = Object.assign(() => store, { getState: () => store });
+    const globals = {
+      window: { ...windowMock, matchMedia: () => ({ matches: false }), dispatchEvent: event => events.push(event) },
+      CustomEvent: class { constructor(type, options) { this.type = type; this.detail = options.detail; } },
+      console: { error() {} }, alert: message => alerts.push(message),
+      fetch: async () => Response.json({ timestamp: "2026-09-18T12:00:00Z", changes: { joins: ["#ONE"], leaves: ["#TWO"] } }),
+    };
+    if (notificationMode !== "missing") globals.Notification = class {
+      static permission = "granted";
+      constructor(title, options) {
+        if (notificationMode === "constructor throws") throw new Error("Use service worker notifications");
+        notifications.push({ title, ...options });
+      }
+    };
+    const loaded = loadTypeScript("src/components/layout-wrapper.tsx", {
+      ...componentMocks,
+      react: { ...renderer.react, createContext: () => ({ Provider: "Provider" }), useContext: () => ({ isOpen: true, close() {}, toggle() {} }) },
+      "next/navigation": { usePathname: () => "/members" },
+      "@/lib/store": { useAppStore: storeHook },
+      "@/hooks/use-admin-session": { useAdminSession: () => ({ isAdmin: true, isLoading: false }) },
+      "@/components/sync-health": { useSyncHealth() {} },
+      "@/components/locale-provider": { ...componentMocks["@/components/locale-provider"], useI18n: () => ({ t: (key, values) => translate(key, "ar", values) }) },
+      "@/lib/client-data-cache": { invalidateJsonCache() { invalidations++; } },
+    }, globals);
+    const outer = await renderer.render(() => loaded.LayoutWrapper({ children: null }));
+    const Sidebar = elements(outer).find(node => node.type?.name === "SimpleSidebar").type;
+    const tree = await renderer.render(Sidebar);
+    await elements(tree).find(node => node.props?.onClick && elements(node).some(child => child.type === "T" && child.props.text === "Sync Now")).props.onClick();
+    assert.deepEqual(alerts, [], notificationMode);
+    assert.deepEqual(syncing, [true, false]);
+    assert.deepEqual(syncTimes, ["2026-09-18T12:00:00Z"]);
+    assert.equal(invalidations, 1);
+    assert.equal(events.length, 1);
+    assert.equal(events[0].type, "club-data-updated");
+    if (notificationMode === "supported") {
+      assert.equal(notifications[0].title, "تحديث النادي");
+      assert.match(notifications[0].body, /الأعضاء المنضمون.*الأعضاء المغادرون/);
+    }
+  }
+});

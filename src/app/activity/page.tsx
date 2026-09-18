@@ -11,6 +11,7 @@ import { TimeRangePicker } from "@/components/time-range-picker";
 import { ClubActivityCalendar } from "@/components/club-activity-calendar";
 import type { ClubIntelligenceRange } from "@/lib/club-intelligence-types";
 import { TIME_RANGES, type TimeRangeKey } from "@/lib/time-range";
+import type { ActivityStatus } from "@/lib/activity-status";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
@@ -35,7 +36,7 @@ import {
   Filter,
 } from "lucide-react";
 
-type ActivityFilter = "all" | "active" | "minimal" | "inactive";
+type ActivityFilter = "all" | ActivityStatus;
 type RoleFilter = "all" | "president" | "vicepresident" | "senior" | "member";
 
 interface LeaderboardMember {
@@ -45,7 +46,7 @@ interface LeaderboardMember {
   trophies: number;
   highestTrophies: number;
   brawlersCount: number;
-  activityStatus: "active" | "minimal" | "inactive";
+  activityStatus: ActivityStatus;
   lastBattleAt: string | null;
   weekly: {
     battles: number;
@@ -111,6 +112,7 @@ const activityOptions: Array<{ value: ActivityFilter; label: string }> = [
   { value: "active", label: "Active" },
   { value: "minimal", label: "Low activity" },
   { value: "inactive", label: "Inactive" },
+  { value: "unknown", label: "No data" },
 ];
 
 function RankBadge({ rank }: { rank: number }) {

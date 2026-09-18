@@ -60,6 +60,7 @@ type RoleFilter = "all" | "president" | "vicepresident" | "senior" | "member";
 type ActivityFilter = "all" | ActivityStatus | "unknown";
 type MovementFilter = "all" | "positive" | "flat" | "unknown";
 import { rankMatches, type RankFilter } from "@/lib/rank-filter";
+import { rankSortOrder } from "@/lib/ranked-data";
 
 const ROLE_ORDER = ["president", "vicepresident", "senior", "member"];
 const ACTIVITY_ORDER: Record<ActivityFilter, number> = {
@@ -141,9 +142,9 @@ function getSortValue(member: MemberWithGains, key: MemberSortKey, timeRange: Ti
     case "win_rate":
       return member.win_rate;
     case "rank_current":
-      return member.rank_current?.toLowerCase() || null;
+      return rankSortOrder(member.rank_current);
     case "rank_highest":
-      return member.rank_highest?.toLowerCase() || null;
+      return rankSortOrder(member.rank_highest);
     case "trophies_24h":
       return member.trophies_24h ?? null;
     case "trophies_3d":
@@ -327,8 +328,13 @@ export default function MembersPage() {
 
   useEffect(() => {
     const handleClubDataUpdated = (event: Event) => {
-      if ((event as CustomEvent).detail?.clubChanged) { setMembers([]); setIsLoading(true); }
-      if (event instanceof CustomEvent && event.detail?.source === "members-page") {
+      const clubChanged = (event as CustomEvent).detail?.clubChanged === true;
+      if (clubChanged) {
+        memberLoadSequence.current++;
+        setMembers([]); setSelectedMember(null); setCopied(null); setIsLoading(true);
+        if (copyResetTimeoutRef.current) { window.clearTimeout(copyResetTimeoutRef.current); copyResetTimeoutRef.current = null; }
+      }
+      if (!clubChanged && event instanceof CustomEvent && event.detail?.source === "members-page") {
         return;
       }
       loadMembers(true);

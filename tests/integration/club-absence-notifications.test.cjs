@@ -57,6 +57,29 @@ test('accepted sync respects administrative alert exemptions without changing re
     }
   });
 
+  await t.test('the evidence migration preserves the current sync body except for the alert recipient guard', async () => {
+    const folder = path.join(root, 'supabase/migrations');
+    for (const file of fs.readdirSync(folder).filter(name => /^20260916\d{4}_.*\.sql$/.test(name) && name >= '202609160035_' && name < '202609160041_').sort()) {
+      await db.query(fs.readFileSync(path.join(folder, file), 'utf8'));
+    }
+    const before = (await db.query("SELECT pg_get_functiondef('public.commit_sync_snapshot(uuid,bigint,jsonb)'::regprocedure) value")).rows[0].value;
+    await db.query(fs.readFileSync(path.join(folder, '202609160041_inactivity_evidence.sql'), 'utf8'));
+    const after = (await db.query("SELECT pg_get_functiondef('public.commit_sync_snapshot(uuid,bigint,jsonb)'::regprocedure) value")).rows[0].value;
+    const oldSelection = 'FROM public.members WHERE player_tag=ANY(v_tags) AND NOT is_active AND NOT public.member_inactivity_exempt(v_run.club_tag,player_tag,v_now);';
+    const newSelection = `FROM public.members WHERE player_tag=ANY(v_tags) AND NOT is_active AND NOT public.member_inactivity_exempt(v_run.club_tag,player_tag,v_now)
+          AND EXISTS (SELECT 1 FROM public.member_activity_state s
+            WHERE s.player_tag=members.player_tag AND isfinite(s.last_activity_at)
+              AND s.last_activity_at<v_now-make_interval(hours=>v_threshold));`;
+    assert.notEqual(after, before);
+    assert.equal(after.replace(newSelection, oldSelection), before);
+    for (const role of ['anon', 'authenticated']) {
+      await db.query(`SET ROLE ${role}`);
+      try { await assert.rejects(db.query("SELECT commit_sync_snapshot(NULL,NULL,'{}')"), error => error.code === '42501'); }
+      finally { await db.query('RESET ROLE'); }
+    }
+    assert.equal((await db.query("SELECT has_function_privilege('service_role','public.commit_sync_snapshot(uuid,bigint,jsonb)','EXECUTE') allowed")).rows[0].allowed, true);
+  });
+
   let activeAbsence;
   await t.test('actual full outbox excludes active absences and recorded join grace, while all activity stays inactive', async () => {
     await db.query("INSERT INTO settings(key,value) VALUES('club_tag','#CLUB'),('notifications_enabled','true'),('inactivity_threshold','48'); INSERT INTO club_administration_settings(club_tag,grace_hours) VALUES('#CLUB',48)");
@@ -105,5 +128,28 @@ test('accepted sync respects administrative alert exemptions without changing re
   await t.test('notifications disabled prevents all new alert rows even when exemptions expire', async () => {
     await db.query("UPDATE settings SET value='false' WHERE key='notifications_enabled'; UPDATE notification_outbox SET created_at=now()-interval '25 hours' WHERE event_key LIKE 'inactive:#CLUB:%'");
     const before = await inactiveAlerts(); await run(); assert.equal((await inactiveAlerts()).length, before.length);
+  });
+
+  await t.test('a full30-member sync never alerts on missing, null, future or infinite evidence and still alerts on valid old activity', async () => {
+    const freshMembers = Array.from({ length: 30 }, (_, index) => ({ ...members[0], player_tag: `#TEST${index}`, player_name: `Test${index}` }));
+    members.splice(0, members.length, ...freshMembers);
+    body.club_snapshot.members = members.map(row => ({ tag: row.player_tag, name: row.player_name, role: row.role, trophies: row.trophies }));
+    await db.query("UPDATE settings SET value='true' WHERE key='notifications_enabled'; UPDATE club_administration_settings SET grace_hours=0 WHERE club_tag='#CLUB'; UPDATE notification_outbox SET created_at=now()-interval '25 hours' WHERE event_key LIKE 'inactive:#CLUB:%'");
+    for (let index = 0; index < 6; index++) {
+      await db.query("INSERT INTO members(player_tag,player_name,role,trophies,highest_trophies,is_active,last_updated) VALUES($1,$2,'member',100,100,false,now()-interval '10 days')", [members[index].player_tag, members[index].player_name]);
+    }
+    await db.query("INSERT INTO member_activity_state(player_tag,last_activity_at) VALUES('#TEST0',now()-interval '5 days'),('#TEST1',now()-interval '1 hour'),('#TEST2',now()+interval '1 day'),('#TEST3','-infinity'),('#TEST4','infinity'),('#TEST5',NULL)");
+    const beforeAlerts = await inactiveAlerts();
+    await run();
+    const afterAlerts = await inactiveAlerts();
+    assert.equal(afterAlerts.length, beforeAlerts.length + 1);
+    const embed = afterAlerts.at(-1).payload.embeds[0];
+    assert.equal(embed.title, '1 Inactive Member(s)');
+    assert.match(embed.description, /\(#TEST0\)/);
+    for (const row of members.slice(1)) assert.ok(!embed.description.includes(`(${row.player_tag})`));
+    assert.equal((await db.query('SELECT count(*)::int n FROM member_history WHERE is_current_member')).rows[0].n, 30);
+    assert.equal((await db.query("SELECT count(*)::int n FROM member_activity_state WHERE player_tag=ANY($1) AND last_activity_at IS NULL", [members.slice(5).map(row => row.player_tag)])).rows[0].n, 25);
+    await run();
+    assert.equal((await inactiveAlerts()).length, afterAlerts.length, 'Daily deduplication remains intact');
   });
 });

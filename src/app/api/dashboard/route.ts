@@ -15,6 +15,7 @@ interface DashboardSummary {
   totalMembers: number;
   totalTrophies: number;
   activeMembers: number;
+  unknownActivityMembers: number;
   avgTrophies: number;
   trophyProgressKnownMembers: number;
 }
@@ -38,7 +39,7 @@ function sortByTrophiesDesc(a: Member, b: Member) {
 }
 
 function sortByRisk(a: DashboardMember, b: DashboardMember, metric: TrophyPeriodMetric) {
-  const statusWeight = { inactive: 0, minimal: 1, active: 2 };
+  const statusWeight = { inactive: 0, minimal: 1, active: 2, unknown: 3 };
   const statusDiff = statusWeight[a.activity_status] - statusWeight[b.activity_status];
   if (statusDiff !== 0) return statusDiff;
   return getNumberMetric(a[metric]) - getNumberMetric(b[metric]);
@@ -63,6 +64,7 @@ export async function GET(request?: Request) {
       totalMembers: members.length,
       totalTrophies,
       activeMembers,
+      unknownActivityMembers: membersWithMetrics.filter(member => member.activity_status === "unknown").length,
       avgTrophies: members.length > 0 ? Math.round(totalTrophies / members.length) : 0,
       trophyProgressKnownMembers: membersWithMetrics.filter(member => member[metric] != null).length,
     };
@@ -76,7 +78,7 @@ export async function GET(request?: Request) {
       .sort((a, b) => sortByRisk(a, b, metric))
       .slice(0, 5);
     const attentionMembers = membersWithMetrics
-      .filter((member) => member.activity_status !== "active" || member[metric] === 0)
+      .filter((member) => member.activity_status === "inactive" || member.activity_status === "minimal" || member[metric] === 0)
       .sort((a, b) => sortByRisk(a, b, metric))
       .slice(0, 6);
 

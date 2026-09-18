@@ -22,6 +22,7 @@ import { fetchJsonCached, invalidateJsonCache } from "@/lib/client-data-cache";
 import { useAdminSession } from "@/hooks/use-admin-session";
 import { Member, ActivityLog, MemberHistory } from "@/types/database";
 import type { ActivityStatus } from "@/lib/activity-status";
+import { memberReviewActivityLabel } from "@/lib/member-review-labels";
 import { getRankColor } from "@/lib/utils";
 import { getBrawlerPortraitUrl, getProfileIconUrl } from "@/lib/brawl-assets";
 import { clubRoleLabel } from "@/lib/club-role";
@@ -194,6 +195,7 @@ export default function MemberDetailPage({ params }: PageProps) {
   const [loadError, setLoadError] = useState(false);
   const [refreshError, setRefreshError] = useState<string | null>(null);
   const loadSequence = useRef(0);
+  const memberScope = useRef(0);
   const [avatarError, setAvatarError] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
   const [isRefreshing, setIsRefreshing] = useState(false);
@@ -251,10 +253,24 @@ export default function MemberDetailPage({ params }: PageProps) {
 
   useEffect(() => {
     loadMemberData();
+    const requests = loadSequence;
+    return () => { requests.current++; };
   }, [loadMemberData]);
 
   useEffect(() => {
-    const handleClubDataUpdated = () => {
+    const scope = memberScope;
+    return () => { scope.current++; };
+  }, []);
+
+  useEffect(() => {
+    const handleClubDataUpdated = (event?: Event) => {
+      if ((event as CustomEvent<{ clubChanged?: boolean }> | undefined)?.detail?.clubChanged) {
+        memberScope.current++;
+        setMember(null); setMemberHistory(null); setActivityHistory([]); setLastBattleTime(null);
+        setBattleStats(null); setPowerDistribution(null); setEnhancedStats(null); setPeriod(undefined);
+        setTopBrawlers([]); setRecentMatches([]); setShowAllMatches(false); setObservationIntervalMs(undefined);
+        setRefreshError(null); setIsRefreshing(false); setIsLoading(true);
+      }
       loadMemberData(true);
     };
     window.addEventListener("club-data-updated", handleClubDataUpdated);
@@ -264,6 +280,8 @@ export default function MemberDetailPage({ params }: PageProps) {
   const handleRefresh = async () => {
     if (!isAdmin) return;
     const requestedMemberUrl = memberApiUrl;
+    const requestedScope = memberScope.current;
+    const isCurrentScope = () => activeMemberUrl.current === requestedMemberUrl && memberScope.current === requestedScope;
     setRefreshError(null);
     setIsRefreshing(true);
     let failureMessage = "Could not refresh this member. Please try again.";
@@ -278,13 +296,13 @@ export default function MemberDetailPage({ params }: PageProps) {
         throw new Error(failureMessage);
       }
       invalidateJsonCache(requestedMemberUrl);
-      if (activeMemberUrl.current !== requestedMemberUrl) return;
+      if (!isCurrentScope()) return;
       await loadMemberDataRef.current(true);
     } catch (error) {
-      if (activeMemberUrl.current === requestedMemberUrl) setRefreshError(failureMessage);
+      if (isCurrentScope()) setRefreshError(failureMessage);
       console.error("Error refreshing member:", error);
     } finally {
-      if (activeMemberUrl.current === requestedMemberUrl) setIsRefreshing(false);
+      if (isCurrentScope()) setIsRefreshing(false);
     }
   };
 
@@ -367,7 +385,7 @@ export default function MemberDetailPage({ params }: PageProps) {
                 <div>
                       <div className="flex items-center gap-2">
                         <h1 className="text-2xl font-bold">{member.player_name}</h1>
-                        <span role="img" aria-label={t(member.activity_status === "minimal" ? "Low activity" : member.activity_status)} title={t(member.activity_status === "minimal" ? "Low activity" : member.activity_status)}>
+                        <span role="img" aria-label={t(memberReviewActivityLabel(member.activity_status))} title={t(memberReviewActivityLabel(member.activity_status))}>
                           <Circle aria-hidden="true" className={`h-3 w-3 fill-current ${member.activity_status === "active" ? "text-green-500" : member.activity_status === "minimal" ? "text-yellow-500" : member.activity_status === "inactive" ? "text-red-500" : "text-muted-foreground"}`} />
                         </span>
                       </div>
