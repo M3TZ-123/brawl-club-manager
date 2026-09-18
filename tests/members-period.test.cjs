@@ -255,19 +255,19 @@ test("review analysis uses the chosen period without reloading or losing the pri
   let tree = await review.render();
   assert.equal(find(tree, "TimeRangePicker").props.value, "30d");
   assert.match(textContent(tree), /Trophy progress · Last 30 days: -10/);
-  assert.match(textContent(tree), /No trophy progress in the selected period/);
+  assert.doesNotMatch(textContent(tree), /Review reason|No trophy progress in the selected period/);
   assert.doesNotMatch(textContent(tree), /3-day progress/);
   find(tree, "textarea").props.onChange({ target: { value: "Unsaved private draft" } });
   find(tree, "select").props.onChange({ target: { value: "reviewed" } });
   find(tree, "TimeRangePicker").props.onChange("7d"); tree = await review.render();
   assert.match(textContent(tree), /Trophy progress · Last 7 days: \+20/);
-  assert.match(textContent(tree), /Review reason: Manual review/);
+  assert.doesNotMatch(textContent(tree), /Review reason/);
   assert.equal(find(tree, "textarea").props.value, "Unsaved private draft");
   assert.equal(find(tree, "select").props.value, "reviewed");
   find(tree, "TimeRangePicker").props.onChange("90d"); tree = await review.render();
   assert.match(textContent(tree), /Trophy progress · Last 90 days: Not enough history/);
   assert.equal(review.requests.length, 3, "Period selection must not reload the form or refetch all five available metrics");
-  await action(tree, "Save review")();
+  await action(tree, "Save note and follow-up")();
   const saved = JSON.parse(review.requests.at(-1).body);
   assert.equal(saved.notes, "Unsaved private draft");
   assert.equal(saved.status, "reviewed");
@@ -280,7 +280,7 @@ test("a failed private review read keeps the editing form and Save action unavai
     const tree = await review.render();
     assert.match(textContent(tree), /Review unavailable/, failure);
     assert.equal(elements(tree).some(element => element.type === "textarea"), false, failure);
-    assert.equal(elements(tree).some(element => element.props?.onClick && textContent(element) === "Save review"), false, failure);
+    assert.equal(elements(tree).some(element => element.props?.onClick && textContent(element) === "Save note and follow-up"), false, failure);
     assert.equal(review.requests.some(request => request.method === "PATCH"), false);
   }
 });
@@ -291,7 +291,7 @@ test("unavailable supporting activity never hides an existing private note", asy
     const tree = await review.render();
     assert.equal(find(tree, "textarea").props.value, "Saved note");
     assert.match(textContent(tree), /Activity details are unavailable/);
-    assert.equal(typeof action(tree, "Save review"), "function");
+    assert.equal(typeof action(tree, "Save note and follow-up"), "function");
   }
 });
 
@@ -310,7 +310,7 @@ test("retrying a failed review save preserves and resubmits the unsaved draft", 
   find(tree, "textarea").props.onChange({ target: { value: "Keep this private draft" } });
   find(tree, "select").props.onChange({ target: { value: "reviewed" } });
   tree = await review.render();
-  await action(tree, "Save review")(); tree = await review.render();
+  await action(tree, "Save note and follow-up")(); tree = await review.render();
   assert.match(textContent(tree), /Review unavailable/);
   await action(tree, "Retry")(); tree = await review.render();
   assert.equal(find(tree, "textarea").props.value, "Keep this private draft");
@@ -319,7 +319,7 @@ test("retrying a failed review save preserves and resubmits the unsaved draft", 
   const saved = review.requests.filter(request => request.method === "PATCH").map(request => JSON.parse(request.body));
   assert.equal(saved.length, 2);
   assert.ok(saved.every(body => body.notes === "Keep this private draft" && body.status === "reviewed"));
-  assert.match(textContent(tree), /Review saved/);
+  assert.match(textContent(tree), /Note and follow-up saved/);
 });
 
 test("fresh review data still shows possible history gaps and incomplete battle refreshes", async () => {

@@ -75,7 +75,7 @@ async function main() {
   const candidateDenied=await fetch(new URL('/api/recruitment',base),{signal:AbortSignal.timeout(30000)});
   assert.equal(candidateDenied.status,401,'Recruitment is admin-only');
   assert.equal(candidateDenied.headers.get('cache-control'),'no-store','Recruitment rejects shared caching');
-  for(const path of ['/api/member-administration','/api/club-administration','/api/recruitment/applications','/api/mega-pig-source','/api/mega-pig-archive']) {
+  for(const path of ['/api/member-reviews?include_history=1','/api/member-administration','/api/club-administration','/api/recruitment/applications','/api/mega-pig-source','/api/mega-pig-archive']) {
     const response=await fetch(new URL(path,base),{signal:AbortSignal.timeout(30000)});
     assert.equal(response.status,401,`${path} requires an administrator`);
     assert.equal(response.headers.get('cache-control'),'no-store',`${path} rejects shared caching`);

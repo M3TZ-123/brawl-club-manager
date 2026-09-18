@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { rejectUnauthorizedAdminMutation, rejectUnauthorizedAdminRequest } from "@/lib/admin-auth";
 import { loadMemberReviews, normalizeReviewTag, ReviewInputError, saveMemberReview } from "@/lib/member-reviews";
+import { loadMemberReviewHistorySummaries } from "@/lib/member-review-history";
 
 export const dynamic = "force-dynamic";
 
@@ -22,8 +23,13 @@ export async function GET(request: NextRequest) {
   const denied = rejectUnauthorizedAdminRequest(request);
   if (denied) return privateAuthResponse(denied);
   try {
-    const tagParam = new URL(request.url).searchParams.get("player_tag");
+    const params = new URL(request.url).searchParams;
+    const tagParam = params.get("player_tag");
     const tag = tagParam === null ? undefined : normalizeReviewTag(tagParam);
+    if (!tag && params.get("include_history") === "1") {
+      const [reviews, historySummaries] = await Promise.all([loadMemberReviews(), loadMemberReviewHistorySummaries()]);
+      return privateResponse({ reviews, historySummaries });
+    }
     const reviews = await loadMemberReviews(tag);
     return privateResponse(tag ? { review: reviews[0] || null } : { reviews });
   } catch (error) { return reviewError(error); }

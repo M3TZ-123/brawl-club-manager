@@ -131,32 +131,29 @@ export function MemberReviewSheet({ member, open, onOpenChange, initialRange = "
 
   const period = TIME_RANGES[range];
   const progress = context[period.metric];
-  const reason = context.activity_status === "inactive" ? "No recently recorded activity"
-    : context.activity_status === "minimal" ? "Low activity"
-    : progress == null ? "Not enough history"
-    : progress <= 0 ? "No trophy progress in the selected period" : "Manual review";
 
   return <Sheet open={open} onOpenChange={onOpenChange}><SheetContent side={direction === "rtl" ? "left" : "right"} className="w-full overflow-y-auto sm:max-w-lg">
     <SheetHeader><SheetTitle>{t("Member notes")}: <bdi>{member.player_name}</bdi></SheetTitle><SheetDescription><span className="player-tag">{member.player_tag}</span> · {t("Private notes and follow-ups for current and former members.")}</SheetDescription></SheetHeader>
     <div className="space-y-5 py-5">
       {loading ? <p role="status">{t("Loading...")}</p> : ready && <>
-        <label className="block space-y-2"><span className="font-semibold">{t("Member notes / departure reason")}</span><textarea aria-label={t("Member notes / departure reason")} placeholder={t("For example: left to join friends; removed for inactivity on 16 September.")} maxLength={1000} disabled={saving} value={notes} onChange={event => { setNotes(event.target.value); setSaved(false); }} rows={6} className="w-full rounded border bg-background p-3" /><span className="block text-xs text-muted-foreground">{t("Only administrators can read these notes.")} {t("Departure reasons are entered manually; the game does not report who left or was kicked.")}</span></label>
-        {member.last_left_at && <p className="text-sm">{t("Last recorded departure")}: <LocalDate value={member.last_left_at} time /></p>}
-        {contextUnavailable && <p role="status" className="text-sm text-muted-foreground">{t("Activity details are unavailable. You can still edit this member's notes.")}</p>}
-        {possibleGap && <p role="status" className="rounded border border-amber-500/30 bg-amber-500/10 p-3 text-sm">{t("A possible gap remains in the recorded battle history.")} {t("A fresh fetch does not recover earlier battles that may be absent. Review recorded activity with this limitation in mind.")}</p>}
-        {stale && <p role="status" className="rounded border border-amber-500/30 bg-amber-500/10 p-3 text-sm">{t("Data is stale. Refresh the club before judging inactivity.")}</p>}
-        <label className="block space-y-2"><span>{t("Review status")}</span><select disabled={saving} className="h-10 w-full rounded border bg-background px-3" value={status} onChange={event => { setStatus(event.target.value as MemberReview["status"]); setSaved(false); }}>{(["pending", "reviewed", "follow_up"] as const).map(value => <option key={value} value={value}>{t(memberReviewStatusLabel(value))}</option>)}</select></label>
+        <label className="block space-y-2"><span className="font-semibold">{t("Current note")}</span><textarea aria-label={t("Current note")} placeholder={t("Write the context you want to remember about this member.")} maxLength={1000} disabled={saving} value={notes} onChange={event => { setNotes(event.target.value); setSaved(false); }} rows={4} className="w-full rounded border bg-background p-3" /><span className="block text-xs text-muted-foreground">{t("Only administrators can read these notes.")} {t("This note is editable. Save decisions and departure reasons in the dated history below.")}</span></label>
+        <label className="block space-y-2 text-sm"><span>{t("Review status")}</span><select disabled={saving} className="h-10 w-full rounded border bg-background px-3" value={status} onChange={event => { setStatus(event.target.value as MemberReview["status"]); setSaved(false); }}>{(["pending", "reviewed", "follow_up"] as const).map(value => <option key={value} value={value}>{t(value === "pending" ? "Not reviewed" : memberReviewStatusLabel(value))}</option>)}</select></label>
         {status === "follow_up" && <label className="block space-y-2"><span>{t("Follow-up date")}</span><input disabled={saving} type="datetime-local" dir="ltr" value={followUp} onChange={event => { setFollowUp(event.target.value); setSaved(false); }} className="h-10 w-full rounded border bg-background px-3" /></label>}
-        <Button onClick={save} disabled={saving || conflict}>{t(saving ? "Saving..." : "Save review")}</Button>
+        <Button onClick={save} disabled={saving || conflict}>{t(saving ? "Saving..." : "Save note and follow-up")}</Button>
       </>}
       {error && <div role="alert" className="text-sm text-destructive">{t(error)}{loading ? null : <Button variant="ghost" onClick={conflict ? loadLatest : ready ? save : load} disabled={saving}>{t("Retry")}</Button>}</div>}
       {conflict && latest && <section className="space-y-3 rounded border p-3"><h3 className="font-semibold">{t("Latest saved notes")}</h3><p className="whitespace-pre-wrap break-words text-sm">{latest.review?.notes || t("No private notes")}</p><p className="text-sm">{t("Your draft is still in the editor. Choose which version to keep.")}</p><div className="flex flex-wrap gap-2"><Button variant="outline" onClick={() => resolveConflict(true)}>{t("Use saved version")}</Button><Button variant="outline" onClick={() => resolveConflict(false)}>{t("Keep my draft")}</Button></div></section>}
-      {saved && <p role="status" className="text-sm text-green-500">{t("Review saved")}</p>}
-      {ready && <details className="rounded-lg border p-3"><summary className="cursor-pointer font-semibold">{t("Activity and membership context")}</summary><div className="mt-3 space-y-4 text-sm">
-        <section className="space-y-2"><h3 className="font-semibold">{t("Review context")}</h3><TimeRangePicker value={range} onChange={setRange} /><p>{t("Review reason")}: {t(reason)}</p><p>{t("Recent activity")}: {t(memberReviewActivityLabel(context.activity_status))}</p><p>{t("Last Battle")}: {context.last_battle_at ? <LocalDate value={context.last_battle_at} time /> : t("No recorded battles")}</p><p>{t("Trophy progress · {period}", { period: t(period.label) })}: {progress == null ? t("Not enough history") : delta(progress)}</p></section>
-        <section className="space-y-2 border-t pt-3"><h3 className="font-semibold">{t("Membership context")}</h3><p>{t("First observed")}: <LocalDate value={history?.first_seen} /></p><p>{t("Observed joins")}: {history?.times_joined == null ? t("Unknown") : number(history.times_joined)} · {t("Observed departures")}: {history?.times_left == null ? t("Unknown") : number(history.times_left)}</p><p className="text-xs text-muted-foreground">{t("Counts cover the retained tracking period.")}</p></section>
-      </div></details>}
+      {saved && <p role="status" className="text-sm text-green-500">{t("Note and follow-up saved")}</p>}
       {ready && <MemberAdministrationPanel playerTag={member.player_tag} isCurrent={history?.is_current_member ?? member.is_current_member} />}
+      {ready && <details className="rounded-lg border p-3"><summary className="cursor-pointer font-semibold">{t("Activity and membership details")}</summary><div className="mt-3 space-y-4 text-sm">
+        <section className="space-y-2"><h3 className="font-semibold">{t("Recorded activity")}</h3>
+          {contextUnavailable && <p role="status" className="text-muted-foreground">{t("Activity details are unavailable. You can still edit this member's notes.")}</p>}
+          {possibleGap && <p role="status" className="rounded border border-amber-500/30 bg-amber-500/10 p-2 text-xs">{t("A possible gap remains in the recorded battle history.")} {t("A fresh fetch does not recover earlier battles that may be absent. Review recorded activity with this limitation in mind.")}</p>}
+          {stale && <p role="status" className="text-xs text-amber-600 dark:text-amber-400">{t("Data is stale. Refresh the club before judging inactivity.")}</p>}
+          <TimeRangePicker value={range} onChange={setRange} /><p>{t("Recent activity")}: {t(memberReviewActivityLabel(context.activity_status))}</p><p>{t("Last Battle")}: {context.last_battle_at ? <LocalDate value={context.last_battle_at} time /> : t("No recorded battles")}</p><p>{t("Trophy progress · {period}", { period: t(period.label) })}: {progress == null ? t("Not enough history") : delta(progress)}</p>
+        </section>
+        <section className="space-y-2 border-t pt-3"><h3 className="font-semibold">{t("Membership context")}</h3><p>{t("First observed")}: <LocalDate value={history?.first_seen} /></p>{member.last_left_at && <p>{t("Last recorded departure")}: <LocalDate value={member.last_left_at} time /></p>}<p>{t("Observed joins")}: {history?.times_joined == null ? t("Unknown") : number(history.times_joined)} · {t("Observed departures")}: {history?.times_left == null ? t("Unknown") : number(history.times_left)}</p><p className="text-xs text-muted-foreground">{t("Counts cover the retained tracking period.")}</p></section>
+      </div></details>}
     </div>
   </SheetContent></Sheet>;
 }

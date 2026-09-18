@@ -224,22 +224,31 @@ test("reports request the selected period and disable export when the report cou
 });
 
 test("review queue stays admin gated and empty search results do not imply that reviews are complete", async () => {
-  const renderer = hookRenderer();
+  const renderer = hookRenderer(), requests = [], session = { isAdmin: false, isLoading: false };
   const component = loadTypeScript("src/app/reviews/page.tsx", { ...mocks, react: { ...renderer.react, Suspense: "Suspense" },
     "next/navigation": { useSearchParams: () => new URLSearchParams() },
-    "@/hooks/use-admin-session": { useAdminSession: () => ({ isAdmin: true, isLoading: false }) },
+    "@/hooks/use-admin-session": { useAdminSession: () => session },
   }, {
-    window: windowMock, fetch: async url => Response.json(url === "/api/members"
-      ? { members: [{ player_tag: "#ABC", player_name: "Needs review", activity_status: "inactive" }] }
-      : url.startsWith("/api/history") ? { history: [] } : { reviews: [] }),
+    window: windowMock, fetch: async url => {
+      requests.push(url);
+      if (url === "/api/member-reviews?include_history=1") return Response.json({ reviews: [], historySummaries: [] });
+      if (url === "/api/members") return Response.json({ members: [{ player_tag: "#ABC", player_name: "Example member", activity_status: "inactive" }] });
+      assert.equal(url, "/api/history?range=all"); return Response.json({ history: [] });
+    },
   }).default;
   const shell = component();
   assert.equal(shell.props.children.type, "AdminGate");
   const queue = elements(shell).find(element => element.type?.name === "ReviewQueue").type;
+  assert.equal(await renderer.render(queue), null);
+  assert.equal(requests.length, 0, "Visitors must not request private reviews or history summaries");
+  session.isAdmin = true;
   let tree = await renderer.render(queue);
-  assert.match(textContent(tree), /Needs review/);
+  assert.match(textContent(tree), /Example member/);
+  assert.ok(requests.includes("/api/member-reviews?include_history=1"));
+  assert.doesNotMatch(textContent(tree), /Pending/);
   elements(tree).find(element => element.type === "Input").props.onChange({ target: { value: "missing member" } });
   tree = await renderer.render(queue);
-  assert.match(textContent(tree), /No members match these review filters/);
-  assert.doesNotMatch(textContent(tree), /No review needed/);
+  assert.match(textContent(tree), /No matching members/);
+  assert.match(textContent(tree), /Try another search or membership filter/);
+  assert.doesNotMatch(textContent(tree), /No review needed|All reviews complete/);
 });

@@ -116,6 +116,17 @@ test("accepted roster updates refresh open details while a club change closes bo
   page.unmount();
 });
 
+const directoryReviewUrl = "/api/member-reviews?include_history=1";
+const queueCards = tree => elements(tree).filter(element => element.type === "article");
+const queueStatus = (tree, value) => elements(tree).find(element => element.type === "Button" && element.key === value);
+const queueControl = (tree, name) => {
+  const control = elements(tree).find(element => element.props?.["aria-label"] === name);
+  assert.ok(control, name); return control;
+};
+const queueSheet = tree => elements(tree).find(element => element.type === "MemberReviewSheet");
+const queuePayload = (url, { history = [], members = [], reviews = [], historySummaries = [] } = {}) => url === directoryReviewUrl ? { reviews, historySummaries }
+  : url === "/api/members" ? { members } : { history };
+
 function queueHarness({ admin = true, requested = "", respond } = {}) {
   const renderer = lifecycleRenderer(), window = eventTarget(), requests = [];
   const session = { isAdmin: admin, isLoading: false };
@@ -127,9 +138,11 @@ function queueHarness({ admin = true, requested = "", respond } = {}) {
   }, { window, console: quietConsole, fetch: (url, init) => {
     requests.push({ url, init });
     if (respond) return respond({ url, init });
-    return Promise.resolve(Response.json(url === "/api/member-reviews" ? { reviews: [{ player_tag: "#OLD", status: "reviewed", notes: "Left for another club" }] }
-      : url === "/api/members" ? { members: [{ player_tag: "#CURRENT", player_name: "Current latest", activity_status: "active" }] }
-      : { history: [member("#OLD"), member("#CURRENT", { player_name: "Old snapshot", is_current_member: false })] }));
+    return Promise.resolve(Response.json(queuePayload(url, {
+      reviews: [{ player_tag: "#OLD", status: "reviewed", notes: "Left for another club", updated_at: initialRevision }],
+      members: [{ player_tag: "#CURRENT", player_name: "Current latest", activity_status: "active" }],
+      history: [member("#OLD"), member("#CURRENT", { player_name: "Old snapshot", is_current_member: false })],
+    })));
   } }).default;
   const shell = component(); assert.equal(shell.props.children.type, "AdminGate");
   const queue = elements(shell).find(element => element.type?.name === "ReviewQueue").type;
@@ -141,111 +154,200 @@ test("a former-member deep link survives sign-in, deduplicates the roster and re
   assert.equal(await page.render(), null); assert.equal(page.requests.length, 0);
   page.session.isAdmin = true; let tree = await page.render();
   assert.ok(page.requests.some(request => request.url === "/api/history?range=all"));
-  const sheet = elements(tree).find(element => element.type === "MemberReviewSheet");
+  assert.ok(page.requests.some(request => request.url === directoryReviewUrl));
+  const sheet = queueSheet(tree);
   assert.equal(sheet.props.member.player_tag, "#OLD"); assert.equal(sheet.key, "#OLD");
-  assert.equal(elements(tree).filter(element => element.type === "article").length, 2);
+  assert.equal(queueCards(tree).length, 2);
+  assert.equal(queueStatus(tree, "all").props["aria-pressed"], true);
+  assert.equal(queueControl(tree, "Membership status").props.value, "all");
   assert.match(textContent(tree), /Current latest/); assert.doesNotMatch(textContent(tree), /Old snapshot/);
   sheet.props.onOpenChange(false); tree = await page.render();
-  elements(tree).find(element => element.type === "select").props.onChange({ target: { value: "former" } }); tree = await page.render();
-  const rows = elements(tree).filter(element => element.type === "article");
-  assert.equal(rows.length, 1); assert.match(textContent(rows[0]), /#OLD/); assert.doesNotMatch(textContent(rows[0]), /active|Unknown/);
+  queueControl(tree, "Membership status").props.onChange({ target: { value: "former" } }); tree = await page.render();
+  const rows = queueCards(tree);
+  assert.equal(rows.length, 1); assert.match(textContent(rows[0]), /#OLD/); assert.doesNotMatch(textContent(rows[0]), /Inactive|Low activity|Unknown/);
   page.window.dispatchEvent({ type: "member-reviews-updated" }); tree = await page.render();
-  assert.equal(elements(tree).some(element => element.type === "MemberReviewSheet"), false, "A refresh does not reopen an intentionally closed linked editor");
+  assert.equal(queueSheet(tree), undefined, "A refresh does not reopen an intentionally closed linked editor");
   page.setRequested(""); await page.render(); page.setRequested("#OLD"); tree = await page.render();
-  assert.equal(elements(tree).find(element => element.type === "MemberReviewSheet").props.member.player_tag, "#OLD");
+  assert.equal(queueSheet(tree).props.member.player_tag, "#OLD");
+  assert.equal(queueControl(tree, "Membership status").props.value, "all", "A new deep link is not hidden by previous filters");
+  assert.ok(page.requests.every(request => request.init.cache === "no-store" && !request.init.method));
   page.unmount();
 });
 
-test("the private review queue aborts all three reads and rejects late responses across logout", async () => {
+test("the private notes directory aborts all three reads and rejects late notes or history summaries across logout", async () => {
   const pending = [];
   const page = queueHarness({ requested: "#OLD", respond: request => new Promise(resolve => pending.push({ ...request, resolve })) });
   await page.render(); assert.equal(pending.length, 3);
   page.session.isAdmin = false; page.window.dispatchEvent({ type: "admin-session-changed" });
   assert.ok(pending.every(request => request.init.signal.aborted));
-  for (const request of pending) request.resolve(Response.json(request.url === "/api/member-reviews" ? { reviews: [{ player_tag: "#OLD", notes: "Private late note" }] }
-    : request.url === "/api/members" ? { members: [] } : { history: [member("#OLD")] }));
+  for (const request of pending) request.resolve(Response.json(queuePayload(request.url, {
+    reviews: [{ player_tag: "#OLD", notes: "Private late note" }],
+    historySummaries: [{ player_tag: "#OLD", entry_count: 27, latest_at: initialRevision }],
+    history: [member("#OLD")],
+  })));
   assert.equal(await page.render(), null); assert.equal(page.requests.length, 3);
   page.unmount();
 });
 
-function largeQueueResponse({ url }) {
+function largeQueueFixture() {
   const history = Array.from({ length: 95 }, (_, index) => member(`#MEMBER${index}`, { player_name: `Player ${index}`, is_current_member: index < 5 }));
-  return Promise.resolve(Response.json(url === "/api/member-reviews" ? { reviews: [
-    { player_tag: "#MEMBER94", status: "reviewed", notes: "Known departure reason" },
-  ] } : url === "/api/members" ? { members: history.slice(0, 5) } : { history }));
+  return { history, members: history.slice(0, 5), reviews: [
+    { player_tag: "#MEMBER94", status: "reviewed", notes: "Known departure reason", updated_at: initialRevision },
+    { player_tag: "#MEMBER93", status: "reviewed", notes: " \n ", updated_at: initialRevision },
+    { player_tag: "#MEMBER92", status: "follow_up", notes: null, follow_up_at: "2026-09-20T12:00:00Z", updated_at: initialRevision },
+    { player_tag: "#MEMBER91", status: "pending", notes: null, updated_at: initialRevision },
+  ], historySummaries: [{ player_tag: "#MEMBER90", entry_count: 3, latest_at: "2026-09-15T12:00:00Z" }] };
 }
-const queueCards = tree => elements(tree).filter(element => element.type === "article");
-const queueStatus = (tree, value) => elements(tree).find(element => element.type === "Button" && element.key === value);
+const largeQueueResponse = ({ url }) => Promise.resolve(Response.json(queuePayload(url, largeQueueFixture())));
 
-test("review batches preserve full-data counts and search finds off-page members while filters reset the visible batch", async () => {
-  const page = queueHarness({ respond: largeQueueResponse });
-  let tree = await page.render();
-  assert.equal(queueCards(tree).length, 30);
-  assert.match(textContent(tree), /Showing 30 of 94 matching members/);
-  assert.equal(textContent(queueStatus(tree, "pending")), "Pending94");
-  assert.equal(textContent(queueStatus(tree, "all")), "All reviews95");
-  action(tree, "Load More")(); tree = await page.render();
-  assert.equal(queueCards(tree).length, 60);
-  assert.equal(new Set(queueCards(tree).map(row => row.key)).size, 60);
-  assert.equal(page.requests.length, 3, "Client pagination must not fetch or mutate data");
-  elements(tree).find(element => element.type === "Input").props.onChange({ target: { value: "#MEMBER88" } });
-  tree = await page.render();
-  assert.equal(queueCards(tree).length, 1);
-  assert.match(textContent(queueCards(tree)[0]), /Player 88/);
-  assert.equal(textContent(queueStatus(tree, "pending")), "Pending94", "Search must not truncate status counts");
-  elements(tree).find(element => element.type === "Input").props.onChange({ target: { value: "" } });
-  tree = await page.render();
-  assert.equal(queueCards(tree).length, 30);
-  action(tree, "Load More")(); tree = await page.render();
-  queueStatus(tree, "all").props.onClick(); tree = await page.render();
-  assert.equal(queueCards(tree).length, 30, "Review status change resets the batch");
-  action(tree, "Load More")(); tree = await page.render();
-  elements(tree).find(element => element.type === "select").props.onChange({ target: { value: "former" } });
-  tree = await page.render();
-  assert.equal(queueCards(tree).length, 30, "Membership change resets the batch");
-  assert.equal(textContent(queueStatus(tree, "all")), "All reviews90");
-  action(tree, "Load More")(); tree = await page.render();
-  action(tree, "Load More")(); tree = await page.render();
-  assert.equal(queueCards(tree).length, 90);
+test("all members is the honest default and missing or blank reviews do not create pending work or saved notes", async () => {
+  const page = queueHarness({ respond: largeQueueResponse }); let tree = await page.render();
+  assert.equal(queueStatus(tree, "all").props["aria-pressed"], true);
+  assert.equal(queueControl(tree, "Membership status").props.value, "all");
+  assert.equal(textContent(queueStatus(tree, "all")), "All members95");
+  assert.equal(textContent(queueStatus(tree, "saved")), "Saved notes2");
+  assert.equal(textContent(queueStatus(tree, "follow_up")), "Follow-ups1");
+  assert.equal(queueStatus(tree, "pending"), undefined);
+  assert.equal(queueStatus(tree, "reviewed"), undefined);
+  assert.equal(queueCards(tree).length, 12);
+  const noReview = queueCards(tree).find(row => row.key === "#MEMBER0");
+  assert.ok(noReview); assert.match(textContent(noReview), /No saved notes/); assert.doesNotMatch(textContent(noReview), /Pending/);
+  assert.equal(elements(tree).some(element => element.type === "DataConfidenceNotice"), false);
+  queueStatus(tree, "saved").props.onClick(); tree = await page.render();
+  assert.deepEqual(queueCards(tree).map(row => row.key).sort(), ["#MEMBER90", "#MEMBER94"]);
+  const historical = queueCards(tree).find(row => row.key === "#MEMBER90");
+  assert.match(textContent(historical), /Dated history: 3 entries/);
+  assert.doesNotMatch(textContent(historical), /No saved notes/);
+  assert.ok(elements(historical).some(element => element.type === "LocalDate" && element.props.value === "2026-09-15T12:00:00.000Z"));
+  assert.equal(textContent(queueStatus(tree, "all")), "All members95", "Counts are computed before the active content tab");
+  assert.equal(page.requests.length, 3, "Dated-history counts come in one directory request, not one request per member");
+  page.unmount();
+});
+
+test("12-row pagination never expands the full directory and full-data search updates scoped counts and resets the page", async () => {
+  const page = queueHarness({ respond: largeQueueResponse }); let tree = await page.render();
+  assert.equal(queueCards(tree).length, 12); assert.match(textContent(tree), /Page 1 of 8/);
+  const firstTags = queueCards(tree).map(row => row.key);
+  action(tree, "Next")(); tree = await page.render();
+  assert.equal(queueCards(tree).length, 12); assert.match(textContent(tree), /Page 2 of 8/);
+  assert.ok(queueCards(tree).every(row => !firstTags.includes(row.key)));
+  assert.equal(page.requests.length, 3);
+  queueControl(tree, "Search members...").props.onChange({ target: { value: "#MEMBER88" } }); tree = await page.render();
+  assert.equal(queueCards(tree).length, 1); assert.match(textContent(queueCards(tree)[0]), /Player 88/);
+  assert.equal(textContent(queueStatus(tree, "all")), "All members1");
+  assert.equal(textContent(queueStatus(tree, "saved")), "Saved notes0");
+  assert.equal(textContent(queueStatus(tree, "follow_up")), "Follow-ups0");
+  queueControl(tree, "Search members...").props.onChange({ target: { value: "" } }); tree = await page.render();
+  assert.match(textContent(tree), /Page 1 of 8/);
+  action(tree, "Next")(); tree = await page.render();
+  queueControl(tree, "Membership status").props.onChange({ target: { value: "former" } }); tree = await page.render();
+  assert.match(textContent(tree), /Page 1 of 8/); assert.equal(textContent(queueStatus(tree, "all")), "All members90");
+  assert.ok(queueCards(tree).every(row => textContent(row).includes("Former")));
+  for (let index = 1; index < 8; index++) { action(tree, "Next")(); tree = await page.render(); }
+  assert.equal(queueCards(tree).length, 6); assert.match(textContent(tree), /Page 8 of 8/);
+  const lastNext = elements(tree).find(element => element.type === "Button" && textContent(element) === "Next");
+  assert.equal(lastNext.props.disabled, true);
+  action(tree, "Previous")(); tree = await page.render(); assert.match(textContent(tree), /Page 7 of 8/);
+  queueStatus(tree, "saved").props.onClick(); tree = await page.render(); assert.equal(queueCards(tree).length, 2);
+  queueStatus(tree, "all").props.onClick(); tree = await page.render(); assert.match(textContent(tree), /Page 1 of 8/);
   assert.equal(elements(tree).some(element => element.type === "Button" && textContent(element) === "Load More"), false);
+  assert.equal(page.requests.length, 3, "Searching, filtering and pagination do not read or mutate live records");
+  page.unmount();
+});
+
+test("editable note searches find former members and counts respect both search and membership", async () => {
+  const page = queueHarness({ respond: largeQueueResponse }); let tree = await page.render();
+  queueControl(tree, "Search members...").props.onChange({ target: { value: "  DEPARTURE REASON " } }); tree = await page.render();
+  assert.deepEqual(queueCards(tree).map(row => row.key), ["#MEMBER94"]);
+  assert.match(textContent(queueCards(tree)[0]), /Known departure reason/);
+  assert.equal(textContent(queueStatus(tree, "all")), "All members1");
+  assert.equal(textContent(queueStatus(tree, "saved")), "Saved notes1");
+  queueControl(tree, "Membership status").props.onChange({ target: { value: "current" } }); tree = await page.render();
+  assert.equal(queueCards(tree).length, 0); assert.equal(textContent(queueStatus(tree, "all")), "All members0");
+  queueControl(tree, "Search members...").props.onChange({ target: { value: "" } }); tree = await page.render();
+  assert.equal(queueCards(tree).length, 5); assert.equal(textContent(queueStatus(tree, "saved")), "Saved notes0");
+  assert.equal(textContent(queueStatus(tree, "follow_up")), "Follow-ups0");
+  page.unmount();
+});
+
+test("an off-page former-member deep link opens without expanding all rows and stays closed after dismissal", async () => {
+  const page = queueHarness({ admin: false, requested: "#MEMBER88", respond: largeQueueResponse });
+  assert.equal(await page.render(), null); assert.equal(page.requests.length, 0);
+  page.session.isAdmin = true; let tree = await page.render();
+  assert.equal(queueCards(tree).length, 12); assert.equal(queueCards(tree).some(row => row.key === "#MEMBER88"), false);
+  const sheet = queueSheet(tree); assert.equal(sheet.props.member.player_tag, "#MEMBER88"); assert.equal(sheet.props.member.is_current_member, false);
+  sheet.props.onOpenChange(false); tree = await page.render();
+  action(tree, "Next")(); tree = await page.render();
+  const secondPage = queueCards(tree).map(row => row.key);
+  page.window.dispatchEvent({ type: "member-reviews-updated" }); tree = await page.render();
+  assert.match(textContent(tree), /Page 2 of 8/); assert.deepEqual(queueCards(tree).map(row => row.key), secondPage);
+  assert.equal(queueSheet(tree), undefined);
+  page.unmount();
+});
+
+test("follow-ups show only explicitly scheduled reviews, preserve missing dates and do not turn dated history into unresolved tasks", async () => {
+  const history = ["EARLY", "LATE", "MISSING", "BAD", "LOG", "EMPTY"].map(tag => member(`#${tag}`, { is_current_member: tag !== "LOG", activity_status: "inactive" }));
+  const reviews = [
+    { player_tag: "#LATE", status: "follow_up", follow_up_at: "2026-10-20T12:00:00Z", notes: null },
+    { player_tag: "#EARLY", status: "follow_up", follow_up_at: "2026-09-20T12:00:00Z", notes: null },
+    { player_tag: "#MISSING", status: "follow_up", follow_up_at: null, notes: null },
+    { player_tag: "#BAD", status: "follow_up", follow_up_at: "not-a-date", notes: null },
+  ];
+  const page = queueHarness({ respond: ({ url }) => Promise.resolve(Response.json(queuePayload(url, { history, members: history.filter(row => row.is_current_member), reviews,
+    historySummaries: [{ player_tag: "#LOG", entry_count: 2, latest_at: initialRevision }] }))) });
+  let tree = await page.render(); assert.equal(textContent(queueStatus(tree, "follow_up")), "Follow-ups4");
+  queueStatus(tree, "follow_up").props.onClick(); tree = await page.render();
+  const cards = queueCards(tree), keys = cards.map(row => row.key);
+  assert.equal(cards.length, 4); assert.ok(keys.indexOf("#EARLY") < keys.indexOf("#LATE"));
+  assert.ok(!keys.includes("#LOG") && !keys.includes("#EMPTY"));
+  for (const tag of ["#MISSING", "#BAD"]) assert.match(textContent(cards.find(row => row.key === tag)), /Date missing/);
+  assert.doesNotMatch(cards.map(textContent).join(""), /Inactive|Low activity|Pending/);
   assert.equal(page.requests.length, 3);
   page.unmount();
 });
 
-test("an off-page former-member deep link opens after sign-in without expanding all cards or reopening after dismissal", async () => {
-  const page = queueHarness({ admin: false, requested: "#MEMBER94", respond: largeQueueResponse });
-  assert.equal(await page.render(), null);
-  assert.equal(page.requests.length, 0);
-  page.session.isAdmin = true;
+test("an open editor survives ordinary refreshes and dated-history updates refresh directory counts", async () => {
+  const fixture = largeQueueFixture(); let hold = false; const pending = [];
+  const page = queueHarness({ respond: request => hold ? new Promise(resolve => pending.push({ ...request, resolve }))
+    : Promise.resolve(Response.json(queuePayload(request.url, fixture))) });
   let tree = await page.render();
-  assert.equal(queueCards(tree).length, 30);
-  assert.equal(queueCards(tree).some(row => row.key === "#MEMBER94"), false);
-  const sheet = elements(tree).find(element => element.type === "MemberReviewSheet");
-  assert.equal(sheet.props.member.player_tag, "#MEMBER94");
-  assert.equal(sheet.props.member.is_current_member, false);
-  assert.equal(textContent(queueStatus(tree, "all")), "All reviews95");
-  sheet.props.onOpenChange(false); tree = await page.render();
-  action(tree, "Load More")(); tree = await page.render();
-  page.window.dispatchEvent({ type: "member-reviews-updated" }); tree = await page.render();
-  assert.equal(queueCards(tree).length, 60, "A background refresh preserves the current batch");
-  assert.equal(elements(tree).some(element => element.type === "MemberReviewSheet"), false);
+  const row = queueCards(tree)[0]; elements(row).find(element => element.type === "Button").props.onClick(); tree = await page.render();
+  const original = queueSheet(tree); assert.ok(original);
+  hold = true; page.window.dispatchEvent({ type: "member-reviews-updated" }); tree = await page.render();
+  assert.equal(queueSheet(tree).key, original.key, "A loading directory must not unmount the editor and discard a draft");
+  assert.equal(pending.length, 3);
+  for (const request of pending) request.resolve(Response.json(queuePayload(request.url, fixture)));
+  tree = await page.render(); assert.equal(queueSheet(tree).key, original.key);
+  hold = false; fixture.historySummaries.push({ player_tag: "#MEMBER89", entry_count: 1, latest_at: "2026-09-18T10:00:00Z" });
+  page.window.dispatchEvent({ type: "club-administration-updated" }); tree = await page.render();
+  assert.equal(textContent(queueStatus(tree, "saved")), "Saved notes3");
+  assert.equal(queueSheet(tree).key, original.key);
   page.unmount();
 });
 
-test("review filters and badges use readable labels while filtering by unchanged status values", async () => {
-  const rows = [member("#PENDING", { is_current_member: true, activity_status: "minimal" }), member("#FOLLOW", { is_current_member: true, activity_status: "active" }), member("#DONE", { is_current_member: true, activity_status: "inactive" })];
-  const page = queueHarness({ respond: ({ url }) => Promise.resolve(Response.json(url === "/api/member-reviews" ? { reviews: [
-    { player_tag: "#FOLLOW", status: "follow_up" }, { player_tag: "#DONE", status: "reviewed" },
-  ] } : url === "/api/members" ? { members: rows } : { history: rows })) });
-  let tree = await page.render();
-  assert.equal(textContent(queueStatus(tree, "pending")), "Pending1");
-  assert.equal(textContent(queueStatus(tree, "follow_up")), "Follow up1");
-  assert.equal(textContent(queueStatus(tree, "reviewed")), "Reviewed1");
-  assert.match(textContent(queueCards(tree)[0]), /Low activityPending/);
-  assert.doesNotMatch(textContent(tree), /follow_up|minimal|\bpending\b|\breviewed\b/);
-  queueStatus(tree, "follow_up").props.onClick(); tree = await page.render();
-  assert.equal(queueCards(tree).length, 1); assert.match(textContent(queueCards(tree)[0]), /#FOLLOW/);
-  assert.match(textContent(queueCards(tree)[0]), /ActiveFollow up/);
-  assert.equal(page.requests.length, 3, "Changing a display label must not add writes or reads");
+test("a configured club change closes the old editor and removes old private summaries while the next directory is loading", async () => {
+  let hold = false; const pending = [];
+  const page = queueHarness({ requested: "#OLD", respond: request => hold ? new Promise(resolve => pending.push({ ...request, resolve }))
+    : Promise.resolve(Response.json(queuePayload(request.url, { history: [member("#OLD")], reviews: [{ player_tag: "#OLD", status: "reviewed", notes: "Old club private note" }],
+      historySummaries: [{ player_tag: "#OLD", entry_count: 9, latest_at: initialRevision }] }))) });
+  let tree = await page.render(); assert.ok(queueSheet(tree));
+  hold = true; page.window.dispatchEvent({ type: "club-data-updated", detail: { clubChanged: true } }); tree = await page.render();
+  assert.equal(queueSheet(tree), undefined); assert.doesNotMatch(textContent(tree), /Old club private note|Dated history: 9/);
+  assert.equal(pending.length, 3);
+  for (const request of pending) request.resolve(Response.json(queuePayload(request.url)));
+  tree = await page.render(); assert.equal(queueSheet(tree), undefined); assert.equal(queueCards(tree).length, 0);
   page.unmount();
+});
+
+test("directory failures do not claim zero saved notes, and unmount cancels unresolved private reads", async () => {
+  const failed = queueHarness({ respond: ({ url }) => Promise.resolve(url === directoryReviewUrl ? Response.json({ error: "Unavailable" }, { status: 503 }) : Response.json(queuePayload(url))) });
+  const tree = await failed.render();
+  assert.ok(elements(tree).some(element => element.props?.role === "alert"));
+  assert.equal(elements(queueStatus(tree, "saved")).some(element => element.type === "span"), false, "Unavailable private history is not zero notes");
+  assert.equal(queueCards(tree).length, 0); failed.unmount();
+  const pending = [], page = queueHarness({ respond: request => new Promise(resolve => pending.push({ ...request, resolve })) });
+  await page.render(); assert.equal(pending.length, 3); page.unmount();
+  assert.ok(pending.every(request => request.init.signal.aborted));
+  for (const request of pending) request.resolve(Response.json(queuePayload(request.url, { history: [member("#OLD")] })));
+  await new Promise(resolve => setImmediate(resolve)); assert.equal(page.requests.length, 3);
 });

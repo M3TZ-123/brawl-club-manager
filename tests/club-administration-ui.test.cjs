@@ -34,14 +34,49 @@ test('join retries preserve entered details and request identity; acknowledgemen
 test('dated entries bind the chosen departure and keep the draft and request id after an uncertain save',async()=>{
   let writes=0;const page=harness('src/components/member-administration.tsx','MemberAdministrationPanel',{playerTag:'#PYLQ',isCurrent:false},request=>request.method==='GET'?administration:++writes===1?Promise.reject(new Error('Try again')):{success:true});
   let tree=await page.render();assert.equal(button(tree,'Declare absence'),undefined);
-  input(tree,'Entry type').props.onChange({target:{value:'departure_reason'}});tree=await page.render();input(tree,'Entry text').props.onChange({target:{value:'Known reason'}});tree=await page.render();assert.equal(button(tree,'Add dated entry').props.disabled,true);
-  input(tree,'Exact recorded departure').props.onChange({target:{value:administration.departures[0].id}});tree=await page.render();action(tree,'Add dated entry')();tree=await page.render();assert.equal(input(tree,'Entry text').props.value,'Known reason');assert.match(textContent(tree),/Try again/);
-  action(tree,'Add dated entry')();tree=await page.render();const posts=page.requests.filter(row=>row.method==='POST');assert.equal(posts.length,2);assert.equal(posts[0].body.request_id,posts[1].body.request_id);assert.equal(posts[1].body.departure_event_id,administration.departures[0].id);assert.equal(posts[1].body.author,undefined);assert.equal(input(tree,'Entry text').props.value,'');assert.equal(page.events.length,1);
+  assert.equal(elements(tree).some(node=>node.type==='textarea'),false);
+  action(tree,'Record departure reason')();tree=await page.render();assert.equal(input(tree,'Entry type').props.value,'departure_reason');input(tree,'Entry text').props.onChange({target:{value:'Known reason'}});tree=await page.render();assert.equal(button(tree,'Save dated entry').props.disabled,true);
+  action(tree,'Save dated entry')();assert.equal(page.requests.filter(row=>row.method==='POST').length,0,'The handler also requires an exact departure');
+  input(tree,'Exact recorded departure').props.onChange({target:{value:administration.departures[0].id}});tree=await page.render();action(tree,'Save dated entry')();tree=await page.render();assert.equal(input(tree,'Entry text').props.value,'Known reason');assert.match(textContent(tree),/Try again/);
+  action(tree,'Save dated entry')();tree=await page.render();const posts=page.requests.filter(row=>row.method==='POST');assert.equal(posts.length,2);assert.equal(posts[0].body.request_id,posts[1].body.request_id);assert.equal(posts[1].body.departure_event_id,administration.departures[0].id);assert.equal(posts[1].body.author,undefined);assert.match(textContent(tree),/Entry saved to history/);assert.equal(page.events.length,1);
+  action(tree,'Add dated note')();tree=await page.render();assert.equal(input(tree,'Entry text').props.value,'');
 });
 
 test('leaving the member editor aborts an in-flight decision and suppresses late parent notifications',async()=>{
   const pending=deferred();const page=harness('src/components/member-administration.tsx','MemberAdministrationPanel',{playerTag:'#PYLQ',isCurrent:true},request=>request.method==='GET'?administration:pending.promise);
-  let tree=await page.render();assert.ok(button(tree,'Declare absence'));input(tree,'Entry text').props.onChange({target:{value:'Draft'}});tree=await page.render();action(tree,'Add dated entry')();await page.render();page.unmount();assert.ok(page.requests.every(row=>row.signal.aborted));pending.resolve({success:true});await new Promise(resolve=>setImmediate(resolve));assert.equal(page.events.length,0);assert.equal(page.requests.length,2);
+  let tree=await page.render();assert.ok(button(tree,'Declare absence'));action(tree,'Add dated note')();tree=await page.render();input(tree,'Entry text').props.onChange({target:{value:'Draft'}});tree=await page.render();const save=action(tree,'Save dated entry');save();save();tree=await page.render();assert.equal(input(tree,'Entry text').props.disabled,true);page.unmount();assert.ok(page.requests.every(row=>row.signal.aborted));pending.resolve({success:true});await new Promise(resolve=>setImmediate(resolve));assert.equal(page.events.length,0);assert.equal(page.requests.length,2);
+});
+
+test('dated history stays readable, keeps old follow-ups and exact departure dates, and never adds a second scheduler',async()=>{
+  const rows=[
+    {id:randomUUID(),kind:'note',body:'Original note'},
+    {id:randomUUID(),kind:'departure_reason',body:'Known departure reason',departure_event_id:randomUUID(),departure_occurred_at:'2025-01-01T10:00:00Z'},
+    {id:randomUUID(),kind:'follow_up',body:'Old follow-up context',follow_up_at:'2026-09-17T10:00:00Z'},
+    {id:randomUUID(),kind:'correction',body:'Preserved correction',corrects_id:randomUUID()},
+  ].map(row=>({created_at:'2026-09-16T12:00:00Z',departure_event_id:null,follow_up_at:null,corrects_id:null,...row}));
+  const page=harness('src/components/member-administration.tsx','MemberAdministrationPanel',{playerTag:'#PYLQ',isCurrent:false},()=>({...administration,decisions:rows}));
+  let tree=await page.render();assert.equal(elements(tree).filter(node=>node.type==='article').length,4);assert.equal(elements(tree).some(node=>node.type==='details'),false);
+  assert.match(textContent(tree),/Historical follow-up/);assert.match(textContent(tree),/do not schedule a follow-up/);assert.match(textContent(tree),/Corrects an earlier entry; the original is preserved/);
+  assert.ok(elements(tree).some(node=>node.type==='LocalDate'&&node.props.value==='2025-01-01T10:00:00Z'),'The exact older departure remains visible even outside the departure picker');
+  action(tree,'Add dated note')();tree=await page.render();assert.equal(elements(input(tree,'Entry type')).some(node=>node.type==='option'&&node.props.value==='follow_up'),false);
+  assert.equal(elements(tree).some(node=>['Input','input'].includes(node.type)&&node.props.type==='datetime-local'),false);
+  input(tree,'Entry text').props.onChange({target:{value:'Keep my unsaved dated note'}});tree=await page.render();action(tree,'Close entry form')();tree=await page.render();action(tree,'Add dated note')();tree=await page.render();assert.equal(input(tree,'Entry text').props.value,'Keep my unsaved dated note');assert.equal(page.requests.length,1);
+});
+
+test('history reveals five entries at a time before requesting the next cursor and keeps all loaded correction choices',async()=>{
+  const entries=Array.from({length:12},(_,index)=>({id:randomUUID(),kind:'note',body:`History ${index}`,created_at:'2026-09-16T12:00:00Z',departure_event_id:null,corrects_id:null,follow_up_at:null}));
+  const page=harness('src/components/member-administration.tsx','MemberAdministrationPanel',{playerTag:'#PYLQ',isCurrent:false},request=>request.url.includes('cursor=older')?{...administration,decisions:entries.slice(10),nextCursor:null}:{...administration,decisions:entries.slice(0,10),nextCursor:'older'});
+  let tree=await page.render();assert.equal(elements(tree).filter(node=>node.type==='article').length,5);
+  action(tree,'Add dated note')();tree=await page.render();input(tree,'Entry type').props.onChange({target:{value:'correction'}});tree=await page.render();assert.equal(elements(input(tree,'Entry to correct')).filter(node=>node.type==='option').length,11);
+  action(tree,'Show older entries')();tree=await page.render();assert.equal(elements(tree).filter(node=>node.type==='article').length,10);assert.equal(page.requests.length,1);
+  action(tree,'Show older entries')();tree=await page.render();assert.equal(elements(tree).filter(node=>node.type==='article').length,12);assert.equal(page.requests.length,2);assert.match(page.requests.at(-1).url,/cursor=older/);assert.equal(button(tree,'Show older entries'),undefined);
+});
+
+test('missing departures cannot create an unlinked reason and former members retain collapsed absence history',async()=>{
+  const absence={id:randomUUID(),player_tag:'#PYLQ',starts_at:'2025-01-01T00:00:00Z',ends_at:'2025-01-03T00:00:00Z',reason:'Old declared travel',created_at:'2025-01-01T00:00:00Z',cancelled_at:null};
+  const page=harness('src/components/member-administration.tsx','MemberAdministrationPanel',{playerTag:'#PYLQ',isCurrent:false},()=>({...administration,departures:[],absences:[absence]}));
+  let tree=await page.render();const disclosure=elements(tree).find(node=>node.type==='details');assert.ok(disclosure);assert.equal(disclosure.props.open,undefined);assert.match(textContent(disclosure),/Old declared travel/);assert.equal(button(tree,'Declare absence'),undefined);
+  action(tree,'Record departure reason')();tree=await page.render();assert.match(textContent(tree),/No recorded departure is available to link/);assert.equal(input(tree,'Exact recorded departure').props.disabled,true);input(tree,'Entry text').props.onChange({target:{value:'Context only'}});tree=await page.render();assert.equal(button(tree,'Save dated entry').props.disabled,true);action(tree,'Save dated entry')();assert.equal(page.requests.length,1);
 });
 
 test('criteria conflicts keep the draft and exact revision until an explicit reload',async()=>{

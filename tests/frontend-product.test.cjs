@@ -128,7 +128,8 @@ test("review loads private context and requires a follow-up date before saving",
   const { MemberReviewSheet } = loadTypeScript("src/components/member-review.tsx", reviewMocks(renderer), { fetch, window: windowMock, CustomEvent: class { constructor(type) { this.type = type; } } });
   const render = () => renderer.render(() => MemberReviewSheet({ member: reviewMember, open: true, onOpenChange() {} }));
   let tree = await render();
-  assert.match(textContent(tree), /No recently recorded activity/);
+  assert.match(textContent(tree), /Recent activity: Inactive/);
+  assert.doesNotMatch(textContent(tree), /Review reason|No recently recorded activity/);
   assert.match(textContent(tree), /Data is stale/);
   assert.equal(elements(tree).find(e => e.type === "textarea").props.value, "Private fixture");
   assert.ok(requests.every(request => request.cache === "no-store"));
@@ -140,13 +141,13 @@ test("review loads private context and requires a follow-up date before saving",
   i18n.t = previousTranslate;
   elements(tree).find(e => e.type === "select").props.onChange({ target: { value: "follow_up" } });
   tree = await render();
-  await action(tree, "Save review")();
+  await action(tree, "Save note and follow-up")();
   tree = await render();
   assert.match(textContent(tree), /Follow-up date is required/);
   assert.equal(requests.filter(r => r.method === "PATCH").length, 0);
   elements(tree).find(e => e.type === "input" && e.props.type === "datetime-local").props.onChange({ target: { value: "2026-10-01T12:00" } });
   tree = await render();
-  await action(tree, "Save review")();
+  await action(tree, "Save note and follow-up")();
   const saved = JSON.parse(requests.at(-1).body);
   assert.equal(saved.player_tag, "#ABC");
   assert.equal(saved.status, "follow_up");
@@ -160,7 +161,7 @@ test("an unavailable private review cannot expose a blank form that overwrites e
   const tree = await renderer.render(() => MemberReviewSheet({ member: reviewMember, open: true, onOpenChange() {} }));
   assert.match(textContent(tree), /Review unavailable/);
   assert.equal(elements(tree).some(e => e.type === "textarea"), false);
-  assert.equal(elements(tree).some(e => e.props?.onClick && textContent(e) === "Save review"), false);
+  assert.equal(elements(tree).some(e => e.props?.onClick && textContent(e) === "Save note and follow-up"), false);
 });
 
 test("mobile history expands dates and departure snapshots while keeping private notes admin-only", async () => {

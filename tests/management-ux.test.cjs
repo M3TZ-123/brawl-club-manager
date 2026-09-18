@@ -66,18 +66,21 @@ test("notes and conflict controls stay visible while supporting context is colla
   let tree = await render();
   const editor = elements(tree).find(node => node.type === "textarea");
   assert.equal(hasVisible(tree, editor), true);
-  assert.ok(visible(tree).some(node => node.type === "Button" && textContent(node) === "Save review"));
+  assert.ok(visible(tree).some(node => node.type === "Button" && textContent(node) === "Save note and follow-up"));
   assert.equal(visible(tree).some(node => node.type === "TimeRangePicker"), false);
-  assert.ok(visible(tree).some(node => node.props?.role === "status" && textContent(node).includes("possible gap")));
+  assert.equal(visible(tree).some(node => node.props?.role === "status" && textContent(node).includes("possible gap")), false);
+  const activityDetails = elements(tree).find(node => node.type === "details" && textContent(node).includes("Activity and membership details"));
+  assert.ok(elements(activityDetails).some(node => node.props?.role === "status" && textContent(node).includes("possible gap")), "Uncertainty stays next to the activity it qualifies");
+  assert.doesNotMatch(textContent(tree), /Review reason|No recently recorded activity/);
   editor.props.onChange({ target: { value: "Unsaved departure reason" } });
   tree = await render();
-  await action(tree, "Save review")();
+  await action(tree, "Save note and follow-up")();
   tree = await render();
   assert.equal(writes[0].expected_updated_at, initial.updated_at);
   assert.equal(elements(tree).find(node => node.type === "textarea").props.value, "Unsaved departure reason");
   assert.ok(visible(tree).some(node => node.props?.role === "alert"));
   assert.ok(visible(tree).some(node => node.type === "Button" && textContent(node) === "Keep my draft"));
-  await action(tree, "Save review")();
+  await action(tree, "Save note and follow-up")();
   assert.equal(writes.length, 1, "Collapsing supporting detail must not bypass conflict resolution");
 });
 
