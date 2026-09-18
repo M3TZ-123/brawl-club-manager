@@ -23,7 +23,7 @@ export function PlanningWorkspace({isAdmin,linkedPlayer=""}:{isAdmin:boolean;lin
   const saved=()=>{setCreating(false);setSelected(null);void reload();};
   const blank:PlanningResponse={events:[],roster:data?.roster||[]};
   const editing=isAdmin&&Boolean(creating||selected);
-  return <div className="space-y-5 min-w-0"><header><h1 className="text-3xl font-bold">{t("Club events")}</h1><p className="mt-2 text-sm text-muted-foreground">{t("Follow Mega Pig and organize club events.")}</p></header>
+  return <div className="space-y-5 min-w-0"><header><h1 className="text-3xl font-bold">{t("Club events")}</h1></header>
     {!editing&&<div className="flex flex-wrap justify-end gap-2">{isAdmin&&<Button disabled={!data} onClick={()=>setCreating(true)}>{t("Plan event")}</Button>}<Button variant="ghost" disabled={loading} onClick={()=>void reload()}>{t("Refresh")}</Button></div>}
     {error&&<p role="alert" className="text-destructive">{t(error)}</p>}{loading&&<p role="status">{t("Loading...")}</p>}
     {isAdmin&&!editing&&<MegaPigSourcePanel/>}

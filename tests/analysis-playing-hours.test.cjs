@@ -24,8 +24,7 @@ test('playing-hour suggestions prioritize different members then repeated days o
   const cards = elements(tree).filter(node => node.type === 'article');
   assert.deepEqual(cards.map(card => textContent(elements(card).find(node => node.type === 'h4'))), ['18:00–19:00', '19:00–20:00', '20:00–21:00']);
   assert.match(textContent(cards[1]), /8 members · 8 recorded days/);
-  assert.match(textContent(tree), /not necessarily online together/);
-  assert.match(textContent(tree), /confirm availability with members/);
+  assert.match(textContent(tree), /Distinct members across this period, not simultaneous players/);
 });
 
 test('all-hour rows retain 24 server-grouped slots, roll midnight correctly and label the requested time zone', () => {
@@ -35,13 +34,13 @@ test('all-hour rows retain 24 server-grouped slots, roll midnight correctly and 
   assert.match(textContent(rows[0]), /00:00–01:00/);
   assert.match(textContent(rows[23]), /23:00–00:00/);
   assert.doesNotMatch(textContent(tree), /24:00/);
-  assert.match(textContent(tree), /Times shown in Africa\/Tunis/);
+  assert.ok(elements(tree).some(node => node.type === 'bdi' && textContent(node) === 'Africa/Tunis'));
   assert.match(textContent(tree), /Only one day observed at this hour/);
   const detail = elements(tree).find(node => node.type === 'details');
   assert.ok(!detail.props.open);
   assert.match(textContent(detail), /Bars show distinct members, not time online/);
   const utc = render(hours({ 23: { observations: 9, uniquePlayers: 3, activeDays: 1 } }), { timeZone: 'UTC' });
-  assert.match(textContent(utc), /Times shown in UTC/);
+  assert.ok(elements(utc).some(node => node.type === 'bdi' && textContent(node) === 'UTC'));
   assert.match(textContent(elements(utc).find(node => node.type === 'article')), /23:00–00:00/);
 });
 
@@ -60,7 +59,7 @@ test('empty observations and missing member-count metadata do not invent a busie
 
 test('Arabic playing hours explain member counts, limited days and midnight without untranslated headings', () => {
   const tree = render(hours({ 23: { observations: 9, uniquePlayers: 3, activeDays: 1 } }), { locale: 'ar' });
-  for (const copy of ['متى يُرصد لعب الأعضاء', 'ساعات رُصد فيها أكبر عدد من الأعضاء', 'عرض الساعات الأربع والعشرين', 'لا يعني ذلك أن الأعضاء كانوا متصلين معًا', 'يوم واحد فقط']) assert.ok(textContent(tree).includes(copy), copy);
+  for (const copy of ['ساعات رُصد فيها أكبر عدد من الأعضاء', 'عرض الساعات الأربع والعشرين', 'لا يعني أنهم لعبوا في الوقت نفسه', 'يوم واحد فقط']) assert.ok(textContent(tree).includes(copy), copy);
   assert.doesNotMatch(textContent(tree), /When members are recorded playing|Hours with the most different members|All 24 hours/);
   assert.match(textContent(tree), /23:00–00:00/);
   assert.match(textContent(tree), /Africa\/Tunis/);

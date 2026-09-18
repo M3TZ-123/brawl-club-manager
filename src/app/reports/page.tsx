@@ -183,7 +183,6 @@ export default function ReportsPage() {
           <h1>${escapeHtml(t("Club Report"))}</h1>
           <p>${escapeHtml(t("Generated"))}: ${generatedAt}</p>
           <p>${escapeHtml(t("Period"))}: ${periodStart} - ${periodEnd} (UTC)</p>
-          <p>${escapeHtml(t("Reports use UTC day boundaries. Other times use your device timezone."))}</p>
           
           <h2>${escapeHtml(t("Summary"))}</h2>
           <div class="stat">${escapeHtml(t("Total Members"))}: ${report.summary.totalMembers}</div>
@@ -315,7 +314,7 @@ export default function ReportsPage() {
               </div>
 
               {/* Top Gainers & Losers */}
-              <p className="text-xs text-muted-foreground">{t("Account trophy change")} · {t(TIME_RANGES[selectedRange].label)}</p>
+              <p className="text-sm font-medium">{t("Account trophy change")} · {t(TIME_RANGES[selectedRange].label)}</p>
               <div className="grid gap-6 md:grid-cols-2">
                 <Card>
                   <CardHeader>

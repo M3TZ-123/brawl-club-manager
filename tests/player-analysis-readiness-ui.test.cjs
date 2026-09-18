@@ -122,8 +122,9 @@ test("analysis keeps coverage limitations visible and passes unmerged teammate r
   assert.equal(pairView.props.data.limits.groupCounts.pairs, 300);
   const coverage = page.loaded.AnalysisCoverage({ data: response });
   assert.match(textContent(coverage), /Partial results — choose a shorter period/);
-  assert.match(textContent(coverage), /2 of 30 members monitored throughout this period/);
-  assert.match(textContent(coverage), /Possible gaps for 3 members; delayed checks for 1 members/);
+  assert.match(textContent(coverage), /2\/30 members tracked throughout this period/);
+  assert.match(textContent(coverage), /Members with possible gaps: 3/);
+  assert.match(textContent(coverage), /Members with delayed updates: 1/);
   const help = elements(coverage).find(node => node.type === 'details');
   assert.doesNotMatch(textContent(help), /Partial results — choose a shorter period/);
   assert.match(textContent(help), /A missing record does not mean a member did not play/);

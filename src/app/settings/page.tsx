@@ -8,7 +8,7 @@ import { useAppStore, type SettingsChanges } from "@/lib/store";
 import { fetchJsonWithTimeout } from "@/lib/client-fetch";
 import { AdminGate } from "@/components/admin-gate";
 import { LayoutWrapper } from "@/components/layout-wrapper";
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
@@ -168,8 +168,6 @@ export default function SettingsPage() {
       <div className="max-w-4xl mx-auto space-y-6">
         <div>
           <h1 className="text-2xl font-bold"><T text="Settings" /></h1>
-          <p className="text-muted-foreground">
-            <T text=" Configure your club manager preferences " /></p>
         </div>
 
         {isLoadingSettings || !hasLoadedSettings ? (
@@ -193,8 +191,6 @@ export default function SettingsPage() {
                     <CardTitle className="flex items-center gap-2">
                       <Key className="h-5 w-5" />
                       <T text="Club connection" /></CardTitle>
-                    <CardDescription>
-                      <T text=" Configure your Brawl Stars API connection " /></CardDescription>
                   </CardHeader>
                   <CardContent className="space-y-4">
                     <div className="space-y-2">
@@ -268,8 +264,6 @@ export default function SettingsPage() {
                     <CardTitle className="flex items-center gap-2">
                       <Clock className="h-5 w-5" />
                       <T text=" Activity Tracking " /></CardTitle>
-                    <CardDescription>
-                      <T text=" Configure how activity is tracked and measured " /></CardDescription>
                   </CardHeader>
                   <CardContent className="space-y-4">
                     <div className="space-y-2">
@@ -301,7 +295,6 @@ export default function SettingsPage() {
                         <li><T text="Low activity: last recorded activity between 24 and " />{effectiveInactivityThreshold} <T text=" hours ago" /></li>
                         <li><T text="Inactive: no recorded activity for more than " />{effectiveInactivityThreshold} <T text=" hours" /></li>
                       </ul>
-                      <p className="text-sm text-muted-foreground"><T text="View sync and storage details in the Admin page. Use Sync Now for an immediate update." /></p>
                       </div>
                     </details>
 
@@ -330,19 +323,14 @@ export default function SettingsPage() {
                     <CardTitle className="flex items-center gap-2">
                       <Bell className="h-5 w-5" />
                       <T text=" Notifications " /></CardTitle>
-                    <CardDescription>
-                      <T text=" Configure alerts and notifications " /></CardDescription>
                   </CardHeader>
                   <CardContent className="space-y-4">
                     <div className="flex items-center justify-between">
                       <div>
                         <label htmlFor="settings-notifications" className="font-medium"><T text="Enable Notifications" /></label>
-                        <p id="settings-notifications-hint" className="text-sm text-muted-foreground">
-                          <T text=" Receive alerts for important events " /></p>
                       </div>
                       <Switch
                         id="settings-notifications"
-                        aria-describedby="settings-notifications-hint"
                         checked={effectiveNotificationsEnabled}
                         onCheckedChange={(value) => { setLocalNotificationsEnabled(value); setNotifStatus("idle"); }}
                         disabled={saving}

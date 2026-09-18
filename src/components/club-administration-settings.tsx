@@ -34,11 +34,11 @@ export function ClubAdministrationSettings({graceOnly=false,onChange}:{graceOnly
     {error&&<p role="alert" className="text-sm text-destructive">{t(error)} <Button variant="ghost" onClick={()=>void load()} disabled={busy||loading}>{t("Reload saved settings")}</Button></p>}
     {!draft?(loading?<p role="status">{t("Loading...")}</p>:null):<>
       <label className="block text-sm">{t("New member grace hours")}<Input type="number" min={0} max={168} value={draft.grace_hours} disabled={busy||loading} onChange={e=>change({grace_hours:Number(e.target.value)})} className="mt-1 w-32"/></label>
-      <p className="text-xs text-muted-foreground">{t("Grace and declared absence pause inactivity alerts, not recorded activity statistics. Zero disables grace.")}</p>
+      <p className="text-xs text-muted-foreground">{t("Pauses inactivity alerts for new members. Set 0 to disable.")}</p>
       {!graceOnly&&<>
         <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={draft.recruitment_open} disabled={busy||loading} onChange={e=>change({recruitment_open:e.target.checked})}/>{t("Accept public applications")}</label>
         <p className="text-sm"><Link className="text-primary underline" href="/join">{t("Open public application page")}</Link></p>
-        <p className="text-xs text-muted-foreground">{t("These criteria, language and playing times are public. They do not automatically accept applicants.")}</p>
+        <p className="text-xs text-muted-foreground">{t("Requirements and preferences are public. Approval stays manual.")}</p>
         <div className="grid gap-3 sm:grid-cols-3">{([['min_trophies','Minimum trophies',2000000],['min_power11','Minimum power 11 brawlers',300],['min_ranked_points','Minimum ranked points',1000000]] as const).map(([key,label,max])=><label key={key} className="text-sm">{t(label)}<Input type="number" min={0} max={max} value={draft[key]??""} disabled={busy||loading} onChange={e=>change({[key]:key==="min_ranked_points"&&e.target.value===""?null:Number(e.target.value)})}/></label>)}</div>
         <label className="block text-sm">{t("Preferred language")}<Input maxLength={120} value={draft.language} disabled={busy||loading} onChange={e=>change({language:e.target.value})}/></label>
         <label className="block text-sm">{t("Preferred playing times and timezone")}<Input maxLength={240} value={draft.availability} disabled={busy||loading} onChange={e=>change({availability:e.target.value})}/></label>

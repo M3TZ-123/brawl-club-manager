@@ -30,6 +30,8 @@ function harness({ response = () => snapshot(), admin = true, loading = false, h
   return { requests, browser, document, intervals, session(admin, loading = false) { isAdmin = admin; isLoading = loading; browser.emit("admin-session-changed"); }, club(tag, announce = true) { clubTag = tag; if (announce) browser.emit("club-data-updated", { clubChanged: true }); }, tick() { for (const interval of [...intervals.values()]) interval.callback(); }, unmount: renderer.unmount, render: () => renderer.render(MegaPigSourcePanel) };
 }
 const memberRows = tree => elements(tree).filter(node => node.type === "tbody").map(textContent).join("");
+const disclosure = (tree, label) => elements(tree).find(node => node.type === "details"
+  && elements(node).some(child => child.type === "summary" && textContent(child) === label));
 
 test("Mega Pig source reads only the app cache, polls visibly, coalesces in-flight reads, and cleans up", async () => {
   const pending = deferred();
@@ -49,34 +51,35 @@ test("Mega Pig source reads only the app cache, polls visibly, coalesces in-flig
 
 test("reported zero remains zero, missing counters stay unknown, and details are collapsed without attendance claims", async () => {
   const page = harness({ response: () => snapshot({ members: [member({ playerName: "<c3>Amine</c> ✨" })] }) });
-  const tree = await page.render(); assert.match(textContent(tree), /Players reported by source24/); assert.match(textContent(tree), /does not identify the cycle or when its counters changed/);
-  assert.match(textContent(tree), /do not record attendance or affect member comparison/);
+  const tree = await page.render(); assert.match(textContent(tree), /Players reported by source24/); assert.match(textContent(tree), /Cycle unconfirmed · reward unconfirmed/);
+  const sourceDetails = disclosure(tree, "Source and rules"); assert.equal(sourceDetails.props.open, undefined);
+  assert.match(textContent(sourceDetails), /source does not date the cycle/);
+  assert.match(textContent(sourceDetails), /not used for attendance or member comparisons/);
   assert.match(memberRows(tree), /Amine ✨#AAA0Unknown/); assert.doesNotMatch(memberRows(tree), /<c3>|Absent|Present/);
-  const details = elements(tree).find(node => node.type === "details"); assert.equal(details.props.open, undefined);
+  const details = disclosure(tree, "Member counters"); assert.equal(details.props.open, undefined);
   assert.ok(elements(details).some(node => node.type === "table")); assert.ok(elements(details).some(node => node.type === "bdi" && node.props.dir === "ltr"));
-  const link = elements(details).find(node => node.type === "a"); assert.equal(link.props.href, "https://brawlace.com/clubs/CLUB"); assert.match(link.props.rel, /noopener/);
+  const link = elements(sourceDetails).find(node => node.type === "a"); assert.equal(link.props.href, "https://brawlace.com/clubs/CLUB"); assert.match(link.props.rel, /noopener/);
   assert.equal(elements(tree).filter(node => ["Input", "input", "textarea", "select", "form"].includes(node.type)).length, 0);
-  assert.match(textContent(tree), /Last fetched from source: 2026-09-17T12:00:00Z/); assert.match(textContent(details), /does not force a provider update/); page.unmount();
+  assert.match(textContent(tree), /Last fetched from source: 2026-09-17T12:00:00Z/); page.unmount();
 });
 
 test("source roster differences are disclosed rather than treating unmatched current members as absent", async () => {
   const page = harness({ response: () => snapshot({ matchedMembers: 1, sourceMembers: 3, rosterMembers: 2, members: [member(), member({ playerTag: "#BBB", playerName: "New player", reportedWins: null, reportedTicketsRemaining: null })] }) });
-  const tree = await page.render(); assert.match(textContent(tree), /Matched 1 of 2 current members/); assert.match(textContent(tree), /source lists 3 members; 1 match/);
+  const tree = await page.render(); assert.match(textContent(tree), /Matched 1 of 2 current members/); assert.match(textContent(disclosure(tree, "Source and rules")), /source lists 3 members; 1 match/);
   assert.match(memberRows(tree), /New player#BBBUnknownUnknown/); assert.doesNotMatch(memberRows(tree), /Absent|0UnknownUnknown/); page.unmount();
 });
 
 test("all thirty identities can match while two members have unknown counters without a roster mismatch warning", async () => {
   const members = Array.from({ length: 30 }, (_, index) => member({ playerTag: `#P${index}`, playerName: `Player ${index}`, reportedWins: index < 10 ? 4 : index < 24 ? 3 : index < 28 ? 0 : null, reportedTicketsRemaining: index < 28 ? 0 : null }));
   const page = harness({ response: () => snapshot({ members, matchedMembers: 30, sourceMembers: 30, rosterMembers: 30 }) });
-  const tree = await page.render(), details = elements(tree).find(node => node.type === "details");
-  assert.match(textContent(details), /source lists 30 members; 30 match/);
-  assert.match(textContent(details), /Matching a member does not mean their wins or tickets are available/);
+  const tree = await page.render(), details = disclosure(tree, "Member counters");
+  assert.equal(elements(elements(details).find(node => node.type === "tbody")).filter(node => node.type === "tr").length, 30);
   assert.equal((memberRows(tree).match(/Unknown/g) || []).length, 4);
   assert.match(memberRows(tree), /Player 2400|Player 24#P2400/);
   assert.match(textContent(tree), /Reported total wins82/); assert.match(textContent(tree), /Players reported by source24/);
   assert.doesNotMatch(textContent(tree), /Matched 30 of 30 current members/); assert.equal(details.props.open, undefined); page.unmount();
   const known = harness({ response: () => snapshot({ members: [member({ reportedTicketsRemaining: 0 })] }) });
-  assert.doesNotMatch(textContent(await known.render()), /Matching a member does not mean/); known.unmount();
+  assert.match(memberRows(await known.render()), /Amine#AAA00/); known.unmount();
 });
 
 test("pending and unavailable source states do not display stale supplied totals, while stale data is labelled", async () => {
@@ -157,8 +160,8 @@ test("member-history deep links select the private player archive and show the g
 
 test("the Arabic source panel translates the counters, provenance and unknown member values", async () => {
   const page = harness({ locale: "ar" }); const tree = await page.render(); assert.match(textContent(tree), /عدادات Mega Pig/); assert.match(textContent(tree), /مصدر خارجي/); assert.match(textContent(tree), /إجمالي الانتصارات بحسب المصدر/);
-  assert.doesNotMatch(textContent(tree), /Reported total wins|Players reported by source|Unknown|Last fetched/); assert.match(textContent(tree), /لا تسجّل الحضور ولا تؤثر/); page.unmount();
-  assert.match(textContent(tree), /مطابقة العضو لا تعني توفر/);
+  assert.doesNotMatch(textContent(tree), /Reported total wins|Players reported by source|Unknown|Last fetched/); assert.match(textContent(tree), /لا تُستخدم هذه العدادات لتسجيل الحضور أو مقارنة الأعضاء/);
+  assert.match(textContent(tree), /الدورة والمكافأة غير مؤكدتين/); assert.match(memberRows(tree), /غير معروف/); page.unmount();
 });
 
 test("the community-rule stage estimate handles stage boundaries and never confirms reward receipt", async () => {
@@ -166,6 +169,6 @@ test("the community-rule stage estimate handles stage boundaries and never confi
     const page = harness({ response: () => snapshot({ totalWins }) }); const tree = await page.render();
     assert.ok(textContent(tree).includes(`Estimated stage: ${stage}`)); assert.match(textContent(tree), /Based on 16 wins per stage/);
     assert.equal(textContent(tree).includes("Target reached by this estimate"), totalWins === 80); assert.doesNotMatch(textContent(tree), /Reward received/);
-    assert.match(textContent(tree), /does not identify the cycle/); page.unmount();
+    assert.match(textContent(tree), /Cycle unconfirmed · reward unconfirmed/); assert.match(textContent(disclosure(tree, "Source and rules")), /source does not date the cycle/); page.unmount();
   }
 });

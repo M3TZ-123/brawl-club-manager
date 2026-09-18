@@ -140,9 +140,7 @@ export default function DashboardPage() {
 
   return <LayoutWrapper><div className="space-y-6">
     <div className="flex flex-col justify-between gap-4 xl:flex-row xl:items-start">
-      <div><h1 className="text-2xl font-bold">{t("Club overview")}</h1>
-        <p className="mt-1 text-sm text-muted-foreground">{t("Your club at a glance.")}</p>
-      </div>
+      <h1 className="text-2xl font-bold">{t("Club overview")}</h1>
       <div className="flex gap-2" role="group" aria-label={t("Overview sections")}>
         <Button variant={view === "summary" ? "default" : "outline"} aria-pressed={view === "summary"} onClick={() => setView("summary")}>{t("Summary")}</Button>
         <Button variant={view === "about" ? "default" : "outline"} aria-pressed={view === "about"} onClick={() => setView("about")}>{t("About the club")}</Button>
@@ -163,7 +161,7 @@ export default function DashboardPage() {
         <Link href={`/reports?range=${range}`} className="font-medium text-primary hover:underline">{t("View full report")}</Link>
       </section>}
       <div className="grid gap-4 lg:grid-cols-2">
-        <Card><CardHeader><CardTitle className="flex items-center gap-2 text-base"><ListChecks className="h-5 w-5 text-amber-500" />{t("Needs Attention")}</CardTitle><p className="text-xs text-muted-foreground">{t("Recent activity and trophy progress in the selected period.")}</p></CardHeader>
+        <Card><CardHeader><CardTitle className="flex items-center gap-2 text-base"><ListChecks className="h-5 w-5 text-amber-500" />{t("Needs Attention")}</CardTitle><p className="text-xs text-muted-foreground">{t("Trophy progress")}</p></CardHeader>
           <CardContent><MemberSignalList members={dashboard.attentionMembers || []} range={range} attention emptyText="No urgent member issues found." /></CardContent></Card>
         <Card><CardHeader><CardTitle className="flex items-center gap-2 text-base"><ArrowUpRight className="h-5 w-5 text-green-500" />{t("Top trophy gains")}</CardTitle></CardHeader>
           <CardContent><MemberSignalList members={dashboard.topGainers || []} range={range} emptyText={dashboard.summary?.trophyProgressKnownMembers === 0 && dashboard.summary.totalMembers > 0 ? "Not enough history to compare trophies for this period." : "No positive trophy progress recorded for this period."} /></CardContent></Card>
@@ -171,10 +169,10 @@ export default function DashboardPage() {
       <div className="grid gap-4 lg:grid-cols-2">
         <ActivityTimeline events={(dashboard.recentEvents || []).slice(0, 4)} />
         <nav aria-label={t("Club shortcuts")} className="grid content-start gap-3">{([
-          ["/members", "Open Members", "Find a member, check activity or add a note."],
-          ["/club-planning", "Club events", "Follow Mega Pig and organize club events."],
-          ["/history", "History", "See who joined, left or returned."],
-        ] as const).map(([href, title, description]) => <Link key={href} href={href} className="rounded-lg border bg-card p-4 transition-colors hover:bg-accent"><p className="font-medium">{t(title)}</p><p className="mt-1 text-sm text-muted-foreground">{t(description)}</p></Link>)}</nav>
+          ["/members", "Open Members"],
+          ["/club-planning", "Club events"],
+          ["/history", "History"],
+        ] as const).map(([href, title]) => <Link key={href} href={href} className="flex items-center justify-between gap-3 rounded-lg border bg-card p-4 font-medium transition-colors hover:bg-accent">{t(title)}<ArrowUpRight className="h-4 w-4 shrink-0" aria-hidden="true" /></Link>)}</nav>
       </div>
     </>}
     </>}

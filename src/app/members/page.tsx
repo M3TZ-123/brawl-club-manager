@@ -70,23 +70,23 @@ const ACTIVITY_ORDER: Record<ActivityFilter, number> = {
   all: 4,
 };
 
-const COLUMN_OPTIONS: Array<{ key: MemberColumnKey; label: string; description: string }> = [
-  { key: "role", label: "Role", description: "Club permission level" },
-  { key: "trophies", label: "Trophies", description: "Current trophy count" },
-  { key: "progress", label: "Trophy progress", description: "Follows the selected period" },
-  { key: "trophies_24h", label: "24h", description: "One-day trophy progress" },
-  { key: "trophies_3d", label: "3 days", description: "Short-term trophy progress" },
-  { key: "trophies_7d", label: "7 days", description: "Weekly trophy progress" },
-  { key: "trophies_30d", label: "1 month", description: "30-day comparison" },
-  { key: "trophies_90d", label: "3 months", description: "90-day comparison" },
-  { key: "activity", label: "Activity", description: "Readable status badge" },
-  { key: "last_battle", label: "Last Battle", description: "Most recent tracked battle" },
-  { key: "highest_trophies", label: "Highest", description: "Personal best trophies" },
-  { key: "win_rate", label: "Win Rate", description: "Tracked battle win rate" },
-  { key: "rank_current", label: "Current Rank", description: "Current ranked tier" },
-  { key: "rank_highest", label: "Best Rank", description: "Best ranked tier" },
-  { key: "brawlers_count", label: "Brawlers", description: "Unlocked brawler count" },
-  { key: "trio_victories", label: "3v3 Wins", description: "Total 3v3 victories" },
+const COLUMN_OPTIONS: Array<{ key: MemberColumnKey; label: string }> = [
+  { key: "role", label: "Role" },
+  { key: "trophies", label: "Trophies" },
+  { key: "progress", label: "Trophy progress" },
+  { key: "trophies_24h", label: "24h" },
+  { key: "trophies_3d", label: "3 days" },
+  { key: "trophies_7d", label: "7 days" },
+  { key: "trophies_30d", label: "1 month" },
+  { key: "trophies_90d", label: "3 months" },
+  { key: "activity", label: "Activity" },
+  { key: "last_battle", label: "Last Battle" },
+  { key: "highest_trophies", label: "Highest" },
+  { key: "win_rate", label: "Win Rate" },
+  { key: "rank_current", label: "Current Rank" },
+  { key: "rank_highest", label: "Best Rank" },
+  { key: "brawlers_count", label: "Brawlers" },
+  { key: "trio_victories", label: "3v3 Wins" },
 ];
 
 function getActivityStatus(member: MemberWithGains): ActivityFilter {
@@ -557,8 +557,6 @@ export default function MembersPage() {
             <div className="space-y-4">
               <div className="flex flex-wrap items-center justify-between gap-3"><div>
                 <h1 className="text-2xl font-semibold"><T text="Members" /></h1>
-                <p className="mt-1 text-sm text-muted-foreground">
-                  <T text="Choose a period to compare trophy progress." /></p>
               </div>{isAdmin && <Button asChild><Link href="/reviews"><T text="Notes and departure reasons" /></Link></Button>}</div>
 
               <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
@@ -772,14 +770,11 @@ export default function MembersPage() {
                     <RotateCcw className="h-4 w-4" />
                     <T text=" Default " /></Button>
                 </div>
-                <p className="mb-3 text-xs text-muted-foreground"><T text="Extra period columns are optional comparisons." /></p>
-
                 <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
                   {COLUMN_OPTIONS.map((column) => (
                     <div key={column.key} className="flex items-center justify-between gap-3 rounded-lg border border-border/70 bg-background/60 p-3">
                       <div>
                         <p className="text-sm font-medium">{<T text={column.label} />}</p>
-                        <p className="text-xs text-muted-foreground">{<T text={column.description} />}</p>
                       </div>
                       <Switch
                         checked={columnVisibility[column.key]}
@@ -811,8 +806,6 @@ export default function MembersPage() {
                 )}
                 {hasAdvancedFilters && <Badge variant="outline"><T text="Advanced filters active" /></Badge>}
               </div>
-              <p className="text-xs text-muted-foreground">
-                <T text=" Click a row for quick details. Open profile for full history. " /></p>
             </div>
 
             {isLoading ? (

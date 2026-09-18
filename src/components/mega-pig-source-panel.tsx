@@ -98,18 +98,19 @@ export function MegaPigSourcePanel() {
     {counters && <>
       <dl className="grid grid-cols-2 gap-3"><div><dt className="text-xs text-muted-foreground">{t("Reported total wins")}</dt><dd className="mt-1 text-2xl font-semibold">{unknownNumber(counters.totalWins)}</dd></div><div><dt className="text-xs text-muted-foreground">{t("Players reported by source")}</dt><dd className="mt-1 text-2xl font-semibold">{unknownNumber(counters.reportedPlayersPlayed)}</dd></div></dl>
       <p className="text-xs text-muted-foreground">{t("Estimated stage")}: <bdi dir="ltr">{estimatedStage === null ? t("Unknown") : `${number(estimatedStage)}/${number(5)}`}</bdi> · {t("Based on 16 wins per stage")}{estimatedStage === 5 ? ` · ${t("Target reached by this estimate")}` : ""}</p>
+      <p className="text-xs text-amber-600 dark:text-amber-400">{t("Cycle unconfirmed · reward unconfirmed")}</p>
       {counters.status === "stale" && <p role="status" className="text-sm text-amber-600 dark:text-amber-400">{t("Showing saved counters; the source refresh is delayed.")}</p>}
       {rosterDiffers && <p role="status" className="text-xs text-amber-600 dark:text-amber-400">{t("Matched {matched} of {total} current members. Missing members have unknown counters.", { matched: number(counters.matchedMembers), total: number(counters.rosterMembers) })}</p>}
-      <details className="text-sm"><summary className="cursor-pointer text-primary">{t("View member counters and source")}</summary><div className="mt-3 space-y-3">
-        <p className="text-xs text-muted-foreground">{t("The source lists {source} members; {matched} match the current roster.", { source: number(counters.sourceMembers), matched: number(counters.matchedMembers) })}</p>
-        {counters.members.some(member => member.reportedWins === null || member.reportedTicketsRemaining === null) && <p className="text-xs text-muted-foreground">{t("Matching a member does not mean their wins or tickets are available.")}</p>}
+      <details className="text-sm"><summary className="cursor-pointer text-primary">{t("Member counters")}</summary><div className="mt-3 space-y-3">
         {counters.members.length > 0 && <table className="w-full table-fixed text-sm"><caption className="sr-only">{t("Reported counters for current members")}</caption><thead><tr className="border-b text-start text-xs text-muted-foreground"><th scope="col" className="pb-2 text-start font-medium">{t("Member")}</th><th scope="col" className="w-16 pb-2 text-end font-medium">{t("Wins")}</th><th scope="col" className="w-24 pb-2 ps-2 text-end font-medium">{t("Tickets remaining")}</th></tr></thead><tbody>{counters.members.map(member => <tr key={member.playerTag} className="border-b last:border-0"><th scope="row" className="py-2 pe-2 text-start font-normal [overflow-wrap:anywhere]">{formatBrawlName(member.playerName, t("Player"))}<bdi dir="ltr" className="block text-xs text-muted-foreground">{member.playerTag}</bdi></th><td className="py-2 text-end">{unknownNumber(member.reportedWins)}</td><td className="py-2 ps-2 text-end">{unknownNumber(member.reportedTicketsRemaining)}</td></tr>)}</tbody></table>}
-        {sourceUrl && <a href={sourceUrl} target="_blank" rel="noopener noreferrer" className="inline-block text-primary underline underline-offset-4">{t("Open BrawlAce source")}</a>}
-        <p className="text-xs text-muted-foreground">{t("16 wins per stage · community-reported rules, adjustable")} · <a className="text-primary underline" href={MEGA_PIG_RULE_REFERENCE_URL} target="_blank" rel="noopener noreferrer">{t("Rule reference")}</a></p>
-        <p className="text-xs text-muted-foreground">{t("Refresh reads the app cache. Source checks run automatically; this button does not force a provider update.")}</p>
       </div></details>
     </>}
     {data?.fetchedAt && <p className="text-xs text-muted-foreground">{t("Last fetched from source")}: <time dateTime={data.fetchedAt}>{dateTime(data.fetchedAt)}</time>{data.updating ? ` · ${t("Checking source...")}` : ""}</p>}
-    <p className="text-xs text-muted-foreground">{t("The source does not identify the cycle or when its counters changed. These figures do not record attendance or affect member comparison.")}</p>
+    {counters && <details className="text-xs"><summary className="cursor-pointer text-muted-foreground">{t("Source and rules")}</summary><div className="mt-2 space-y-2 text-muted-foreground">
+      {rosterDiffers && <p>{t("The source lists {source} members; {matched} match the current roster.", { source: number(counters.sourceMembers), matched: number(counters.matchedMembers) })}</p>}
+      <p>{t("The source does not date the cycle. These counters are not used for attendance or member comparisons.")}</p>
+      <p>{t("Stage targets are community-reported estimates; confirm this edition's rules in the game.")}</p>
+      <div className="flex flex-wrap gap-3">{sourceUrl && <a href={sourceUrl} target="_blank" rel="noopener noreferrer" className="text-primary underline">{t("Open BrawlAce source")}</a>}<a className="text-primary underline" href={MEGA_PIG_RULE_REFERENCE_URL} target="_blank" rel="noopener noreferrer">{t("Rule reference")}</a></div>
+    </div></details>}
   </section>;
 }

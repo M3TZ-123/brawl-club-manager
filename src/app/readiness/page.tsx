@@ -44,7 +44,7 @@ export default function ReadinessPage() {
     finally { pagingBusy.current = false; setPaging(false); }
   };
   return <LayoutWrapper><div className="space-y-5">
-    <header className="flex flex-wrap items-start justify-between gap-3"><div><h1 className="text-2xl font-bold">{t("Brawler readiness")}</h1><p className="mt-1 text-sm text-muted-foreground">{t("Find club players with the brawlers and power levels you need.")}</p></div><Button variant="outline" onClick={resource.reload} disabled={resource.loading}>{t("Refresh")}</Button></header>
+    <header className="flex flex-wrap items-start justify-between gap-3"><h1 className="text-2xl font-bold">{t("Brawler readiness")}</h1><Button variant="outline" onClick={resource.reload} disabled={resource.loading}>{t("Refresh")}</Button></header>
     <section className="space-y-3 rounded-lg border bg-card p-3" aria-label={t("Find brawlers")}>
     <form onSubmit={event => { event.preventDefault(); setAppliedSearch(search.trim()); setPageError(null); }} className="flex flex-wrap items-end gap-2"><div className="min-w-0 flex-1"><label htmlFor="readiness-search" className="mb-1 block text-sm">{t("Search player or brawler")}</label><Input id="readiness-search" value={search} onChange={event => setSearch(event.target.value)} /></div><Button type="submit" variant="outline">{t("Search")}</Button></form>
     <div className="grid grid-cols-2 gap-3">
@@ -53,11 +53,10 @@ export default function ReadinessPage() {
     </div>
     {(appliedSearch || brawler || minPower) && <Button variant="ghost" size="sm" onClick={() => { setSearch(""); setAppliedSearch(""); setBrawler(""); setMinPower(""); setPageError(null); }}>{t("Clear filters")}</Button>}
     </section>
-    <p className="text-xs text-muted-foreground">{t("Latest saved collection; missing data stays unknown.")}</p>
     {resource.loading && !data && <p role="status" className="py-8 text-center text-muted-foreground">{t("Loading brawler readiness…")}</p>}
     {resource.error && <div role="alert" className="rounded-lg border p-4 text-sm">{t("Brawler readiness could not be loaded.")} <Button variant="outline" size="sm" onClick={resource.reload}>{t("Retry")}</Button></div>}
     {data && <>
-      <div className="flex flex-wrap gap-x-5 gap-y-2 text-sm"><p><strong>{number(data.total)}</strong> {t("Results")}</p><p className="text-muted-foreground">{t("{count} current players have saved collection data.", { count: data.members.filter(member => member.brawlersObserved > 0).length })}</p></div>
+      <div className="flex flex-wrap gap-x-5 gap-y-2 text-sm"><p><strong>{number(data.total)}</strong> {t("Results")}</p><p className="text-muted-foreground">{t("Current members with saved brawlers: {count}", { count: data.members.filter(member => member.brawlersObserved > 0).length })}</p></div>
       {!data.rows.length && <p className="rounded-lg border p-6 text-sm text-muted-foreground">{t("No saved brawlers match these filters. Missing profiles are not assumed unprepared.")}</p>}
       <div className="grid gap-3 lg:grid-cols-2">{data.rows.map(row => <Card key={`${row.player.tag}:${row.brawler.id}`}><CardContent className="space-y-3 p-4">
         <div className="flex min-w-0 items-center gap-3"><BrawlImage src={`https://cdn.brawlify.com/brawlers/borderless/${row.brawler.id}.png`} alt="" width={48} height={48} /><div className="min-w-0 flex-1"><h2 className="break-words font-semibold">{row.brawler.name}</h2><Link className="break-words text-sm text-primary hover:underline" href={`/members/${encodeURIComponent(row.player.tag)}`}>{row.player.name}</Link> <bdi dir="ltr" className="text-xs text-muted-foreground">{row.player.tag}</bdi></div><p className="shrink-0 rounded-md bg-muted px-2 py-1 text-sm">{t("Power {level}", { level: unknownNumber(row.powerLevel) })}</p></div>
@@ -66,7 +65,7 @@ export default function ReadinessPage() {
       </CardContent></Card>)}</div>
       {pageError === data && <p role="alert" className="text-sm text-destructive">{t("More readiness results could not be loaded. Try again.")}</p>}
       {data.nextOffset != null && <Button variant="outline" onClick={loadMore} disabled={paging}>{paging ? t("Loading…") : t("Load more results")}</Button>}
-      <details className="text-xs text-muted-foreground"><summary className="cursor-pointer font-medium">{t("About collection data")}</summary><p className="mt-2">{t("Latest saved profiles, not a historical period. Power and equipment are facts, not a readiness score.")}</p></details>
+      <details className="text-xs text-muted-foreground"><summary className="cursor-pointer font-medium">{t("About collection data")}</summary><div className="mt-2 space-y-2"><p>{t("Latest saved collection; missing data stays unknown.")}</p><p>{t("Latest saved profiles, not a historical period. Power and equipment are facts, not a readiness score.")}</p></div></details>
     </>}
   </div></LayoutWrapper>;
 }

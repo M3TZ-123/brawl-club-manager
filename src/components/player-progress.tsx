@@ -77,7 +77,7 @@ export function PlayerProgress({ playerTag, range }: { playerTag: string; range:
   };
 
   return <section aria-label={t("Player progress and collection")} className="space-y-4">
-    <div><h2 className="text-xl font-semibold">{t("Player progress and collection")}</h2><p className="mt-1 text-sm text-muted-foreground">{t("Current profile details and changes recorded by this club tracker.")}</p></div>
+    <h2 className="text-xl font-semibold">{t("Player progress and collection")}</h2>
     {resource.error && <div role="alert" className="flex flex-wrap items-center gap-3 rounded-lg border p-3 text-sm">{t("Player progress could not be loaded.")} <Button variant="outline" size="sm" onClick={resource.reload}>{t("Retry")}</Button></div>}
     {resource.loading && !data && <p role="status" className="text-sm text-muted-foreground">{t("Loading player progress…")}</p>}
     {data && <>
@@ -92,7 +92,7 @@ export function PlayerProgress({ playerTag, range }: { playerTag: string; range:
           ["Experience points", data.profile.expPoints, "expPoints"],
         ] as const).map(([label, value, field]) => <Card key={field}><CardContent className="p-3 sm:p-4"><p className="text-xs text-muted-foreground">{t(label)}</p><p className="mt-1 break-words text-xl font-bold">{unknownNumber(value)}</p>{field === "fame" && data.profile.fameTierName && <p className="text-xs">{data.profile.fameTierName}</p>}{data.profile.fieldCheckedAt[field] && <p className="mt-1 text-xs text-muted-foreground"><LocalDate value={data.profile.fieldCheckedAt[field]} time /></p>}</CardContent></Card>)}
       </div>
-      <p className="text-xs text-muted-foreground">{t("Profile checked")}: <LocalDate value={data.profile.lastCheckedAt} time /> · {t("Missing fields remain unknown until reported.")}</p>
+      <p className="text-xs text-muted-foreground">{t("Profile checked")}: <LocalDate value={data.profile.lastCheckedAt} time /></p>
         </div>
       </details>
 
@@ -103,7 +103,6 @@ export function PlayerProgress({ playerTag, range }: { playerTag: string; range:
             <div className="min-w-0 flex-1"><label htmlFor="collection-search" className="mb-1 block text-sm">{t("Search brawler name or ID")}</label><Input id="collection-search" value={search} maxLength={80} onChange={event => setSearch(event.target.value)} /></div>
             <Button type="submit" variant="outline">{t("Search")}</Button>
           </form>
-          <p className="text-xs text-muted-foreground">{t("Current collection. Choose a brawler for equipment and recorded daily progress.")}</p>
           <p className="text-xs text-muted-foreground">{t("Profile checked")}: <LocalDate value={data.collection.lastCheckedAt} time /></p>
           {!data.collection.items.length && <p className="py-4 text-sm text-muted-foreground">{t("No brawlers match this search.")}</p>}
           <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 xl:grid-cols-6">

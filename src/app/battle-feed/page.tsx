@@ -729,7 +729,6 @@ export default function BattleFeedPage() {
             <CardContent className="py-12 text-center text-muted-foreground">
               <Swords className="h-12 w-12 mx-auto mb-3 opacity-30" />
               <p className="font-medium"><T text={filterContext ? "No recorded battles match this battle type and period." : "No battles match this period."} /></p>
-              <p className="text-sm mt-1"><T text="Try another period or clear the filters." /></p>
             </CardContent>
           </Card>
         ) : (

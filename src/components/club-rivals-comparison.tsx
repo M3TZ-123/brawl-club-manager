@@ -76,8 +76,7 @@ export function ClubRivalsComparison({ data, own, ownLoading, ownError, onRetryO
             <div className="space-y-4 [max-inline-size:calc(100vw_-_5rem)] sm:[max-inline-size:48rem]">
               <p className="whitespace-pre-wrap break-words text-sm text-muted-foreground">{saved ? stripBrawlColorTags(saved.description) || t("No club description") : t("Club data not available yet. Check the tag or retry later.")}</p>
               <dl className="text-sm"><div className="flex flex-wrap gap-x-3 gap-y-1"><dt className="text-muted-foreground">{t("Required trophies")}</dt><dd className="font-medium tabular-nums">{metric(saved?.requiredTrophies)}</dd></div></dl>
-              {hasTrend ? <><ClubTrendLine points={chartPoints} label={t("Reported club trophies")} /><p className="text-xs text-muted-foreground">{t("The chart uses the official club score; the table adds members' trophies. These values can differ.")}</p></> : <p className="text-xs text-muted-foreground">{t("Trophy history appears after two dated observations.")}</p>}
-              <p className="text-xs text-muted-foreground">{t("Recent daily observations are kept for about 90 days.")}</p>
+              {hasTrend ? <><ClubTrendLine points={chartPoints} label={t("Reported club trophies")} /><p className="text-xs text-muted-foreground">{t("Chart: official club score. Table: summed member trophies.")}</p></> : <p className="text-xs text-muted-foreground">{t("Not enough trophy history yet.")}</p>}
               <ClubRankingSummary tag={rival.tag} region={data.region} observations={data.ranks} rankingAt={data.rankingAt} rankingStale={data.rankingStale} title="Recorded rank" />
               {isAdmin && <Button variant="outline" size="sm" disabled={saving} aria-label={t("Stop following {name}", { name: row.name })} onClick={() => { if (!saving) onUnfollow(rival.tag); }}>{t("Stop following club")}</Button>}
             </div>
@@ -85,7 +84,10 @@ export function ClubRivalsComparison({ data, own, ownLoading, ownError, onRetryO
         })}</tbody>
       </table>
     </div>
-    <p className="text-xs text-muted-foreground">{t("Median trophies shows the middle of the roster, averaging the two middle values when needed.")}</p>
-    <p className="text-xs text-muted-foreground">{t("Roster trophies sum member balances. Snapshots may have different update times.")} {t("Club profiles refresh when viewed after six hours.")}</p>
+    <details className="text-xs text-muted-foreground"><summary className="cursor-pointer font-medium">{t("About this comparison")}</summary><div className="mt-2 space-y-2">
+      <p>{t("Median trophies shows the middle of the roster, averaging the two middle values when needed.")}</p>
+      <p>{t("Roster trophies sum member balances. Snapshots may have different update times.")}</p>
+      <p>{t("Club profiles refresh when viewed after six hours.")} {t("Recent daily observations are kept for about 90 days.")}</p>
+    </div></details>
   </section>;
 }

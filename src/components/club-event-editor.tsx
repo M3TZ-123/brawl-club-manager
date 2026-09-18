@@ -28,7 +28,6 @@ export function ClubEventEditor({event,data,onSaved,onCancel,onReload}:{event:Pl
   }));
   return <form className="border rounded-lg p-4 bg-card space-y-4 min-w-0" onInvalidCapture={e=>{let section=e.target instanceof HTMLElement?e.target.parentElement:null;while(section&&section!==e.currentTarget){if(section instanceof HTMLDetailsElement)section.open=true;section=section.parentElement;}}} onSubmit={e=>{e.preventDefault();void save({action:"save_event",id:event?.id||null,version:event?.version||0,event:fields,entries,reason});}}>
     <h2 className="text-xl font-semibold">{t(event?"Edit club event":"Plan a club event")}</h2>
-    <p className="text-sm text-muted-foreground">{t("Set the date first. Add teams and record attendance when ready.")}</p>
     <p className="text-xs text-muted-foreground">{t("Attendance and results are private manual records.")}</p>
     <fieldset disabled={busy} className="space-y-4 min-w-0">
       <div className="grid gap-3 sm:grid-cols-2">
@@ -40,7 +39,7 @@ export function ClubEventEditor({event,data,onSaved,onCancel,onReload}:{event:Pl
       </div>
       {locked&&<p className="text-xs text-muted-foreground">{t("Recorded results lock the cycle and dates. Create a new event for the next cycle.")}</p>}
       {!locked&&hasDraftResults&&<p className="text-xs text-muted-foreground">{t("Clear the manual wins and tickets before changing the event type.")}</p>}
-      {fields.kind==="mega_pig"&&<p className="text-xs text-muted-foreground">{t("Use the dates and rules shown for this edition in the game. Tickets, targets and rewards can change; no old defaults are applied.")} {<a className="text-primary underline" href="https://supercell.com/en/games/brawlstars/blog/release-notes/release-notes-september-2025/" target="_blank" rel="noopener noreferrer">{t("Official ticket rule change")}</a>}</p>}
+      {fields.kind==="mega_pig"&&<p className="text-xs text-muted-foreground">{t("Use this edition's dates and ticket rules from the game.")} {<a className="text-primary underline" href="https://supercell.com/en/games/brawlstars/blog/release-notes/release-notes-september-2025/" target="_blank" rel="noopener noreferrer">{t("Official ticket rule change")}</a>}</p>}
       {fields.kind==="mega_pig"&&event?.status!=="cancelled"&&(event?.kind==="mega_pig"?<ClubEventObservationsPanel key={`${event.id}:${event.version}`} eventId={event.id} version={event.version} draftChanged={observationDraftChanged}/>:<p className="text-xs text-muted-foreground">{t("Save a Mega Pig event with its members to start automatic activity observations.")}</p>)}
       <details className="rounded-lg border p-3" open={entries.length>0}><summary className="cursor-pointer font-medium">{t("Teams and attendance")} · {number(entries.length)}</summary><div className="mt-4 space-y-4">
         <div className="grid gap-3 sm:grid-cols-2"><label className="block text-sm">{t("Starters per team")}<Input required type="number" min={1} max={30} value={fields.teamSize} onChange={e=>setFields({...fields,teamSize:Number(e.target.value)})}/></label>
@@ -66,7 +65,7 @@ export function ClubEventEditor({event,data,onSaved,onCancel,onReload}:{event:Pl
         </div>
         <label className="block text-sm">{t("Private member note")}<Input maxLength={500} value={entry.notes} onChange={e=>updateEntry(index,{notes:e.target.value})}/></label>
       </div></details>)}</div>
-      {fields.kind==="mega_pig"&&<p className="text-xs text-muted-foreground">{t("Leave unknown results blank. Zero means explicitly recorded zero; these values are not verified by the game API.")}</p>}
+      {fields.kind==="mega_pig"&&<p className="text-xs text-muted-foreground">{t("Leave unknown results blank; enter zero only if confirmed.")}</p>}
       <details className="text-sm"><summary className="cursor-pointer text-primary">{t("Help choosing teams")}</summary><div className="mt-2 flex flex-wrap gap-3"><Link className="text-primary underline" href="/readiness" target="_blank" rel="noopener">{t("Check brawler readiness")}</Link><Link className="text-primary underline" href="/analysis" target="_blank" rel="noopener">{t("Review observed teammate records")}</Link></div><p className="mt-2 text-xs text-muted-foreground">{t("Use these records to plan together. They do not predict the best team.")}</p></details>
       </div></details>
       <details className="rounded-lg border p-3"><summary className="cursor-pointer text-sm font-medium">{t("Private notes and event status")}</summary><div className="mt-3 space-y-3"><label className="block text-sm">{t("Private event notes")}<textarea rows={2} maxLength={1000} className={selectClass} value={fields.notes} onChange={e=>setFields({...fields,notes:e.target.value})}/></label><label className="block text-sm">{t("Status")}<select className={selectClass} value={fields.status} onChange={e=>setFields({...fields,status:e.target.value as EventFields["status"]})}>{["planned","completed","cancelled"].map(k=><option key={k} value={k}>{t(k==="planned"?"Planned":k==="completed"?"Completed":"Cancelled")}</option>)}</select></label></div></details>

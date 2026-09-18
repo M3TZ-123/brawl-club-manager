@@ -89,8 +89,10 @@ test('details remain in a full-width row, retain score semantics and expose an a
   const chart = elements(detailCell).find(node => node.type === 'ClubTrendLine');
   assert.equal(chart.props.label, 'Reported club trophies');
   assert.deepEqual(Array.from(chart.props.points, point => point.value), [1400, 1500]);
-  assert.match(textContent(detailCell), /official club score; the table adds members' trophies/);
-  assert.match(textContent(detailCell), /about 90 days/);
+  assert.match(textContent(detailCell), /Chart: official club score. Table: summed member trophies/);
+  const methodology = elements(tree).find(node => node.type === 'details' && textContent(node).includes('About this comparison'));
+  assert.ok(methodology && !methodology.props.open);
+  assert.match(textContent(methodology), /about 90 days/);
   assert.equal(elements(detailCell).find(node => node.type === 'ClubRankingSummary').props.tag, '#RIVAL');
   assert.equal(elements(detailCell).find(node => node.type === 'ClubRankingSummary').props.title, 'Recorded rank');
   assert.match(textContent(tree), /Club profiles refresh when viewed after six hours/);
@@ -109,7 +111,7 @@ test('a trend requires two distinct known dates and a club-scope change closes e
   const first = rival({ history: [{ at: '2026-09-18T12:00:00Z', trophies: 100 }, { at: '2026-09-18T10:00:00Z', trophies: 99 }, { at: '2026-09-17T12:00:00Z', trophies: NaN }] });
   const page = harness({ data: response([first]) }); let tree = await page.render(); expand(tree); tree = await page.render();
   assert.equal(elements(tree).some(node => node.type === 'ClubTrendLine'), false);
-  assert.match(textContent(tree), /Trophy history appears after two dated observations/);
+  assert.match(textContent(tree), /Not enough trophy history yet/);
   page.setProps({ data: { ...response([first]), clubTag: '#NEW' } }); tree = await page.render();
   assert.equal(elements(tree).some(node => node.type === 'td' && node.props.colSpan === 4), false);
   assert.doesNotMatch(textContent(tree), /Our club/);

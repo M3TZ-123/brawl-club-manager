@@ -56,7 +56,7 @@ test('dated history stays readable, keeps old follow-ups and exact departure dat
   ].map(row=>({created_at:'2026-09-16T12:00:00Z',departure_event_id:null,follow_up_at:null,corrects_id:null,...row}));
   const page=harness('src/components/member-administration.tsx','MemberAdministrationPanel',{playerTag:'#PYLQ',isCurrent:false},()=>({...administration,decisions:rows}));
   let tree=await page.render();assert.equal(elements(tree).filter(node=>node.type==='article').length,4);assert.equal(elements(tree).some(node=>node.type==='details'),false);
-  assert.match(textContent(tree),/Historical follow-up/);assert.match(textContent(tree),/do not schedule a follow-up/);assert.match(textContent(tree),/Corrects an earlier entry; the original is preserved/);
+  assert.match(textContent(tree),/Historical follow-up/);assert.match(textContent(tree),/Historical record only. Schedule follow-ups in the note above/);assert.match(textContent(tree),/Corrects an earlier entry; the original is preserved/);
   assert.ok(elements(tree).some(node=>node.type==='LocalDate'&&node.props.value==='2025-01-01T10:00:00Z'),'The exact older departure remains visible even outside the departure picker');
   action(tree,'Add dated note')();tree=await page.render();assert.equal(elements(input(tree,'Entry type')).some(node=>node.type==='option'&&node.props.value==='follow_up'),false);
   assert.equal(elements(tree).some(node=>['Input','input'].includes(node.type)&&node.props.type==='datetime-local'),false);

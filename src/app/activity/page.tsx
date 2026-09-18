@@ -11,7 +11,7 @@ import { TimeRangePicker } from "@/components/time-range-picker";
 import { ClubActivityCalendar } from "@/components/club-activity-calendar";
 import type { ClubIntelligenceRange } from "@/lib/club-intelligence-types";
 import { TIME_RANGES, type TimeRangeKey } from "@/lib/time-range";
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   Table,
@@ -273,7 +273,6 @@ function useCategories() {
     key: "trophyLeaders" as const,
     label: "Trophies",
     icon: Trophy,
-    description: () => t("Current trophy rankings"),
     help: () => t("Sorted by each member's current trophy total. Time range does not change this tab."),
     formatValue: (m: LeaderboardMember) => formatNumber(m.trophies),
     subtitle: (m: LeaderboardMember) => t("Peak: {value0}", { value0: formatNumber(m.highestTrophies) }),
@@ -287,7 +286,6 @@ function useCategories() {
     key: "weeklyTrophyGainers" as const,
     label: "Progress",
     icon: TrendingUp,
-    description: (rangeLabel: string) => t("Best trophy movement over the {value0}", { value0: rangeLabel }),
     help: () => t("Net trophies means gained minus lost. Players with missing progress data are not ranked here."),
     formatValue: (m: LeaderboardMember) => {
       const n = m.weekly.netTrophies;
@@ -314,7 +312,6 @@ function useCategories() {
     key: "weeklyBattlers" as const,
     label: "Battles",
     icon: Swords,
-    description: (rangeLabel: string) => t("Most battles played in the {value0}", { value0: rangeLabel }),
     help: () => t("Based on recorded battles in this period."),
     formatValue: (m: LeaderboardMember) => m.weekly.battles.toString(),
     subtitle: (m: LeaderboardMember) => {
@@ -334,7 +331,6 @@ function useCategories() {
     key: "weeklyWinRate" as const,
     label: "Win Rate",
     icon: Target,
-    description: (rangeLabel: string) => t("Highest win rate in the {value0}", { value0: rangeLabel }),
     help: (_rangeLabel: string, minBattles: number) => t("Only players with at least {value0} tracked battles are ranked here.", { value0: minBattles }),
     formatValue: (m: LeaderboardMember) => t("{value0}%", { value0: m.weekly.winRate }),
     subtitle: (m: LeaderboardMember) => t("{value0} battles", { value0: m.weekly.battles }),
@@ -348,7 +344,6 @@ function useCategories() {
     key: "weeklyStarPlayers" as const,
     label: "Stars",
     icon: Star,
-    description: (rangeLabel: string) => t("Most Star Player awards in the {value0}", { value0: rangeLabel }),
     help: () => t("Based on recorded battles in this period."),
     formatValue: (m: LeaderboardMember) => t("{value0}", { value0: m.weekly.starPlayer }),
     subtitle: (m: LeaderboardMember) => t("{value0} battles", { value0: m.weekly.battles }),
@@ -369,7 +364,6 @@ function useCategories() {
     key: "mostActive" as const,
     label: "Activity",
     icon: Flame,
-    description: (rangeLabel: string) => t("Most active members in the {value0}", { value0: rangeLabel }),
     help: () => t("Days with at least one recorded battle in this period."),
     formatValue: (m: LeaderboardMember) => t("{value0}d", { value0: m.weekly.activeDays }),
     subtitle: (m: LeaderboardMember) => t("{value0} battles", { value0: m.weekly.battles }),
@@ -611,7 +605,6 @@ export default function LeaderboardPage() {
                           <cat.icon className="mt-1 h-5 w-5 text-muted-foreground" />
                           <div>
                             <CardTitle className="text-lg">{<T text={cat.label} />}</CardTitle>
-                            <CardDescription>{cat.description(t(rangeLabel))}</CardDescription>
                           </div>
                         </div>
                         <div className="text-sm text-muted-foreground sm:text-end">

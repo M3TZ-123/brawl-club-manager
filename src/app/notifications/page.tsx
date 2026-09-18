@@ -345,12 +345,9 @@ export default function NotificationsPage() {
           <CardContent className="flex flex-col items-center justify-center py-16 text-muted-foreground">
             <Bell className="h-10 w-10 mb-3 opacity-40" />
             <p className="text-lg font-medium">
-              {filter === "unread" ? <T text="No unread notifications" /> : <T text="No notifications found" />}
-            </p>
-            <p className="text-sm mt-1">
               {filter === "unread"
                 ? <T text="No unread notifications match these filters." />
-                : <T text="Try changing filters or wait for new club events." />}
+                : <T text="No notifications match these filters." />}
             </p>
           </CardContent>
         </Card>

@@ -138,9 +138,9 @@ function ReviewQueue() {
 
   if (!isAdmin || sessionLoading) return null;
   return <div className="mx-auto max-w-5xl space-y-5">
-    <header>
+    <header className="flex flex-wrap items-center gap-3">
       <h1 className="text-2xl font-bold">{t("Member notes")}</h1>
-      <p className="mt-1 text-sm text-muted-foreground">{t("Private notes, departure reasons and follow-ups. Former members stay in this directory.")}</p>
+      <Badge variant="outline">{t("Administrators only")}</Badge>
     </header>
     <div className="space-y-3">
       <div role="group" aria-label={t("Notes filters")} className="flex flex-wrap gap-2">

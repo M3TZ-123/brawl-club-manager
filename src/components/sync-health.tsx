@@ -25,10 +25,10 @@ export function DataConfidenceNotice() {
   const battleWarning = fullRun?.warnings?.some(code => code === "battle_logs_incomplete" || code === "battle_logs_rate_limited");
   const fullFailed = fullRun && fullRun.status !== "succeeded";
   if (health?.battleCoverage?.status === "possible_gap") {
-    return <div role="status" className="mb-4 rounded-lg border border-amber-500/30 bg-amber-500/10 p-3 text-sm"><p className="font-medium">{t("A possible gap remains in the recorded battle history.")}</p><p className="mt-1 text-muted-foreground">{t("A fresh fetch does not recover earlier battles that may be absent. Review recorded activity with this limitation in mind.")}</p></div>;
+    return <div role="status" className="mb-4 rounded-lg border border-amber-500/30 bg-amber-500/10 p-3 text-sm"><p className="font-medium">{t("A possible gap remains in the recorded battle history.")}</p></div>;
   }
   if ((health?.fullFreshness ?? health?.freshness) === "fresh" && health?.battleFreshness === "fresh" && !battleWarning && !fullFailed) return null;
-  return <div role="status" className="mb-4 rounded-lg border border-amber-500/30 bg-amber-500/10 p-3 text-sm"><p className="font-medium">{t(health ? "Battle or profile data is incomplete or stale. Review its timestamp before judging inactivity." : "Sync health")}{!health && ": " + t("Unavailable")}</p><p className="mt-1 text-muted-foreground">{t("A recent roster check does not confirm recent battle activity.")}</p></div>;
+  return <div role="status" className="mb-4 rounded-lg border border-amber-500/30 bg-amber-500/10 p-3 text-sm"><p className="font-medium">{t(health ? "Battle or profile data is incomplete or stale. Review its timestamp before judging inactivity." : "Sync health")}{!health && ": " + t("Unavailable")}</p></div>;
 }
 
 function FreshnessRow({ label, timestamp, freshness }: { label: string; timestamp?: string | null; freshness?: string }) {

@@ -57,7 +57,7 @@ export default function GamePage() {
   }, [loadEvents, view]);
   const rows = events?.data || [];
   return <LayoutWrapper><div className="space-y-8">
-    <header><h1 className="text-2xl font-bold flex items-center gap-3"><Globe2 className="text-primary" />{t("Maps and rankings")}</h1><p className="text-sm text-muted-foreground mt-2">{t("Check the current maps or compare club rankings.")}</p></header>
+    <header><h1 className="text-2xl font-bold flex items-center gap-3"><Globe2 className="text-primary" />{t("Maps and rankings")}</h1></header>
     <div role="group" aria-label={t("Maps and rankings")} className="flex flex-wrap gap-2"><Button variant={view === "maps" ? "default" : "outline"} aria-pressed={view === "maps"} onClick={() => { setClock(Date.now()); setView("maps"); }}>{t("Current maps")}</Button><Button variant={view === "rankings" ? "default" : "outline"} aria-pressed={view === "rankings"} onClick={() => setView("rankings")}>{t("Trophy rankings")}</Button></div>
     <section hidden={view !== "maps"} className="space-y-4" aria-labelledby="rotation-heading">
       <div className="flex flex-wrap items-center justify-between gap-3"><h2 id="rotation-heading" className="text-xl font-semibold flex items-center gap-2"><MapPinned className="w-5" />{t("Current events")}</h2><Button variant="outline" onClick={() => void loadEvents(true)}>{t("Refresh")}</Button></div>

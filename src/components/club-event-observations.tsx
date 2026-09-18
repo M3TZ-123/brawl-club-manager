@@ -76,7 +76,7 @@ export function ClubEventObservationsPanel({ eventId, version, draftChanged = fa
       {data && <>
         {!data.hasStarted ? <p className="text-sm">{t("Observation starts at the saved event start time.")}</p> : <>
           <p className="text-sm">{t("Activity observed for {count} of {total} saved event members.", { count: number(activeMembers), total: number(data.members.length) })}</p>
-          <p className="text-sm text-muted-foreground">{t(identifiedMembers ? "Some battle logs explicitly identify Mega Pig. These are observed matches, not official club contribution totals." : "Mega Pig participation is not identified in the available battle logs.")}</p>
+          <p className="text-sm text-muted-foreground">{t(identifiedMembers ? "Recorded Mega Pig battles; official contribution totals unavailable." : "Mega Pig participation is not identified in the available battle logs.")}</p>
           {!!data.members.length && <details>
             <summary className="cursor-pointer text-sm text-primary">{t("View observed member activity")}</summary>
             <ul className="mt-3 divide-y">{data.members.map(member => <li key={member.playerTag} className="py-3 space-y-1 text-sm min-w-0">
@@ -89,9 +89,8 @@ export function ClubEventObservationsPanel({ eventId, version, draftChanged = fa
         </>}
         <p className="text-xs text-muted-foreground">{t("Battle data checked")}: {data.sync.lastBattleSyncAt ? dateTime(data.sync.lastBattleSyncAt) : t("Unknown")}{data.sync.stale ? ` · ${t("Refresh delayed")}` : ""}</p>
       </>}
-      <p className="text-xs text-muted-foreground">{t("Official wins and tickets are unavailable. Missing observations do not mean absence and do not change the member comparison.")}</p>
       <details className="text-xs text-muted-foreground"><summary className="cursor-pointer">{t("How automatic observations work")}</summary>
-        <p className="mt-2">{t("Uses the existing battle sync, with no extra game API requests. Counts may miss battles and cannot prove Mega Pig participation from the map, time or trophy change. Manual records stay separate.")}</p>
+        <p className="mt-2">{t("Missing battles do not prove absence or affect member comparisons. Wins and tickets must be confirmed separately.")}</p>
       </details>
     </>}
   </section>;

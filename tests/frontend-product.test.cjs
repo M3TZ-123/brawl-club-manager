@@ -264,7 +264,7 @@ test("activity confidence ignores roster freshness and requires full profiles pl
  health={...health,freshness:"fresh",fullFreshness:"fresh",battleFreshness:"fresh",rankedFreshness:"stale"};
  assert.equal(DataConfidenceNotice(),null);
  health={...health,latestRun:{scope:"full",status:"succeeded",warnings:["battle_logs_incomplete"]}};
- assert.match(textContent(DataConfidenceNotice()),/recent roster check does not confirm/);
+ assert.match(textContent(DataConfidenceNotice()),/Battle or profile data is incomplete or stale/);
 });
 
 test("a successful roster check preserves full warnings and reduced confidence until a complete full result",async()=>{

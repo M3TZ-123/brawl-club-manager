@@ -39,9 +39,7 @@ export function AnalysisTeammates({ data }: { data: AnalysisResponse }) {
       <p className="text-sm font-medium">{t("{count} matching teammate records", { count: number(filtered.length) })}</p>
       {filteredLocally && <Button variant="ghost" size="sm" onClick={() => { setQuery(""); setMinimumMatches(0); }}>{t("Clear teammate filters")}</Button>}
     </div>
-    <p className="text-xs text-muted-foreground">{t("One row per teammate pair and battle type. The same pair can appear in several battle types.")}</p>
     {data.limits.groupCounts.pairs > data.pairs.length && <p role="status" className="text-sm text-amber-600 dark:text-amber-400">{t("Loaded {shown} of {total} teammate records. Search and sorting use this subset.", { shown: number(data.pairs.length), total: number(data.limits.groupCounts.pairs) })}</p>}
-    {sort === "win_rate" && <p className="text-xs text-muted-foreground">{t("Pairs with 10+ decided results come first. Smaller samples follow by shared matches; unknown rates come last.")} {t("Ten results is a browsing threshold, not proof of stronger teamwork.")}</p>}
     {visible.length === 0 ? <div className="rounded-lg border p-5 text-sm text-muted-foreground">
       <p>{t(data.pairs.length ? "No teammate records match these filters." : "No confirmed teammate pairs in these records.")}</p>
     </div> : <ul className="divide-y rounded-lg border">{visible.map(pair => {
@@ -72,8 +70,10 @@ export function AnalysisTeammates({ data }: { data: AnalysisResponse }) {
       <div className="flex gap-2"><Button variant="outline" size="sm" disabled={page === 0} onClick={() => setPagination({ key, page: Math.max(0, page - 1) })}>{t("Previous")}</Button><Button variant="outline" size="sm" disabled={page >= pages - 1} onClick={() => setPagination({ key, page: Math.min(pages - 1, page + 1) })}>{t("Next")}</Button></div>
     </nav>}
     <details className="rounded-lg border p-3 text-xs text-muted-foreground"><summary className="cursor-pointer font-medium text-foreground">{t("Reading teammate results")}</summary><div className="mt-2 space-y-2">
+      <p>{t("One row per teammate pair and battle type. The same pair can appear in several battle types.")}</p>
       <p>{t("Pairs count only players explicitly recorded on the same team. They do not prove a premade party.")}</p>
       <p>{t("Win rate uses wins and losses only. Small sample means fewer than 10 decided results.")}</p>
+      {sort === "win_rate" && <p>{t("Pairs with 10+ decided results come first. Smaller samples follow by shared matches; unknown rates come last.")} {t("Ten results is a browsing threshold, not proof of stronger teamwork.")}</p>}
       <p>{t("One match can create several teammate records. Adding rows does not give a distinct match total.")}</p>
     </div></details>
   </div>;

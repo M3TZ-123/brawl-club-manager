@@ -52,13 +52,13 @@ export function ClubRankingSummary({ tag, region, observations, rankingAt, ranki
       <p className="text-xs text-muted-foreground">{t("Rank observed")}: <time dateTime={latest.at}>{dateTime(latest.at)}</time></p>
       {placesGained !== null && previous && <div className="text-sm">
         <p className={placesGained > 0 ? "text-emerald-700 dark:text-emerald-400" : placesGained < 0 ? "text-amber-700 dark:text-amber-400" : "text-muted-foreground"}>{t(movementLabel, { count: Math.abs(placesGained) })}</p>
-        <p className="text-xs text-muted-foreground">{t("Compared with the previous recorded observation")}: <time dateTime={previous.at}>{dateTime(previous.at)}</time></p>
+        <p className="text-xs text-muted-foreground">{t("Since previous record")}: <time dateTime={previous.at}>{dateTime(previous.at)}</time></p>
       </div>}
       {latest.state === "ranked" && previous && placesGained === null && <p className="text-xs text-muted-foreground">{t("The previous recorded observation has no exact rank to compare.")}</p>}
     </>}
     {!latest && sourceAt && <p className="text-xs text-muted-foreground">{t("Ranking list last checked")}: <time dateTime={sourceAt}>{dateTime(sourceAt)}</time></p>}
     {rankingStale && <p role="status" className="text-xs text-amber-700 dark:text-amber-400">{t("Ranking data may be out of date.")}</p>}
-    <p className="text-xs text-muted-foreground">{t("Only the recorded top 50 is available; a missing entry does not give an exact rank.")}</p>
+    <p className="text-xs text-muted-foreground">{t("Top 50 only")}</p>
     {hasChart && <details className="text-sm">
       <summary className="cursor-pointer font-medium text-primary">{t("Recorded ranking history")}</summary>
       <figure className="mt-3 space-y-2">

@@ -107,7 +107,7 @@ export default function HistoryPage() {
 
   return <LayoutWrapper><div className="space-y-5">
     <div className="flex flex-col justify-between gap-4 sm:flex-row sm:items-start">
-      <div><h1 className="text-2xl font-bold">{t("Member History")}</h1><p className="mt-1 text-sm text-muted-foreground">{t(timeRange === "all" ? "All recorded members, including those who left." : "Members with a recorded membership event in this period.")}</p></div>
+      <div><h1 className="text-2xl font-bold">{t("Member History")}</h1>{timeRange !== "all" && <p className="mt-1 text-sm text-muted-foreground">{t("Membership events in this period")}</p>}</div>
       <TimeRangePicker value={timeRange} onChange={range => { if (range !== timeRange) { setIsLoading(true); setDetailMember(null); setTimeRange(range); } }} includeAll />
     </div>
     {loadError && <div role="alert" className="rounded-lg border border-destructive/40 p-4 text-sm">{t("Could not load member history.")} <Button variant="ghost" onClick={loadHistory}>{t("Retry")}</Button></div>}

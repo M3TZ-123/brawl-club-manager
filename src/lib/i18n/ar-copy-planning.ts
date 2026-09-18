@@ -1,0 +1,16 @@
+export const arCopyPlanning: Record<string, string> = {
+  "Cycle unconfirmed · reward unconfirmed": "الدورة والمكافأة غير مؤكدتين",
+  "Member counters": "عدادات الأعضاء",
+  "Source and rules": "المصدر والقواعد",
+  "The source does not date the cycle. These counters are not used for attendance or member comparisons.": "لا يحدّد المصدر تاريخ الدورة. لا تُستخدم هذه العدادات لتسجيل الحضور أو مقارنة الأعضاء.",
+  "Stage targets are community-reported estimates; confirm this edition's rules in the game.": "أهداف المراحل تقديرات من المجتمع؛ تأكّد من قواعد هذه الدورة داخل اللعبة.",
+  "No cycles yet. View counters in Saved readings.": "لا توجد دورات بعد. العدادات متاحة في «القراءات المحفوظة».",
+  "About this archive": "عن هذا الأرشيف",
+  "Member results are kept after departure. Source readings do not confirm attendance or rewards; confirm final results from the game.": "تُحفظ نتائج العضو بعد مغادرته. قراءات المصدر لا تؤكد الحضور أو المكافآت؛ أكّد النتائج النهائية من اللعبة.",
+  "Cycle unconfirmed for these readings.": "لم تُؤكّد الدورة الخاصة بهذه القراءات.",
+  "Use this edition's dates and ticket rules from the game.": "استخدم مواعيد هذه الدورة وقواعد تذاكرها الظاهرة في اللعبة.",
+  "Leave unknown results blank; enter zero only if confirmed.": "اترك النتائج المجهولة فارغة، وأدخل صفرًا فقط إذا كان مؤكدًا.",
+  "Recorded Mega Pig battles; official contribution totals unavailable.": "معارك Mega Pig مسجّلة؛ إجمالي المساهمات الرسمي غير متاح.",
+  "Missing battles do not prove absence or affect member comparisons. Wins and tickets must be confirmed separately.": "غياب المعارك لا يثبت غياب العضو ولا يؤثر في المقارنة. يجب تأكيد الانتصارات والتذاكر بشكل منفصل.",
+  "Confirm results from the game; leave unknown values blank.": "أكّد النتائج من اللعبة، واترك القيم المجهولة فارغة.",
+};

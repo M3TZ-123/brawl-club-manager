@@ -21,11 +21,15 @@ export function AnalysisCoverage({ data }: { data: AnalysisResponse }) {
   const incomplete = coverage.currentPlayers > coverage.fullPeriodMonitoredPlayers;
   const limited = truncated || incomplete || coverage.status !== "observed" || coverage.affectedPlayers > 0 || coverage.stalePlayers > 0;
   return <section className={`rounded-lg border p-3 text-sm ${limited ? "border-amber-500/40 bg-amber-500/5" : ""}`} aria-label={t("Battle history coverage")}>
-    <p className="font-medium">{t(truncated ? "Partial results — choose a shorter period." : limited ? "History does not cover the full period reliably." : "Based on recorded battles; some matches may be missing.")}</p>
-    {incomplete && <p className="mt-1 text-xs text-muted-foreground">{t("{monitored} of {total} members monitored throughout this period.", { monitored: coverage.fullPeriodMonitoredPlayers, total: coverage.currentPlayers })}</p>}
-    {(coverage.affectedPlayers > 0 || coverage.stalePlayers > 0) && <p className="mt-1 text-xs text-muted-foreground">{t("Possible gaps for {affected} members; delayed checks for {stale} members.", { affected: coverage.affectedPlayers, stale: coverage.stalePlayers })}</p>}
+    <p className="font-medium">{t(truncated ? "Partial results — choose a shorter period." : limited ? "Incomplete battle history" : "Recorded battle history")}</p>
+    {incomplete && <p className="mt-1 text-xs text-muted-foreground">{t("{monitored}/{total} members tracked throughout this period", { monitored: coverage.fullPeriodMonitoredPlayers, total: coverage.currentPlayers })}</p>}
+    {(coverage.affectedPlayers > 0 || coverage.stalePlayers > 0) && <div className="mt-1 flex flex-wrap gap-x-3 text-xs text-muted-foreground">
+      {coverage.affectedPlayers > 0 && <span>{t("Members with possible gaps: {count}", { count: coverage.affectedPlayers })}</span>}
+      {coverage.stalePlayers > 0 && <span>{t("Members with delayed updates: {count}", { count: coverage.stalePlayers })}</span>}
+    </div>}
     <details className="mt-2 text-xs text-muted-foreground"><summary className="cursor-pointer">{t("About these records")}</summary><div className="mt-2 space-y-2">
       <p>{t("Current members' saved battles only. Some records may predate a member joining the club.")}</p>
+      <p>{t("Based on recorded battles; some matches may be missing.")}</p>
       <p>{t("A missing record does not mean a member did not play. Use the Mega Pig archive for saved event contributions.")}</p>
       <p>{t("One record per club player in a battle; teammates count separately.")}</p>
       <p>{t("Win rates use wins and losses only; draws and unknown results are excluded.")}</p>
@@ -53,7 +57,7 @@ export function AnalysisContent() {
 
   return <div className="space-y-5">
     <header className="flex flex-wrap items-start justify-between gap-3">
-      <div><h1 className="text-2xl font-bold">{t("Teammates and playing hours")}</h1><p className="mt-1 text-sm text-muted-foreground">{t("See who plays together and when club members are most often recorded playing.")}</p></div>
+      <h1 className="text-2xl font-bold">{t("Teammates and playing hours")}</h1>
       <Button variant="outline" size="sm" onClick={reload} disabled={loading}>{t("Refresh")}</Button>
     </header>
     <div className="flex flex-wrap items-end justify-between gap-3">

@@ -32,7 +32,7 @@ test("former-member notes remain editable without a live profile and save the ex
   assert.equal(find(tree, "textarea").props.value, "Earlier reason");
   assert.match(textContent(tree), /Observed joins: 2 · Observed departures: 2/);
   assert.match(textContent(tree), /Last recorded departure/);
-  assert.match(textContent(tree), /Save decisions and departure reasons in the dated history below/);
+  assert.match(textContent(tree), /Administrators only/);
   assert.equal(find(tree, "textarea").props["aria-label"], "Current note");
   assert.doesNotMatch(textContent(tree), /Review reason/);
   assert.match(textContent(tree), /Recent activity: Low activity/);

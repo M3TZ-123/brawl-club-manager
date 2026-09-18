@@ -20,9 +20,8 @@ export function ClubGrowth({ data, onRetry }: { data: ClubTrophyChange | null; o
         {comparable ? <>
           <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
             <p className="text-2xl font-bold tabular-nums"><bdi>{delta(data.totalChange)}</bdi></p>
-            <p className="text-sm text-muted-foreground">{t(data.status === "partial_period" ? "Since first available record" : "Change between recorded totals")}</p>
+            <p className={`text-sm ${data.status === "partial_period" ? "text-amber-700 dark:text-amber-400" : "text-muted-foreground"}`}>{t(data.status === "partial_period" ? "Partial period — since first record" : "Change between recorded totals")}</p>
           </div>
-          {data.status === "partial_period" && <p className="text-xs text-muted-foreground">{t("Full-period history is not available yet.")}</p>}
           <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-muted-foreground">
             <p>{t("From")}: <bdi>{dateTime(data.startAt)}</bdi></p>
             <p>{t("To")}: <bdi>{dateTime(data.endAt)}</bdi></p>
@@ -39,7 +38,7 @@ export function ClubGrowth({ data, onRetry }: { data: ClubTrophyChange | null; o
             </div>)}
           </dl>
         </> : <div className="space-y-2 text-sm text-muted-foreground">
-          <p>{t(firstRecord ? "One complete roster record is available. A later record is needed to calculate the change." : "Trophy changes will appear after two complete roster records are saved.")}</p>
+          <p>{t(firstRecord ? "Waiting for a second complete roster record." : "Not enough complete roster history yet.")}</p>
           {firstRecord && <p className="text-xs">{t("First complete record")}: <bdi>{dateTime(firstRecord)}</bdi></p>}
         </div>}
         <details className="text-sm">

@@ -1,0 +1,18 @@
+export const arCopyInsights: Record<string, string> = {
+  "Incomplete battle history": "سجل المباريات غير مكتمل",
+  "Recorded battle history": "سجل المباريات المرصودة",
+  "{monitored}/{total} members tracked throughout this period": "تمت متابعة {monitored}/{total} عضوًا طوال الفترة",
+  "Members with possible gaps: {count}": "أعضاء بفجوات محتملة: {count}",
+  "Members with delayed updates: {count}": "أعضاء بتحديثات متأخرة: {count}",
+  "Distinct members across this period, not simultaneous players.": "أعضاء مختلفون خلال الفترة؛ لا يعني أنهم لعبوا في الوقت نفسه.",
+  "Current members with saved brawlers: {count}": "أعضاء حاليون لديهم براولرز محفوظون: {count}",
+  "Up to 5 clubs": "حتى 5 أندية",
+  "Limit reached. Remove a club in Details to add another.": "اكتمل العدد. ألغِ متابعة نادٍ من التفاصيل لإضافة آخر.",
+  "Chart: official club score. Table: summed member trophies.": "الرسم: نقاط النادي الرسمية. الجدول: مجموع كؤوس الأعضاء.",
+  "Not enough trophy history yet.": "سجل الكؤوس غير كافٍ بعد.",
+  "Since previous record": "منذ الرصد السابق",
+  "Top 50 only": "أفضل 50 فقط",
+  "Partial period — since first record": "فترة جزئية — منذ أول رصد",
+  "Waiting for a second complete roster record.": "بانتظار رصد كامل ثانٍ للأعضاء.",
+  "Not enough complete roster history yet.": "لا يتوفر سجل كامل كافٍ للأعضاء بعد.",
+};

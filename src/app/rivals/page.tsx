@@ -63,7 +63,7 @@ export default function RivalsPage() {
 
   return <LayoutWrapper><div className="space-y-6">
     <header className="flex flex-wrap items-start justify-between gap-3">
-      <div><h1 className="flex items-center gap-3 text-2xl font-bold"><Flag className="size-6 text-primary" />{t("Club rivals")}</h1><p className="mt-2 text-sm text-muted-foreground">{t("Follow your club's ranking and compare the clubs you choose.")}</p></div>
+      <h1 className="flex items-center gap-3 text-2xl font-bold"><Flag className="size-6 text-primary" />{t("Club rivals")}</h1>
       <Button variant="outline" size="sm" disabled={resource.loading} onClick={() => { void resource.reload(); if (data?.rivals.length) void ownResource.reload(); }}>{t("Refresh")}</Button>
     </header>
 
@@ -78,13 +78,13 @@ export default function RivalsPage() {
     </section>
 
     <section className="min-w-0 space-y-4" aria-label={t("Compare clubs")}>
-      <div><h2 className="text-xl font-semibold">{t("Compare clubs")}</h2><p className="mt-1 text-sm text-muted-foreground">{t("Follow up to five clubs to compare member counts and trophy levels.")}</p></div>
+      <div className="flex flex-wrap items-center gap-x-3 gap-y-1"><h2 className="text-xl font-semibold">{t("Compare clubs")}</h2><span className="text-xs text-muted-foreground">{t("Up to 5 clubs")}</span></div>
       {isAdmin && <form onSubmit={event => { event.preventDefault(); void save(tag, true); }} className="flex flex-wrap items-end gap-3">
         <label className="min-w-0 flex-1 basis-52"><span className="mb-1 block text-sm">{t("Club tag")}</span><input dir="ltr" value={tag} onChange={event => setTag(event.target.value)} maxLength={22} required placeholder="#XXXXXXXX" className="h-10 w-full rounded-md border bg-background px-3" /></label>
         <Button disabled={saving || !data || data.rivals.length >= 5}><Plus className="me-2 size-4" />{t("Follow club")}</Button>
       </form>}
       {error && <p role="alert" className="text-sm text-amber-700 dark:text-amber-400">{t(error)}</p>}
-      {data && data.rivals.length >= 5 && isAdmin && <p className="text-xs text-muted-foreground">{t("Five clubs followed. Open a club's details to stop following it before adding another.")}</p>}
+      {data && data.rivals.length >= 5 && isAdmin && <p className="text-xs text-muted-foreground">{t("Limit reached. Remove a club in Details to add another.")}</p>}
       {data?.rivals.length === 0 && <div className="rounded-xl border border-dashed p-5 text-sm">
         <p className="font-medium">{t("No rival clubs selected yet.")}</p><p className="mt-1 text-muted-foreground">{t(isAdmin ? "Add the first club using its tag above." : "An administrator can add the first club to compare.")}</p>
         {!isAdmin && <Link href="/admin?next=%2Frivals" className="mt-3 inline-block text-primary underline underline-offset-4">{t("Sign in")}</Link>}

@@ -46,7 +46,7 @@ export function ClubReportCard({report}:{report:ReportCardData}){
   }
   return <div><Button variant="outline" disabled={busy} onClick={()=>void download()}><ImageDown className="w-4 h-4 me-2"/>{t("Download report image")}</Button>{error&&<p role="alert" className="text-sm text-amber-500">{t("Report image could not be created")}</p>}
     <Sheet open={preview!==null} onOpenChange={open=>{if(!open)setPreview(null);}}><SheetContent className="w-full overflow-y-auto sm:max-w-4xl">
-      <SheetHeader><SheetTitle>{t("Club report card")}</SheetTitle><SheetDescription>{t("Preview the image, then save it to share.")}</SheetDescription></SheetHeader>
+      <SheetHeader><SheetTitle>{t("Club report card")}</SheetTitle><SheetDescription className="sr-only">{t("Preview the image, then save it to share.")}</SheetDescription></SheetHeader>
       {preview&&<div className="mt-5 space-y-4"><Image src={preview.url} alt={t("Club report card")} width={1200} height={750} unoptimized className="h-auto w-full rounded-lg border"/><a href={preview.url} download={preview.filename} className="inline-flex items-center rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground">{t("Download PNG")}</a></div>}
     </SheetContent></Sheet>
   </div>;

@@ -389,7 +389,6 @@ export default function MemberDetailPage({ params }: PageProps) {
             {loadError && <div role="alert" className="rounded-lg border border-destructive/30 p-3 text-sm"><T text="Could not load this member." /> <Button variant="ghost" onClick={() => loadMemberData(true)}><T text="Retry" /></Button></div>}
             {refreshError && <p role="alert" className="text-sm text-destructive"><T text={refreshError} /></p>}
             <h2 className="text-lg font-semibold"><T text={memberHistory?.is_current_member === false ? "Stored account snapshot" : "Current account"} /></h2>
-            {memberHistory?.is_current_member === false && <p className="text-sm text-muted-foreground"><T text="This former member's account details come from the latest stored profile." /></p>}
             {/* Stats Grid */}
             <div className="grid gap-4 sm:grid-cols-2">
               <Card>
@@ -576,7 +575,7 @@ export default function MemberDetailPage({ params }: PageProps) {
                     <div className="flex items-center gap-3">
                       <Calendar className="h-5 w-5 text-muted-foreground" />
                       <div>
-                        <p className="text-sm font-medium"><T text="First observed" /></p><p className="text-xs text-muted-foreground"><T text="First observed is when tracking first recorded this player, not necessarily their actual join date." /></p>
+                        <p className="text-sm font-medium"><T text="First observed" /></p><p className="text-xs text-muted-foreground"><T text="First tracked record; join date may differ." /></p>
                         <p className="text-sm text-muted-foreground">
                           {memberHistory.first_seen && new Date(memberHistory.first_seen).getFullYear() > 1970
                             ? formatDate(memberHistory.first_seen)

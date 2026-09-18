@@ -31,7 +31,6 @@ test("a former member with previous returns is labeled Former and receives a tru
   assert.equal(badgeTexts(tree).includes("Returned"), false);
   assert.equal(badgeTexts(tree).includes("No recorded departures"), false);
   assert.match(textContent(tree), /Stored account snapshot/);
-  assert.match(textContent(tree), /This former member's account details come from the latest stored profile\./);
   assert.match(textContent(tree), /Lifetime victories and stored brawlers/);
   assert.doesNotMatch(textContent(tree), /Current account|Lifetime victories and current brawlers/);
   const review = elements(tree).find(element => element.type === "MemberReviewButton");

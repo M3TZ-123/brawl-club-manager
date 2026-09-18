@@ -26,14 +26,12 @@ export const StatsCards = memo(function StatsCards({
       title: "Total Members",
       value: totalMembers,
       icon: Users,
-      description: "Club members",
       color: "text-blue-500",
     },
     {
       title: "Total Trophies",
       value: formatNumber(totalTrophies),
       icon: Trophy,
-      description: "Combined trophies",
       color: "text-yellow-500",
     },
     {
@@ -47,7 +45,6 @@ export const StatsCards = memo(function StatsCards({
       title: "Avg Trophies",
       value: formatNumber(avgTrophies),
       icon: TrendingUp,
-      description: "Per member",
       color: "text-purple-500",
     },
   ], [activeMembers, avgTrophies, totalMembers, totalTrophies, formatNumber, t]);
@@ -62,7 +59,7 @@ export const StatsCards = memo(function StatsCards({
           </CardHeader>
           <CardContent className="p-4 pt-0">
             <div className="text-xl font-bold sm:text-2xl"><T text={card.value} /></div>
-            <p className="text-xs text-muted-foreground">{<T text={card.description} />}</p>
+            {card.description && <p className="text-xs text-muted-foreground">{<T text={card.description} />}</p>}
           </CardContent>
         </Card>
       ))}

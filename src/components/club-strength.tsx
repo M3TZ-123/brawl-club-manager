@@ -13,10 +13,9 @@ export function ClubStrength() {
     <div className="space-y-2"><p className="font-medium">{t("Trophy distribution")}</p>{data.trophyBands.map(band => <div key={band.min} className="grid grid-cols-[7rem_1fr_2rem] items-center gap-2 text-xs"><span dir="ltr">{number(band.min)}{band.max === null ? "+" : `–${number(band.max - 1)}`}</span><div className="h-3 overflow-hidden rounded bg-muted"><div className="h-full bg-primary/60" style={{ width: `${data.members ? band.members / data.members * 100 : 0}%` }} /></div><span className="text-end">{number(band.members)}</span></div>)}</div>
     <div><p className="font-medium">{t("Current Ranked distribution")}</p><dl className="mt-2 grid grid-cols-2 gap-2">{data.ranks.map(row => <div key={row.rank || "unknown"} className="flex justify-between gap-2"><dt>{t(row.rank || "Unknown")}</dt><dd>{number(row.members)}</dd></div>)}</dl></div>
     <div className="border-t pt-3"><p className="mb-2 text-sm font-medium">{t("Reported brawler power")}</p><div className="grid grid-cols-3 gap-2">{data.power.map(row => <div key={row.minimum} className="rounded bg-muted/40 p-2 text-sm"><p>{t("Power {level}+", { level: number(row.minimum) })}</p><p className="font-semibold">{number(row.brawlers)}</p><p className="text-xs text-muted-foreground">{t("{count} members", { count: number(row.members) })}</p></div>)}</div>
-      <p className="mt-2 text-xs text-muted-foreground">{t("Saved inventory for {known} of {total} members; {count} brawlers observed.", { known: number(data.inventoryMembers), total: number(data.members), count: number(data.brawlersObserved) })}</p>
+      <p className="mt-2 text-xs text-muted-foreground">{t("{count} brawlers observed", { count: number(data.brawlersObserved) })}</p>
     </div>
     {data.observedAt && <p className="text-xs text-muted-foreground">{t("Oldest member snapshot")}: {dateTime(data.observedAt)}</p>}
-    <p className="text-xs text-muted-foreground">{t("These are separate roster facts, not a skill or commitment score.")}</p>
     </div></details>
   </>}</ClubIntelligencePanel>;
 }

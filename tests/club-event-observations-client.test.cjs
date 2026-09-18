@@ -79,7 +79,7 @@ test("zero observations mean unknown attendance and explicit mode markers never 
   const page = harness({ response: () => observation({ members: [observedMember(), observedMember({ playerTag: "#BBB", playerName: "Bilel", observedBattles: 5, lastObservedBattleAt: "2026-09-17T11:00:00Z", explicitMegaPigBattles: 2 })] }) });
   const tree = await page.render(); assert.match(textContent(tree), /Activity observed for 1 of 2 saved event members/);
   assert.match(rowText(tree), /No battles observed; attendance is unknown/); assert.match(rowText(tree), /5 recorded player results/); assert.match(rowText(tree), /2 results explicitly labelled Mega Pig/);
-  assert.match(textContent(tree), /not official club contribution totals/); assert.match(textContent(tree), /Official wins and tickets are unavailable/); assert.match(textContent(tree), /do not change the member comparison/);
+  assert.match(textContent(tree), /official contribution totals unavailable/); assert.match(textContent(tree), /Wins and tickets must be confirmed separately/); assert.match(textContent(tree), /Missing battles do not prove absence or affect member comparisons/);
   assert.match(textContent(tree), /Battle data checked: Unknown.*Refresh delayed/); assert.equal(elements(tree).filter(node => ["Input", "select", "textarea", "form"].includes(node.type)).length, 0);
   assert.doesNotMatch(rowText(tree), /Absent|Present|wins: 0|tickets: 0/); page.unmount();
 });

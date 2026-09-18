@@ -14,9 +14,8 @@ const summarize = rows => logic().summarizeClubRanking("#PYLQ", "TN", rows);
 const serialized = value => JSON.parse(JSON.stringify(value));
 
 function render(rows, props = {}, locale = "en") {
-  const { arClubRanking } = loadTypeScript("src/lib/i18n/ar-club-ranking.ts");
-  const local = { ...i18n, t: (key, values = {}) => (locale === "ar" ? arClubRanking[key] || key : key)
-    .replace(/\{(\w+)\}/g, (_, name) => String(values[name] ?? `{${name}}`)) };
+  const { translate } = loadTypeScript("src/lib/i18n/messages.ts");
+  const local = { ...i18n, t: (key, values = {}) => translate(key, locale, values) };
   const { ClubRankingSummary } = loadTypeScript("src/components/club-ranking-summary.tsx", {
     ...componentMocks, react: { useState: initial => [initial(), () => {}], useEffect() {} },
     "@/components/locale-provider": { useI18n: () => local },
@@ -106,7 +105,7 @@ test("movement language reports direction and the previous recorded date rather 
   for (const [latest, expected] of [[3, "Up 5 places"], [12, "Down 4 places"], [7, "Up 1 place"], [9, "Down 1 place"], [8, "Rank unchanged"]]) {
     const tree = render([observation("2026-09-14T12:00:00Z", 8), observation("2026-09-18T09:00:00Z", latest)]);
     assert.ok(textContent(tree).includes(expected));
-    assert.match(textContent(tree), /Compared with the previous recorded observation/);
+    assert.match(textContent(tree), /Since previous record/);
     assert.ok(elements(tree).some(node => node.type === "time" && node.props.dateTime === "2026-09-14T12:00:00.000Z"));
     assert.doesNotMatch(textContent(tree), /yesterday|since yesterday|in 24 hours/i);
   }
@@ -139,8 +138,8 @@ test("stale sources and conflicting observations stay explicit, future source ti
   assert.match(textContent(conflicting), /An exact rank could not be established/);
   assert.doesNotMatch(textContent(conflicting), /Not listed in the recorded top 50/);
   const arabic = render([observation("2026-09-14T12:00:00Z", 8), observation("2026-09-18T09:00:00Z", 3)], { title: "Recorded rank", rankingStale: true }, "ar");
-  for (const phrase of ["الترتيب المسجل", "آخر ترتيب مسجل", "تحسّن الترتيب بمقدار 5", "مقارنة بالرصد السابق المسجل", "قد تكون بيانات الترتيب قديمة", "سجل الترتيب"]) assert.ok(textContent(arabic).includes(phrase), phrase);
-  assert.doesNotMatch(textContent(arabic), /Recorded rank|Up 5 places|Compared with|Ranking data may/);
+  for (const phrase of ["الترتيب المسجل", "آخر ترتيب مسجل", "تحسّن الترتيب بمقدار 5", "منذ الرصد السابق", "قد تكون بيانات الترتيب قديمة", "سجل الترتيب"]) assert.ok(textContent(arabic).includes(phrase), phrase);
+  assert.doesNotMatch(textContent(arabic), /Recorded rank|Up 5 places|Since previous record|Ranking data may/);
   for (const [rank, phrase] of [[7, "تقدّم مركزًا واحدًا"], [9, "تراجع مركزًا واحدًا"]]) {
     const single = render([observation("2026-09-14T12:00:00Z", 8), observation("2026-09-18T09:00:00Z", rank)], {}, "ar");
     assert.ok(textContent(single).includes(phrase));
