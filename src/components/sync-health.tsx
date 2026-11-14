@@ -3,6 +3,7 @@
 import { useSyncExternalStore } from "react";
 import { getSyncHealth, getServerSyncHealth, subscribeSyncHealth, type BattleCoverage, type SyncCapacity, type SyncHealth } from "@/lib/client-sync-status";
 import { useI18n, LocalDate } from "@/components/locale-provider";
+import { useAdminSession } from "@/hooks/use-admin-session";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 
 export function useSyncHealth() {
@@ -19,12 +20,16 @@ const completedFullRun = (health: SyncHealth | null | undefined) => health?.late
 
 export function DataConfidenceNotice() {
   const health = useSyncHealth();
+  const { isAdmin } = useAdminSession();
   const { t } = useI18n();
   if (health === undefined) return null;
   const fullRun = completedFullRun(health);
   const battleWarning = fullRun?.warnings?.some(code => code === "battle_logs_incomplete" || code === "battle_logs_rate_limited");
   const fullFailed = fullRun && fullRun.status !== "succeeded";
-  if (health?.battleCoverage?.status === "possible_gap") {
+  // Historical gaps (e.g. from a past outage) stay flagged for 28 days. That is
+  // an operator concern, so only admins see it; visitors still get the public
+  // stale-data warning below whenever current data is not fresh.
+  if (isAdmin && health?.battleCoverage?.status === "possible_gap") {
     return <div role="status" className="mb-4 rounded-lg border border-amber-500/30 bg-amber-500/10 p-3 text-sm"><p className="font-medium">{t("A possible gap remains in the recorded battle history.")}</p></div>;
   }
   if ((health?.fullFreshness ?? health?.freshness) === "fresh" && health?.battleFreshness === "fresh" && !battleWarning && !fullFailed) return null;

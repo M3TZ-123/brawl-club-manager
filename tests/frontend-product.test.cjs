@@ -230,7 +230,7 @@ test("timeline names every supported event in English and Arabic without droppin
 
 test("sync health displays backend attempt and outcome rather than inferring a next scheduled time", async () => {
   const renderer = hookRenderer();
-  const { SyncHealthCard } = loadTypeScript("src/components/sync-health.tsx", { ...componentMocks, react: { ...renderer.react, useSyncExternalStore: (_subscribe, getSnapshot) => getSnapshot() }, "@/lib/client-sync-status": { subscribeSyncHealth() {}, getServerSyncHealth: () => null, getSyncHealth: () => ({ freshness: "stale", running: false, lastSuccessAt: "2026-01-01T00:00:00Z", lastAttemptAt: "2026-01-01T01:00:00Z", lastOutcome: "failed", expectedIntervalMinutes: 45 }) } });
+  const { SyncHealthCard } = loadTypeScript("src/components/sync-health.tsx", { ...componentMocks, "@/hooks/use-admin-session":{useAdminSession:()=>({isAdmin:false,isLoading:false})}, react: { ...renderer.react, useSyncExternalStore: (_subscribe, getSnapshot) => getSnapshot() }, "@/lib/client-sync-status": { subscribeSyncHealth() {}, getServerSyncHealth: () => null, getSyncHealth: () => ({ freshness: "stale", running: false, lastSuccessAt: "2026-01-01T00:00:00Z", lastAttemptAt: "2026-01-01T01:00:00Z", lastOutcome: "failed", expectedIntervalMinutes: 45 }) } });
   const tree = await renderer.render(() => SyncHealthCard());
   assert.match(textContent(tree), /Stale/);
   assert.match(textContent(tree), /failed/);
@@ -244,8 +244,8 @@ test("sync health displays backend attempt and outcome rather than inferring a n
 
 
 test("confidence notices hide initial loading while preserving failed, stale and gap warnings",()=>{
-  let health;
-  const components=syncHealthComponents(()=>health);
+  let health, admin=true;
+  const components=syncHealthComponents(()=>health,{},()=>admin);
   assert.equal(components.DataConfidenceNotice(),null);
   health=null;
   assert.match(textContent(components.DataConfidenceNotice()),/Sync health: Unavailable/);
@@ -255,11 +255,15 @@ test("confidence notices hide initial loading while preserving failed, stale and
   assert.equal(components.DataConfidenceNotice(),null);
   health={...health,battleCoverage:{status:"possible_gap"}};
   assert.match(textContent(components.DataConfidenceNotice()),/possible gap remains/);
+  admin=false; // historical gaps are an admin-only notice; fresh data shows nothing to visitors
+  assert.equal(components.DataConfidenceNotice(),null);
+  health={...health,freshness:"stale",fullFreshness:"stale"};
+  assert.match(textContent(components.DataConfidenceNotice()),/incomplete or stale/);
 });
 
 test("activity confidence ignores roster freshness and requires full profiles plus complete battle data",async()=>{
  let health={freshness:"stale",fullFreshness:"stale",rosterFreshness:"fresh",battleFreshness:"never"};
- const {DataConfidenceNotice}=loadTypeScript("src/components/sync-health.tsx",{...componentMocks,react:{useSyncExternalStore:(_subscribe,getSnapshot)=>getSnapshot()},"@/lib/client-sync-status":{subscribeSyncHealth(){},getServerSyncHealth:()=>null,getSyncHealth:()=>health}});
+ const {DataConfidenceNotice}=loadTypeScript("src/components/sync-health.tsx",{...componentMocks,"@/hooks/use-admin-session":{useAdminSession:()=>({isAdmin:false,isLoading:false})},react:{useSyncExternalStore:(_subscribe,getSnapshot)=>getSnapshot()},"@/lib/client-sync-status":{subscribeSyncHealth(){},getServerSyncHealth:()=>null,getSyncHealth:()=>health}});
  assert.match(textContent(DataConfidenceNotice()),/incomplete or stale/);
  health={...health,freshness:"fresh",fullFreshness:"fresh",battleFreshness:"fresh",rankedFreshness:"stale"};
  assert.equal(DataConfidenceNotice(),null);
@@ -284,8 +288,8 @@ test("a successful roster check preserves full warnings and reduced confidence u
  tree=await renderer.render(()=>SyncHealthCard());assert.doesNotMatch(textContent(tree),/Partial update|latest full sync did not complete/);assert.equal(DataConfidenceNotice(),null);
 });
 
-function syncHealthComponents(getHealth, globals={}) {
- return loadTypeScript("src/components/sync-health.tsx",{...componentMocks,react:{useSyncExternalStore:(_subscribe,getSnapshot)=>getSnapshot()},"@/lib/client-sync-status":{subscribeSyncHealth(){},getServerSyncHealth:()=>null,getSyncHealth:getHealth}},globals);
+function syncHealthComponents(getHealth, globals={}, getIsAdmin=()=>false) {
+ return loadTypeScript("src/components/sync-health.tsx",{...componentMocks,"@/hooks/use-admin-session":{useAdminSession:()=>({isAdmin:getIsAdmin(),isLoading:false})},react:{useSyncExternalStore:(_subscribe,getSnapshot)=>getSnapshot()},"@/lib/client-sync-status":{subscribeSyncHealth(){},getServerSyncHealth:()=>null,getSyncHealth:getHealth}},globals);
 }
 function renderedSection(components,name) {
  const element=elements(components.SyncHealthCard()).find(element=>element.type?.name===name);
@@ -296,7 +300,7 @@ const freshSources={freshness:"fresh",fullFreshness:"fresh",rosterFreshness:"fre
 
 test("possible historical gaps remain visible alongside fresh fetches and clear only with coverage state",()=>{
  let health={...freshSources,battleCoverage:{status:"possible_gap",monitoredPlayers:29,currentPlayers:30,affectedPlayers:2,lastCheckedAt:"2026-09-16T12:00:00Z",lastGapAt:"2026-09-15T12:00:00Z",windowDays:28}};
- const components=syncHealthComponents(()=>health);
+ const components=syncHealthComponents(()=>health,{},()=>true);
  assert.match(textContent(components.SyncHealthCard()),/Fetch statusFresh/);
  assert.match(textContent(components.DataConfidenceNotice()),/possible gap remains/);
  let section=renderedSection(components,"BattleCoverageSection");
