@@ -3,6 +3,23 @@ async function runScheduled({ env = process.env, request = fetch, sleep = delay,
   const base = new URL(env.VERCEL_APP_URL || "https://brawlstatz.vercel.app");
   if (base.protocol !== "https:" || base.username || base.password) throw new Error("VERCEL_APP_URL must be a credential-free HTTPS URL.");
   if (!env.CRON_SECRET) throw new Error("Missing CRON_SECRET.");
+  // Backup-scheduler mode: only step in when the primary (Supabase pg_cron)
+  // scheduler has fallen behind. If the status check itself fails, sync anyway.
+  const staleMinutes = Number(env.SYNC_ONLY_IF_STALE_MINUTES || 0);
+  if (staleMinutes > 0) {
+    try {
+      const status = await request(new URL("/api/sync/status", base), { signal: AbortSignal.timeout(30_000) });
+      const body = status.ok ? await status.json() : {};
+      const last = Date.parse(body.lastFullSuccessAt || "");
+      if (Number.isFinite(last) && now() - last < staleMinutes * 60_000) {
+        console.log(`Primary scheduler healthy (last full sync ${Math.round((now() - last) / 60_000)} min ago); backup sync not needed.`);
+        return { skipped: true };
+      }
+      console.log("Primary scheduler is behind; running backup sync.");
+    } catch {
+      console.log("Sync status unavailable; running backup sync.");
+    }
+  }
   const bucket = Math.floor(now() / 1_800_000);
   const rootKey = `scheduled:${env.GITHUB_RUN_ID || bucket}:${bucket}`;
   let key = rootKey;

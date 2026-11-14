@@ -1,5 +1,9 @@
-name: Manually Sync Club Data
+name: Sync Club Data (backup scheduler)
+# Second scheduler in case Supabase pg_cron stops. On a schedule it only syncs
+# when no full sync has succeeded for 25 minutes; manual runs always sync.
 on:
+  schedule:
+    - cron: '7,37 * * * *'
   workflow_dispatch:
 permissions:
   contents: read
@@ -19,4 +23,5 @@ jobs:
         env:
           CRON_SECRET: ${{ secrets.CRON_SECRET }}
           VERCEL_APP_URL: ${{ secrets.VERCEL_APP_URL }}
+          SYNC_ONLY_IF_STALE_MINUTES: ${{ github.event_name == 'schedule' && '25' || '0' }}
         run: node scripts/scheduled-sync.cjs

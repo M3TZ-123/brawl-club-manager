@@ -1,0 +1,38 @@
+name: Battle safety-net archive
+# Saves every member's last 25 battles straight from the Brawl Stars API,
+# independent of Vercel and Supabase. If either is down, import the archives
+# afterwards with scripts/import-battle-archive.cjs so no battles are lost.
+on:
+  schedule:
+    - cron: '17 * * * *'
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: battle-archive
+  cancel-in-progress: false
+jobs:
+  archive:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Capture encrypted battle archive
+        id: capture
+        env:
+          BRAWL_API_KEY: ${{ secrets.BRAWL_API_KEY }}
+          CLUB_TAG: ${{ secrets.CLUB_TAG }}
+          BACKUP_ENCRYPTION_KEY: ${{ secrets.BACKUP_ENCRYPTION_KEY }}
+          ARCHIVE_DIR: battle-archive
+        run: node scripts/battle-archive.cjs
+      - name: Store archive (14 days)
+        uses: actions/upload-artifact@v4
+        with:
+          name: battle-archive-${{ github.run_id }}
+          path: battle-archive/*.brlarc
+          retention-days: 14
+          if-no-files-found: error
+          compression-level: 0
